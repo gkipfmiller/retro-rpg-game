@@ -1,6 +1,6 @@
 import { Game } from "./game.js";
 import { Renderer } from "./render.js";
-import { loadAssets } from "./assets.js";
+import { getActorSpriteFrame, loadAssets } from "./assets.js";
 
 const game = new Game();
 const renderer = new Renderer(game);
@@ -12,6 +12,28 @@ const screens = {
   game: document.getElementById("game-screen"),
 };
 const tooltip = document.getElementById("ui-tooltip");
+let loadedAssets = null;
+
+const classSpriteTargets = [
+  { id: "class-sprite-warrior", actorId: "warrior" },
+  { id: "class-sprite-wizard", actorId: "wizard" },
+];
+
+function syncClassPortraits(frameIndex = 0) {
+  if (!loadedAssets) return;
+  for (const target of classSpriteTargets) {
+    const image = document.getElementById(target.id);
+    const fallback = image?.parentElement?.querySelector(".class-icon-fallback");
+    const spritePath = getActorSpriteFrame(loadedAssets.manifest, target.actorId, frameIndex);
+    if (image && spritePath && loadedAssets.images[spritePath]) {
+      if (image.src !== new URL(spritePath, window.location.href).href) {
+        image.src = spritePath;
+      }
+      image.classList.remove("hidden");
+      fallback?.classList.add("hidden");
+    }
+  }
+}
 
 function syncScreens() {
   Object.values(screens).forEach((screen) => screen.classList.remove("visible"));
@@ -27,6 +49,9 @@ function refresh() {
 }
 
 function frame() {
+  if (game.state.mode === "class") {
+    syncClassPortraits(Math.floor(performance.now() / 220));
+  }
   renderer.render();
   window.requestAnimationFrame(frame);
 }
@@ -129,7 +154,9 @@ window.addEventListener("keydown", (event) => {
 });
 
 loadAssets().then((assets) => {
+  loadedAssets = assets;
   renderer.setAssets(assets);
+  syncClassPortraits(0);
   refresh();
   window.requestAnimationFrame(frame);
 });

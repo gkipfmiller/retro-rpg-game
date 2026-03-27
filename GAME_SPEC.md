@@ -1,8 +1,8 @@
-# Retro RPG Adventure Spec
+# Dungeon 30: The Abyssal Throne Spec
 
 ## Overview
 
-Retro RPG Adventure is a single-player, turn-based, retro pixel-art roguelike RPG.
+Dungeon 30: The Abyssal Throne is a single-player, turn-based, retro pixel-art roguelike RPG.
 
 The player chooses a class and attempts a full dungeon run from Floor 1 to Floor 30. Death is permanent for the current run. A new run always restarts on Floor 1 with a newly generated dungeon.
 

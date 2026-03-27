@@ -371,7 +371,10 @@ function placeLoot(map, rooms, rng, floorNumber, playerClass) {
     });
   }
 
-  const floorDrops = rng.int(floorNumber >= 21 ? 4 : floorNumber >= 11 ? 3 : 2, floorNumber >= 21 ? 6 : floorNumber >= 12 ? 5 : floorNumber >= 6 ? 4 : 3);
+  const floorDrops = rng.int(
+    floorNumber >= 21 ? 3 : floorNumber >= 11 ? 2 : 1,
+    floorNumber >= 21 ? 4 : floorNumber >= 12 ? 3 : floorNumber >= 6 ? 3 : 2
+  );
   const availableRooms = rng.shuffle(rooms.slice(2));
 
   for (let index = 0; index < floorDrops && index < availableRooms.length; index += 1) {
@@ -379,6 +382,9 @@ function placeLoot(map, rooms, rng, floorNumber, playerClass) {
     const openTiles = findOpenTilesInRoom(room, map);
     if (!openTiles.length) continue;
     const tile = rng.pick(openTiles);
+    const sustainPool = floorNumber >= 11
+      ? ["healing_potion", "mana_potion", "greater_healing_potion", "greater_mana_potion", "scroll_of_escape"]
+      : ["healing_potion", "mana_potion"];
     const roomPool = room.type === "treasure"
       ? [...lootPools.common, ...lootPools.extra, ...lootPools.deep, ...lootPools.endgame]
       : room.type === "elite"
@@ -386,7 +392,11 @@ function placeLoot(map, rooms, rng, floorNumber, playerClass) {
         : floorNumber >= 21
           ? [...lootPools.common, ...lootPools.extra, ...lootPools.deep]
           : [...lootPools.common, ...lootPools.extra];
-    const itemId = rng.pick(roomPool);
+    const itemId = room.type === "treasure" || room.type === "elite"
+      ? rng.pick(roomPool)
+      : rng.chance(0.55)
+        ? rng.pick(sustainPool)
+        : rng.pick(roomPool);
     putItem(map, tile.x, tile.y, itemId);
     looseItems.push({ x: tile.x, y: tile.y, itemId });
   }
@@ -400,9 +410,10 @@ function placeVendor(map, room, rng, floorNumber) {
   if (!openTiles.length) return null;
   const tile = rng.pick(openTiles);
   map[tile.y][tile.x].vendor = true;
+  const stockSize = floorNumber >= 21 ? 7 : floorNumber >= 14 ? 6 : 5;
+  const guaranteedHealingPotions = rng.int(1, Math.min(3, stockSize));
 
   const stockPool = [
-    "healing_potion",
     "mana_potion",
     "greater_healing_potion",
     "greater_mana_potion",
@@ -417,11 +428,15 @@ function placeVendor(map, room, rng, floorNumber) {
         ? ["steel_greatsword", "war_hammer", "flame_touched_sword", "vampire_axe", "sundering_hammer", "elder_staff", "storm_wand", "runic_staff", "sage_wand", "guardian_plate", "archmage_robe", "sigil_of_fortune", "chain_armor", "scout_leathers", "bastion_mail", "enchanted_robe", "dusk_robe", "runespun_robe", "crystal_wand", "ember_rod", "moon_staff"]
         : ["militia_sword", "woodcutter_axe", "iron_sword", "raider_axe", "legion_spear", "hedge_wand", "ash_staff", "oak_staff", "ember_rod", "padded_jerkin", "leather_armor", "iron_cuirass", "cloth_robe", "apprentice_robes"]),
   ];
+  const stock = [
+    ...Array.from({ length: guaranteedHealingPotions }, () => "healing_potion"),
+    ...rng.shuffle(stockPool).slice(0, Math.max(0, stockSize - guaranteedHealingPotions)),
+  ];
   return {
     id: `vendor-${floorNumber}`,
     x: tile.x,
     y: tile.y,
-    stock: rng.shuffle(stockPool).slice(0, floorNumber >= 21 ? 7 : floorNumber >= 14 ? 6 : 5),
+    stock,
   };
 }
 
@@ -689,15 +704,15 @@ export function getDropForEnemy(enemy, rng, playerClass) {
     ? ["sunfire_blade", "soulreaver_axe", "abyssal_plate", "void_heart", "greater_healing_potion"]
     : ["voidglass_staff", "astral_wand", "starweave_robe", "void_heart", "greater_mana_potion", "arcane_burst_tome"];
 
-  if (rng.chance((enemy.floorNumber ?? 1) >= 11 ? 0.42 : 0.65)) {
+  if (rng.chance((enemy.floorNumber ?? 1) >= 11 ? 0.34 : 0.52)) {
     const biasPool = playerClass === "warrior"
       ? ["militia_sword", "woodcutter_axe", "iron_sword", "raider_axe", "legion_spear", "padded_jerkin", "chain_armor", "scout_leathers", "healing_potion"]
       : ["hedge_wand", "ash_staff", "oak_staff", "crystal_wand", "ember_rod", "apprentice_robes", "enchanted_robe", "dusk_robe", "mana_potion"];
     const midGame = (enemy.floorNumber ?? 1) >= 11;
     const endgame = (enemy.floorNumber ?? 1) >= 21;
-    if (rng.chance(endgame ? 0.22 : midGame ? 0.16 : 0.18)) {
+    if (rng.chance(endgame ? 0.1 : midGame ? 0.08 : 0.09)) {
       drops.push(rng.pick(endgame ? [...biasPool, ...deepBiasPool, ...endgameBiasPool] : midGame ? [...biasPool, ...deepBiasPool] : biasPool));
-    } else if (rng.chance(midGame ? 0.14 : 0.24)) {
+    } else if (rng.chance(midGame ? 0.2 : 0.3)) {
       drops.push(rng.pick(midGame ? ["greater_healing_potion", "greater_mana_potion", "healing_potion", "mana_potion"] : ["healing_potion", "mana_potion"]));
     }
   }

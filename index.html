@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Retro RPG Adventure</title>
+    <title>Dungeon 30: The Abyssal Throne</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -11,7 +11,7 @@
       <section id="menu-screen" class="screen visible">
         <div class="panel hero-panel">
           <p class="eyebrow">Milestone 3 Build</p>
-          <h1>Retro RPG Adventure</h1>
+          <h1>Dungeon 30: The Abyssal Throne</h1>
           <p class="subtitle">
             Turn-based roguelike dungeon crawl through 30 procedural dungeon floors with class builds, vendors, loot, bosses, and permadeath.
           </p>
@@ -34,17 +34,27 @@
 
       <section id="class-screen" class="screen">
         <div class="panel class-select-panel">
-          <h2>Choose Your Class</h2>
+          <h2>Choose Your Delver</h2>
           <div class="class-grid">
             <button class="class-card" data-class-id="warrior">
-              <span class="class-icon">W</span>
-              <strong>Warrior</strong>
-              <span>High HP, melee damage, heavier armor.</span>
+              <span class="class-portrait">
+                <img id="class-sprite-warrior" class="class-sprite hidden" alt="Warrior sprite" />
+                <span class="class-icon class-icon-fallback">W</span>
+              </span>
+              <span class="class-role">Warrior</span>
+              <strong class="class-name">Garrick Ironhand</strong>
+              <span class="class-flavor">A scarred sellsword who survives by breaking shields, holding chokepoints, and outlasting whatever lurks below.</span>
+              <span class="class-traits">Strengths: high HP, strong melee, heavier armor. Weaknesses: poor range, low mana, limited spell access.</span>
             </button>
             <button class="class-card" data-class-id="wizard">
-              <span class="class-icon">Z</span>
-              <strong>Wizard</strong>
-              <span>Low HP, high mana, ranged spellcasting.</span>
+              <span class="class-portrait">
+                <img id="class-sprite-wizard" class="class-sprite hidden" alt="Wizard sprite" />
+                <span class="class-icon class-icon-fallback">Z</span>
+              </span>
+              <span class="class-role">Wizard</span>
+              <strong class="class-name">Malric Ashveil</strong>
+              <span class="class-flavor">An arcane scholar of the underdeep who wins with distance, control, and precise bursts of destructive magic.</span>
+              <span class="class-traits">Strengths: high mana, ranged spells, control tools. Weaknesses: low HP, weak armor, punished hard when cornered.</span>
             </button>
           </div>
           <button id="class-back-button">Back</button>

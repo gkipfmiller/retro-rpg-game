@@ -31,5 +31,5 @@ createServer((req, res) => {
   });
   createReadStream(filePath).pipe(res);
 }).listen(port, "127.0.0.1", () => {
-  console.log(`Retro RPG Adventure running at http://localhost:${port}`);
+  console.log(`Dungeon 30: The Abyssal Throne running at http://localhost:${port}`);
 });
