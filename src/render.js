@@ -60,8 +60,35 @@ function renderStatusBadges(statuses = []) {
   if (!statuses.length) return `<span class="status-badge muted-badge">None</span>`;
   return statuses.map((status) => {
     const def = STATUS_DEFINITIONS[status.id];
-    return `<span class="status-badge" style="--badge-color:${getStatusColor(status.id)}"><span class="status-icon">${def?.icon ?? "?"}</span>${def?.name ?? status.id}${status.turns ? ` ${status.turns}` : ""}</span>`;
+    const tooltip = [def?.name ?? status.id, def?.description ?? "No description available.", status.turns ? `Turns remaining: ${status.turns}` : ""]
+      .filter(Boolean)
+      .join("&#10;");
+    return `<span class="status-badge" style="--badge-color:${getStatusColor(status.id)}" data-tooltip="${tooltip}"><span class="status-icon">${def?.icon ?? "?"}</span>${def?.name ?? status.id}${status.turns ? ` ${status.turns}` : ""}</span>`;
   }).join("");
+}
+
+function formatEntryTooltip(entryId) {
+  if (SPELLS[entryId]) {
+    const spell = SPELLS[entryId];
+    const parts = [spell.name, spell.description];
+    if (typeof spell.cost === "number") parts.push(`Cost: ${spell.cost} mana`);
+    if (typeof spell.range === "number") parts.push(`Range: ${spell.range === 0 ? "Self" : spell.range}`);
+    if (spell.damage) parts.push(`Damage: ${spell.damage[0]}-${spell.damage[1]}`);
+    return parts.join("\n");
+  }
+
+  if (ITEMS[entryId]) {
+    const item = ITEMS[entryId];
+    const parts = [item.name];
+    if (item.effect?.type === "heal") parts.push(`Restores ${item.effect.value} HP`);
+    else if (item.effect?.type === "mana") parts.push(`Restores ${item.effect.value} mana`);
+    else if (item.effect?.type === "escape") parts.push("Teleports you to the floor's start room");
+    else if (item.category === "tome" && item.spellId) parts.push(`Teaches ${SPELLS[item.spellId]?.name ?? item.spellId}`);
+    else if (item.description) parts.push(item.description);
+    return parts.join("\n");
+  }
+
+  return "";
 }
 
 export class Renderer {
@@ -272,6 +299,7 @@ export class Renderer {
       if (!entry) {
         button.textContent = `${index + 1}. Empty`;
         button.disabled = true;
+        button.removeAttribute("data-tooltip");
         return;
       }
       const label = SPELLS[entry]?.name ?? ITEMS[entry]?.name ?? entry;
@@ -279,6 +307,7 @@ export class Renderer {
       const icon = iconPath ? `<img src="${iconPath}" alt="" class="slot-icon">` : "";
       button.innerHTML = `${icon}<span>${index + 1}. ${label}</span>`;
       button.disabled = false;
+      button.dataset.tooltip = formatEntryTooltip(entry);
     });
 
     const target = this.game.getCurrentTarget();

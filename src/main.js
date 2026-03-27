@@ -11,6 +11,7 @@ const screens = {
   class: document.getElementById("class-screen"),
   game: document.getElementById("game-screen"),
 };
+const tooltip = document.getElementById("ui-tooltip");
 
 function syncScreens() {
   Object.values(screens).forEach((screen) => screen.classList.remove("visible"));
@@ -64,6 +65,27 @@ document.getElementById("overlay-content").addEventListener("click", (event) => 
   if (!button) return;
   game.handleOverlayAction(button.dataset.action, button.dataset);
   refresh();
+});
+
+document.body.addEventListener("mouseover", (event) => {
+  const target = event.target.closest("[data-tooltip]");
+  if (!target || !tooltip) return;
+  const text = target.dataset.tooltip;
+  if (!text) return;
+  tooltip.textContent = text;
+  tooltip.classList.remove("hidden");
+});
+
+document.body.addEventListener("mousemove", (event) => {
+  if (!tooltip || tooltip.classList.contains("hidden")) return;
+  tooltip.style.left = `${Math.min(window.innerWidth - 280, event.clientX + 14)}px`;
+  tooltip.style.top = `${Math.min(window.innerHeight - 120, event.clientY + 14)}px`;
+});
+
+document.body.addEventListener("mouseout", (event) => {
+  const target = event.target.closest("[data-tooltip]");
+  if (!target || !tooltip) return;
+  tooltip.classList.add("hidden");
 });
 
 window.addEventListener("keydown", (event) => {

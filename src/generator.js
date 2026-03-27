@@ -319,8 +319,8 @@ function placeTraps(map, rooms, rng, floorNumber, trapCount) {
 function getClassLootPools(playerClass, floorNumber) {
   const sharedCommon = ["healing_potion", "mana_potion"];
   const sharedMid = ["greater_healing_potion", "greater_mana_potion", "ring_of_precision", "amulet_of_vitality", "charm_of_focus"];
-  const warriorCore = ["iron_sword", "raider_axe", "chain_armor"];
-  const wizardCore = ["oak_staff", "crystal_wand", "enchanted_robe"];
+  const warriorCore = ["militia_sword", "woodcutter_axe", "iron_sword", "raider_axe", "legion_spear", "padded_jerkin", "leather_armor", "iron_cuirass", "chain_armor", "scout_leathers"];
+  const wizardCore = ["hedge_wand", "ash_staff", "oak_staff", "crystal_wand", "ember_rod", "apprentice_robes", "cloth_robe", "enchanted_robe", "dusk_robe"];
   const warriorDeep = ["steel_greatsword", "war_hammer", "flame_touched_sword", "vampire_axe", "sundering_hammer", "guardian_plate", "sigil_of_fortune"];
   const wizardDeep = ["elder_staff", "storm_wand", "runic_staff", "sage_wand", "archmage_robe", "sigil_of_fortune"];
   const warriorEndgame = ["sunfire_blade", "soulreaver_axe", "abyssal_plate", "void_heart"];
@@ -412,10 +412,10 @@ function placeVendor(map, room, rng, floorNumber) {
     "blink_tome",
     "arcane_burst_tome",
     ...(floorNumber >= 21
-      ? ["steel_greatsword", "war_hammer", "flame_touched_sword", "vampire_axe", "sundering_hammer", "sunfire_blade", "soulreaver_axe", "elder_staff", "storm_wand", "runic_staff", "sage_wand", "voidglass_staff", "astral_wand", "guardian_plate", "abyssal_plate", "archmage_robe", "starweave_robe", "sigil_of_fortune", "void_heart", "chain_armor", "enchanted_robe", "crystal_wand"]
+      ? ["steel_greatsword", "war_hammer", "flame_touched_sword", "vampire_axe", "sundering_hammer", "sunfire_blade", "soulreaver_axe", "elder_staff", "storm_wand", "runic_staff", "sage_wand", "voidglass_staff", "astral_wand", "guardian_plate", "abyssal_plate", "archmage_robe", "starweave_robe", "sigil_of_fortune", "void_heart", "chain_armor", "scout_leathers", "bastion_mail", "enchanted_robe", "dusk_robe", "runespun_robe", "crystal_wand", "ember_rod", "moon_staff"]
       : floorNumber >= 11
-        ? ["steel_greatsword", "war_hammer", "flame_touched_sword", "vampire_axe", "sundering_hammer", "elder_staff", "storm_wand", "runic_staff", "sage_wand", "guardian_plate", "archmage_robe", "sigil_of_fortune", "chain_armor", "enchanted_robe", "crystal_wand"]
-        : ["iron_sword", "raider_axe", "oak_staff"]),
+        ? ["steel_greatsword", "war_hammer", "flame_touched_sword", "vampire_axe", "sundering_hammer", "elder_staff", "storm_wand", "runic_staff", "sage_wand", "guardian_plate", "archmage_robe", "sigil_of_fortune", "chain_armor", "scout_leathers", "bastion_mail", "enchanted_robe", "dusk_robe", "runespun_robe", "crystal_wand", "ember_rod", "moon_staff"]
+        : ["militia_sword", "woodcutter_axe", "iron_sword", "raider_axe", "legion_spear", "hedge_wand", "ash_staff", "oak_staff", "ember_rod", "padded_jerkin", "leather_armor", "iron_cuirass", "cloth_robe", "apprentice_robes"]),
   ];
   return {
     id: `vendor-${floorNumber}`,
@@ -683,16 +683,16 @@ export function getDropForEnemy(enemy, rng, playerClass) {
   const template = ENEMIES[enemy.templateId];
   const drops = [];
   const deepBiasPool = playerClass === "warrior"
-    ? ["steel_greatsword", "war_hammer", "flame_touched_sword", "vampire_axe", "sundering_hammer", "guardian_plate", "greater_healing_potion"]
-    : ["elder_staff", "storm_wand", "runic_staff", "sage_wand", "archmage_robe", "greater_mana_potion", "frost_shard_tome", "blink_tome", "arcane_burst_tome"];
+    ? ["steel_greatsword", "war_hammer", "butcher_cleaver", "flame_touched_sword", "vampire_axe", "sundering_hammer", "guardian_plate", "bastion_mail", "greater_healing_potion"]
+    : ["elder_staff", "storm_wand", "moon_staff", "runic_staff", "sage_wand", "archmage_robe", "runespun_robe", "greater_mana_potion", "frost_shard_tome", "blink_tome", "arcane_burst_tome"];
   const endgameBiasPool = playerClass === "warrior"
     ? ["sunfire_blade", "soulreaver_axe", "abyssal_plate", "void_heart", "greater_healing_potion"]
     : ["voidglass_staff", "astral_wand", "starweave_robe", "void_heart", "greater_mana_potion", "arcane_burst_tome"];
 
   if (rng.chance((enemy.floorNumber ?? 1) >= 11 ? 0.42 : 0.65)) {
     const biasPool = playerClass === "warrior"
-      ? ["iron_sword", "raider_axe", "chain_armor", "healing_potion"]
-      : ["oak_staff", "crystal_wand", "enchanted_robe", "mana_potion"];
+      ? ["militia_sword", "woodcutter_axe", "iron_sword", "raider_axe", "legion_spear", "padded_jerkin", "chain_armor", "scout_leathers", "healing_potion"]
+      : ["hedge_wand", "ash_staff", "oak_staff", "crystal_wand", "ember_rod", "apprentice_robes", "enchanted_robe", "dusk_robe", "mana_potion"];
     const midGame = (enemy.floorNumber ?? 1) >= 11;
     const endgame = (enemy.floorNumber ?? 1) >= 21;
     if (rng.chance(endgame ? 0.22 : midGame ? 0.16 : 0.18)) {

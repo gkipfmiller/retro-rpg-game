@@ -531,9 +531,78 @@ export class Game {
       : "Sidegrade.";
   }
 
+  escapeTooltip(text) {
+    return String(text ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll("\n", "&#10;");
+  }
+
+  getSpellTooltip(entryId) {
+    const spell = SPELLS[entryId];
+    if (!spell) return "";
+    const parts = [spell.name, spell.description];
+    if (typeof spell.cost === "number") parts.push(`Cost: ${spell.cost} mana`);
+    if (typeof spell.range === "number") parts.push(`Range: ${spell.range === 0 ? "Self" : spell.range}`);
+    if (spell.damage) parts.push(`Damage: ${spell.damage[0]}-${spell.damage[1]}`);
+    return parts.join("\n");
+  }
+
+  getItemTooltip(itemId, options = {}) {
+    const item = ITEMS[itemId];
+    if (!item) return "";
+    const parts = [item.name];
+    if (options.stackCount > 1) {
+      parts.push(`Stack: ${options.stackCount}`);
+    }
+    if (item.category) {
+      parts.push(`Type: ${item.category}${item.slot ? ` (${item.slot})` : ""}`);
+    }
+    const stats = this.formatItemStats(itemId);
+    if (stats) {
+      parts.push(stats.replaceAll(" | ", "\n"));
+    }
+    if (item.enchantment) {
+      parts.push(item.description ?? this.getEnchantmentDescription(item));
+    } else if (item.effect?.type === "heal") {
+      parts.push(`Restores ${item.effect.value} HP.`);
+    } else if (item.effect?.type === "mana") {
+      parts.push(`Restores ${item.effect.value} mana.`);
+    } else if (item.effect?.type === "escape") {
+      parts.push("Teleports you back to the floor's start room.");
+    } else if (item.category === "tome" && item.spellId) {
+      parts.push(`Teaches ${SPELLS[item.spellId]?.name ?? item.spellId}.`);
+    } else if (item.description) {
+      parts.push(item.description);
+    }
+    if (options.includeCompare) {
+      const compare = this.compareItemToEquipped(itemId);
+      if (compare) parts.push(`Compare: ${compare}`);
+    }
+    if (options.includeValue && typeof item.value === "number") {
+      parts.push(`Value: ${item.value}g`);
+    }
+    if (options.sellValue) {
+      parts.push(`Sell: ${options.sellValue}g each`);
+    }
+    return parts.join("\n");
+  }
+
+  getSkillTooltip(skill, branchName, unlocked, available) {
+    const parts = [
+      skill.name,
+      branchName,
+      skill.description,
+      unlocked ? "Status: Unlocked" : available ? "Status: Ready to unlock" : "Status: Locked",
+    ];
+    return parts.join("\n");
+  }
+
   renderItemBadgeRow(itemId) {
     return this.getItemBadges(itemId)
-      .map((badge) => `<span class="item-badge ${badge.tone}">${badge.label}</span>`)
+      .map((badge) => `<span class="item-badge ${badge.tone}" data-tooltip="${this.escapeTooltip(`${ITEMS[itemId]?.name ?? "Item"}\n${badge.label}`)}">${badge.label}</span>`)
       .join("");
   }
 
@@ -905,7 +974,8 @@ export class Game {
     return visibleEnemies[0] ?? null;
   }
 
-  useItemById(itemId) {
+  useItemById(itemId, options = {}) {
+    const { reopenInventoryIndex = null } = options;
     const player = this.state.run.player;
     const index = player.inventory.findIndex((entry) => entry.itemId === itemId);
     if (index === -1) {
@@ -930,6 +1000,10 @@ export class Game {
         this.log("The scroll tears space and drags you to safety.");
       }
       player.inventory.splice(index, 1);
+      if (reopenInventoryIndex !== null) {
+        const nextIndex = Math.max(0, Math.min(reopenInventoryIndex, this.getInventoryStacks().length - 1));
+        this.openInventory(this.getInventoryStacks().length ? nextIndex : 0);
+      }
       this.endPlayerTurn();
       return;
     }
@@ -945,7 +1019,12 @@ export class Game {
         }
       }
       player.inventory.splice(index, 1);
-      this.openInventory();
+      if (reopenInventoryIndex !== null) {
+        const nextIndex = Math.max(0, Math.min(reopenInventoryIndex, this.getInventoryStacks().length - 1));
+        this.openInventory(this.getInventoryStacks().length ? nextIndex : 0);
+      } else {
+        this.openInventory();
+      }
       return;
     }
   }
@@ -1027,7 +1106,7 @@ export class Game {
       const item = ITEMS[stack.itemId];
       const compare = this.compareItemToEquipped(stack.itemId);
       return `
-        <button class="list-card compare-entry ${index === safeIndex ? "selected" : ""}" data-action="inventory-select" data-index="${index}">
+        <button class="list-card compare-entry ${index === safeIndex ? "selected" : ""}" data-action="inventory-select" data-index="${index}" data-tooltip="${this.escapeTooltip(this.getItemTooltip(stack.itemId, { stackCount: stack.count, includeCompare: true, includeValue: true }))}">
           <div class="entry-topline">
             <strong>${item.name}${stack.count > 1 ? ` x${stack.count}` : ""}</strong>
             <span class="item-badge ${this.getItemRarity(stack.itemId)}">${this.getItemRarity(stack.itemId)}</span>
@@ -1124,7 +1203,7 @@ export class Game {
         <div>
           <h3>Assignable</h3>
           ${options.map((option) => `
-            <div class="list-card">
+            <div class="list-card" data-tooltip="${this.escapeTooltip(SPELLS[option.id] ? this.getSpellTooltip(option.id) : this.getItemTooltip(option.id, { includeValue: true }))}">
               <strong>${option.label}</strong>
               <div class="loadout-assign-row">
                 <button data-action="assign-slot" data-slot-index="0" data-entry-id="${option.id}">Slot 1</button>
@@ -1165,10 +1244,10 @@ export class Game {
               const previousId = index > 0 ? branch.skills[index - 1].id : null;
               const available = !unlocked && this.state.run.player.skillPoints > 0 && (!previousId || this.state.run.player.unlockedSkills.includes(previousId));
               return `
-                <div class="list-card ${unlocked ? "selected" : ""}">
+                <div class="list-card ${unlocked ? "selected" : ""}" data-tooltip="${this.escapeTooltip(this.getSkillTooltip(skill, branch.name, unlocked, available))}">
                   <strong>${skill.name}</strong>
                   <p class="muted">${skill.description}</p>
-                  <button ${available ? "" : "disabled"} data-action="buy-skill" data-skill-id="${skill.id}">
+                  <button ${available ? "" : "disabled"} data-action="buy-skill" data-skill-id="${skill.id}" data-tooltip="${this.escapeTooltip(this.getSkillTooltip(skill, branch.name, unlocked, available))}">
                     ${unlocked ? "Unlocked" : available ? "Unlock" : "Locked"}
                   </button>
                 </div>
@@ -1207,8 +1286,7 @@ export class Game {
     if (!entry) return;
     const item = ITEMS[entry.itemId];
     if (!item.slot) {
-      this.useItemById(entry.itemId);
-      this.openInventory();
+      this.useItemById(entry.itemId, { reopenInventoryIndex: index });
       return;
     }
 
@@ -1235,7 +1313,7 @@ export class Game {
     const safeIndex = vendor.stock.length ? clamp(selectedIndex, 0, vendor.stock.length - 1) : -1;
     const selectedItemId = safeIndex >= 0 ? vendor.stock[safeIndex] : null;
     const vendorList = vendor.stock.map((itemId, index) => `
-      <button class="list-card compare-entry ${index === safeIndex ? "selected" : ""}" data-action="vendor-select" data-index="${index}">
+      <button class="list-card compare-entry ${index === safeIndex ? "selected" : ""}" data-action="vendor-select" data-index="${index}" data-tooltip="${this.escapeTooltip(this.getItemTooltip(itemId, { includeCompare: true, includeValue: true }))}">
         <div class="entry-topline">
           <strong>${ITEMS[itemId].name}</strong>
           <span class="item-badge ${this.getItemRarity(itemId)}">${ITEMS[itemId].value}g</span>
@@ -1249,7 +1327,7 @@ export class Game {
     const sellStacks = this.getInventoryStacksWithSellValue();
     const sellable = sellStacks
       .map((stack, index) => `
-        <div class="sell-row">
+        <div class="sell-row" data-tooltip="${this.escapeTooltip(this.getItemTooltip(stack.itemId, { stackCount: stack.count, includeCompare: true, includeValue: true, sellValue: stack.sellValue }))}">
           <div>
             <strong>${ITEMS[stack.itemId].name}${stack.count > 1 ? ` x${stack.count}` : ""}</strong>
             <p class="muted">${stack.sellValue}g each${stack.count > 1 ? ` • ${stack.sellValue * stack.count}g total` : ""}</p>
@@ -1451,17 +1529,18 @@ export class Game {
       }
 
       if (template.behavior === "caster") {
-        const preferredMinRange = enemy.templateId === "shaman" ? 4 : enemy.templateId === "infernal_imp" ? 2 : enemy.templateId === "cultist" ? 2 : 3;
-        const castMinRange = enemy.templateId === "infernal_imp" || enemy.templateId === "cultist" ? 2 : 3;
+        const preferredMinRange = enemy.templateId === "shaman" ? 4 : 2;
+        const castMinRange = 1;
         if (canSee && distance >= castMinRange && distance <= template.range) {
-          this.enemyAttack(enemy, "spell");
-          if (player.hp <= 0) return;
-          continue;
+          const shouldRetreat = distance === 1 && this.shouldCasterRetreat(enemy);
+          if (!shouldRetreat) {
+            this.enemyAttack(enemy, "spell");
+            if (player.hp <= 0) return;
+            continue;
+          }
         }
         if (distance < preferredMinRange) {
-          const shouldRetreat = enemy.templateId === "cultist"
-            ? distance === 1
-            : true;
+          const shouldRetreat = distance === 1 && this.shouldCasterRetreat(enemy);
           if (!shouldRetreat && canSee && distance <= template.range) {
             this.enemyAttack(enemy, "spell");
             if (player.hp <= 0) return;
@@ -1517,6 +1596,7 @@ export class Game {
 
   findRetreatTile(enemy) {
     const { player, currentFloor } = this.state.run;
+    const currentDistance = manhattan(enemy, player);
     const candidates = [
       { x: enemy.x + 1, y: enemy.y },
       { x: enemy.x - 1, y: enemy.y },
@@ -1527,8 +1607,19 @@ export class Game {
         const tile = currentFloor.map[point.y]?.[point.x];
         return tile && tile.type === "floor" && !tile.occupant;
       })
+      .filter((point) => manhattan(point, player) > currentDistance)
       .sort((a, b) => manhattan(b, player) - manhattan(a, player));
     return candidates[0] ?? null;
+  }
+
+  shouldCasterRetreat(enemy) {
+    if (enemy.templateId === "shaman") {
+      return enemy.turnCounter % 3 === 0;
+    }
+    if (enemy.templateId === "infernal_imp") {
+      return enemy.turnCounter % 4 === 0;
+    }
+    return enemy.turnCounter % 4 === 0;
   }
 
   enemyAttack(enemy, mode = "melee") {
