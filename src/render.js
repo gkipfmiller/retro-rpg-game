@@ -91,6 +91,27 @@ function formatEntryTooltip(entryId) {
   return "";
 }
 
+function getProjectileAppearance(projectile) {
+  switch (projectile.kind) {
+    case "magic_missile":
+      return { color: "#8bc6ff", trail: "#d6eeff", radius: 0.16 };
+    case "frost_shard":
+      return { color: "#8ff3ff", trail: "#d7fbff", radius: 0.18 };
+    case "arcane_burst":
+      return { color: "#c78cff", trail: "#f0d2ff", radius: 0.2 };
+    case "shadow_bolt":
+      return { color: "#8e7cff", trail: "#d4c8ff", radius: 0.16 };
+    case "hexfire":
+      return { color: "#ff7b9c", trail: "#ffd0da", radius: 0.18 };
+    case "cinder_hex":
+      return { color: "#ff9b54", trail: "#ffe1b8", radius: 0.17 };
+    case "abyssal_bolt":
+      return { color: "#ff5f86", trail: "#ffd1dc", radius: 0.2 };
+    default:
+      return { color: "#d7a54d", trail: "#fff1c2", radius: 0.16 };
+  }
+}
+
 export class Renderer {
   constructor(game) {
     this.game = game;
@@ -105,6 +126,7 @@ export class Renderer {
     this.assets = null;
     this.lastOverlaySignature = null;
     this.wasCriticalHp = false;
+    this.projectiles = [];
   }
 
   setAssets(assets) {
@@ -226,6 +248,8 @@ export class Renderer {
         Math.max(11, tileSize - 5)
       );
     }
+
+    this.renderProjectiles(tileSize, offsetX, offsetY);
   }
 
   drawSprite(image, x, y, tileSize, baseTileSize, heightMultiplier = 1) {
@@ -245,6 +269,54 @@ export class Renderer {
       this.ctx.strokeStyle = "#0a0c10";
       this.ctx.strokeRect(x + index * (size + 2), y - size - 2, size, size);
     });
+  }
+
+  queueProjectile(projectile) {
+    this.projectiles.push({
+      ...projectile,
+      createdAt: performance.now(),
+      duration: projectile.duration ?? 320,
+    });
+  }
+
+  renderProjectiles(tileSize, offsetX, offsetY) {
+    if (!this.projectiles.length) return;
+    const now = performance.now();
+    this.projectiles = this.projectiles.filter((projectile) => now - projectile.createdAt < projectile.duration);
+
+    for (const projectile of this.projectiles) {
+      const progress = clamp((now - projectile.createdAt) / projectile.duration, 0, 1);
+      const eased = progress < 0.5
+        ? 2 * progress * progress
+        : 1 - ((-2 * progress + 2) ** 2) / 2;
+      const startX = offsetX + (projectile.from.x + 0.5) * tileSize;
+      const startY = offsetY + (projectile.from.y + 0.5) * tileSize;
+      const endX = offsetX + (projectile.to.x + 0.5) * tileSize;
+      const endY = offsetY + (projectile.to.y + 0.5) * tileSize;
+      const x = startX + (endX - startX) * eased;
+      const y = startY + (endY - startY) * eased;
+      const appearance = getProjectileAppearance(projectile);
+      const radius = Math.max(4, tileSize * appearance.radius);
+
+      this.ctx.save();
+      this.ctx.globalAlpha = 0.3;
+      this.ctx.strokeStyle = appearance.trail;
+      this.ctx.lineWidth = Math.max(2, tileSize * 0.08);
+      this.ctx.beginPath();
+      this.ctx.moveTo(startX, startY);
+      this.ctx.lineTo(x, y);
+      this.ctx.stroke();
+      this.ctx.globalAlpha = 1;
+      this.ctx.fillStyle = appearance.color;
+      this.ctx.beginPath();
+      this.ctx.arc(x, y, radius, 0, Math.PI * 2);
+      this.ctx.fill();
+      this.ctx.fillStyle = appearance.trail;
+      this.ctx.beginPath();
+      this.ctx.arc(x, y, Math.max(2, radius * 0.45), 0, Math.PI * 2);
+      this.ctx.fill();
+      this.ctx.restore();
+    }
   }
 
   renderHud() {

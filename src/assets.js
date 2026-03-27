@@ -50,7 +50,7 @@ const assetManifest = {
   traps: {
     spikes: `${BASE}/floor_spikes_anim_f1.png`,
     darts: `${BASE}/bomb_f2.png`,
-    fire: `${BASE}/flask_big_red.png`,
+    fire: `${BASE}/bomb_f1.png`,
     curse: `${BASE}/skull.png`,
     alarm: `${BASE}/lever_right.png`,
   },

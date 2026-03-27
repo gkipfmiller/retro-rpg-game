@@ -1,5 +1,6 @@
 import { BOSS_REWARDS, CLASSES, ENEMIES, ITEMS, SKILL_TREES, SPELLS, STATUS_DEFINITIONS, TRAPS } from "./data.js";
 import { generateFloor, getDropForEnemy } from "./generator.js";
+import { getItemSprite } from "./assets.js";
 import { clamp, createRng, deepClone, hashSeed, manhattan, toKey } from "./utils.js";
 
 const XP_THRESHOLDS = {
@@ -195,6 +196,7 @@ export class Game {
   }
 
   getDerivedStats(player) {
+    const classDef = CLASSES[player.classId];
     const equipmentItems = Object.values(player.equipment)
       .filter(Boolean)
       .map((itemId) => ITEMS[itemId]);
@@ -214,7 +216,7 @@ export class Game {
       evasionFlat: 0,
       magicPowerFlat: 0,
       meleeDamagePct: 0,
-      spellDamagePct: 0,
+      spellDamagePct: classDef.spellDamageBonusPct ?? 0,
       critBonus: 0,
       utilityDiscount: 0,
       trapReductionPct: 0,
@@ -254,7 +256,7 @@ export class Game {
       accuracy: 85 + stats.dexterity + stats.accuracyFlat,
       evasion: Math.floor(stats.dexterity / 2) + stats.evasionFlat,
       meleeBonus: Math.floor(stats.strength / 2),
-      spellBonus: Math.floor(stats.intelligence / 2) + stats.magicPowerFlat,
+      spellBonus: Math.floor(stats.intelligence / 2) + stats.magicPowerFlat + (classDef.spellPowerBonus ?? 0),
     };
   }
 
@@ -600,6 +602,14 @@ export class Game {
     return parts.join("\n");
   }
 
+  renderItemIcon(itemId, className = "inventory-tile-icon") {
+    const iconPath = this.renderer?.assets?.manifest ? getItemSprite(this.renderer.assets.manifest, itemId) : null;
+    if (iconPath) {
+      return `<img src="${iconPath}" alt="" class="${className}">`;
+    }
+    return `<span class="${className} inventory-tile-fallback">${ITEMS[itemId]?.name?.[0] ?? "?"}</span>`;
+  }
+
   renderItemBadgeRow(itemId) {
     return this.getItemBadges(itemId)
       .map((badge) => `<span class="item-badge ${badge.tone}" data-tooltip="${this.escapeTooltip(`${ITEMS[itemId]?.name ?? "Item"}\n${badge.label}`)}">${badge.label}</span>`)
@@ -745,6 +755,13 @@ export class Game {
     const enchantment = weapon?.enchantment ?? null;
     const hitChance = clamp((mode.type === "spell" ? 90 + (derived.spellAccuracyFlat ?? 0) : derived.accuracy) - (enemyStats.evasion ?? 0), 10, 95);
     if (!rng.chance(hitChance / 100)) {
+      if (mode.type === "spell") {
+        this.renderer?.queueProjectile({
+          kind: mode.spellId,
+          from: { x: player.x, y: player.y },
+          to: { x: enemy.x, y: enemy.y },
+        });
+      }
       this.log(`You miss ${enemy.name}.`);
       this.endPlayerTurn();
       return;
@@ -767,6 +784,11 @@ export class Game {
       }
     } else if (mode.type === "spell") {
       const spell = SPELLS[mode.spellId];
+      this.renderer?.queueProjectile({
+        kind: mode.spellId,
+        from: { x: player.x, y: player.y },
+        to: { x: enemy.x, y: enemy.y },
+      });
       const firstSpellBonus = !enemy.firstSpellHitTaken && derived.firstSpellPct ? derived.firstSpellPct / 100 : 0;
       const base = rng.int(spell.damage[0], spell.damage[1]) + derived.spellBonus;
       damage = Math.max(1, Math.floor(base * (1 + derived.spellDamagePct / 100 + firstSpellBonus)) - enemyStats.defense);
@@ -1104,16 +1126,17 @@ export class Game {
     const selectedStack = safeIndex >= 0 ? stacks[safeIndex] : null;
     const list = stacks.map((stack, index) => {
       const item = ITEMS[stack.itemId];
-      const compare = this.compareItemToEquipped(stack.itemId);
       return `
-        <button class="list-card compare-entry ${index === safeIndex ? "selected" : ""}" data-action="inventory-select" data-index="${index}" data-tooltip="${this.escapeTooltip(this.getItemTooltip(stack.itemId, { stackCount: stack.count, includeCompare: true, includeValue: true }))}">
-          <div class="entry-topline">
-            <strong>${item.name}${stack.count > 1 ? ` x${stack.count}` : ""}</strong>
-            <span class="item-badge ${this.getItemRarity(stack.itemId)}">${this.getItemRarity(stack.itemId)}</span>
-          </div>
-          <p class="muted">${item.category}${item.slot ? ` • ${item.slot}` : ""}</p>
-          <p class="muted">${this.formatItemStats(stack.itemId)}</p>
-          ${compare ? `<p class="compare-summary ${compare === "Sidegrade." || compare === "Open slot." ? "muted" : ""}">${compare}</p>` : ""}
+        <button
+          class="inventory-tile ${index === safeIndex ? "selected" : ""} ${this.getItemRarity(stack.itemId)}"
+          data-action="inventory-select"
+          data-index="${index}"
+          data-tooltip="${this.escapeTooltip(this.getItemTooltip(stack.itemId, { stackCount: stack.count, includeCompare: true, includeValue: true }))}"
+        >
+          <span class="inventory-tile-rarity">${this.getItemRarity(stack.itemId)}</span>
+          ${this.renderItemIcon(stack.itemId)}
+          ${stack.count > 1 ? `<span class="inventory-stack-count">x${stack.count}</span>` : ""}
+          <span class="inventory-tile-name">${item.name}</span>
         </button>
       `;
     }).join("");
@@ -1138,7 +1161,9 @@ export class Game {
               <h3>Pack</h3>
               <span class="muted">${stacks.length} stack${stacks.length === 1 ? "" : "s"} • ${this.state.run.player.inventory.length} item${this.state.run.player.inventory.length === 1 ? "" : "s"}</span>
             </div>
-            ${list}
+            <div class="inventory-grid">
+              ${list}
+            </div>
           </div>
           <div class="compare-detail-pane">
             ${detail}
@@ -1313,14 +1338,16 @@ export class Game {
     const safeIndex = vendor.stock.length ? clamp(selectedIndex, 0, vendor.stock.length - 1) : -1;
     const selectedItemId = safeIndex >= 0 ? vendor.stock[safeIndex] : null;
     const vendorList = vendor.stock.map((itemId, index) => `
-      <button class="list-card compare-entry ${index === safeIndex ? "selected" : ""}" data-action="vendor-select" data-index="${index}" data-tooltip="${this.escapeTooltip(this.getItemTooltip(itemId, { includeCompare: true, includeValue: true }))}">
-        <div class="entry-topline">
-          <strong>${ITEMS[itemId].name}</strong>
-          <span class="item-badge ${this.getItemRarity(itemId)}">${ITEMS[itemId].value}g</span>
-        </div>
-        <p class="muted">${ITEMS[itemId].category}${ITEMS[itemId].slot ? ` • ${ITEMS[itemId].slot}` : ""}</p>
-        <p class="muted">${this.formatItemStats(itemId)}</p>
-        <p class="compare-summary">${this.compareItemToEquipped(itemId)}</p>
+      <button
+        class="inventory-tile vendor-tile ${index === safeIndex ? "selected" : ""} ${this.getItemRarity(itemId)}"
+        data-action="vendor-select"
+        data-index="${index}"
+        data-tooltip="${this.escapeTooltip(this.getItemTooltip(itemId, { includeCompare: true, includeValue: true }))}"
+      >
+        <span class="inventory-tile-rarity">${this.getItemRarity(itemId)}</span>
+        <span class="inventory-tile-price">${ITEMS[itemId].value}g</span>
+        ${this.renderItemIcon(itemId)}
+        <span class="inventory-tile-name">${ITEMS[itemId].name}</span>
       </button>
     `).join("");
 
@@ -1361,7 +1388,9 @@ export class Game {
             <h3>Vendor Stock</h3>
             <span class="muted">${vendor.stock.length} item${vendor.stock.length === 1 ? "" : "s"}</span>
           </div>
-          ${vendorList || "<p>No items for sale.</p>"}
+          <div class="inventory-grid vendor-grid">
+            ${vendorList || "<p>No items for sale.</p>"}
+          </div>
         </div>
         <div class="compare-detail-pane">
           ${detail}
@@ -1628,6 +1657,22 @@ export class Game {
     const derived = this.getPlayerCombatSnapshot();
     const rng = createRng(hashSeed(this.state.run.turn, enemy.id, mode));
     const hitChance = clamp(template.accuracy - derived.evasion, 10, 95);
+    if (mode === "spell" || mode === "abyssal_bolt") {
+      const projectileKind = mode === "abyssal_bolt"
+        ? "abyssal_bolt"
+        : enemy.templateId === "shaman"
+          ? "hexfire"
+          : enemy.templateId === "cultist"
+            ? "shadow_bolt"
+            : enemy.templateId === "infernal_imp"
+              ? "cinder_hex"
+              : "shadow_bolt";
+      this.renderer?.queueProjectile({
+        kind: projectileKind,
+        from: { x: enemy.x, y: enemy.y },
+        to: { x: player.x, y: player.y },
+      });
+    }
     if (!rng.chance(hitChance / 100)) {
       this.log(`${enemy.name} misses you.`);
       return;
