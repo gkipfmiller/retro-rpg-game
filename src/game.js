@@ -340,9 +340,10 @@ export class Game {
     if (existing) {
       existing.turns = Math.max(existing.turns, status.turns);
       existing.value = Math.max(existing.value ?? 0, status.value ?? 0);
+      existing.fresh = true;
       return;
     }
-    entity.statuses.push(status);
+    entity.statuses.push({ ...status, fresh: true });
   }
 
   getPlayerCombatSnapshot() {
@@ -824,7 +825,7 @@ export class Game {
       player.mana -= cost;
       if (freeUtility) player.turnFlags.freeUtilityUsed = true;
       player.statuses = player.statuses.filter((status) => status.id !== "arcane_shield");
-      player.statuses.push({ id: "arcane_shield", turns: 3 });
+      player.statuses.push({ id: "arcane_shield", turns: 3, fresh: true });
       this.log("Arcane Shield surrounds you.");
       this.endPlayerTurn();
       return;
@@ -952,6 +953,7 @@ export class Game {
   interact() {
     const { player, currentFloor } = this.state.run;
     const tile = currentFloor.map[player.y][player.x];
+    const bossAlive = currentFloor.enemies.some((enemy) => ENEMIES[enemy.templateId]?.behavior === "boss");
     if (tile.stairs) {
       this.descend();
       return;
@@ -959,6 +961,10 @@ export class Game {
 
     const chest = currentFloor.chests.find((entry) => entry.x === player.x && entry.y === player.y);
     if (chest && !chest.opened) {
+      if (bossAlive) {
+        this.log("A boss still guards this reward.");
+        return;
+      }
       chest.opened = true;
       currentFloor.map[player.y][player.x].chestId = null;
       player.gold += chest.gold;
@@ -1366,7 +1372,7 @@ export class Game {
     const player = this.state.run.player;
     const previousPlayerStatuses = [...player.statuses];
     player.statuses = player.statuses
-      .map((status) => ({ ...status, turns: status.turns - 1 }))
+      .map((status) => status.fresh ? { ...status, fresh: false } : { ...status, turns: status.turns - 1 })
       .filter((status) => status.turns > 0);
     for (const status of previousPlayerStatuses) {
       if (!player.statuses.some((entry) => entry.id === status.id)) {
@@ -1376,7 +1382,7 @@ export class Game {
     for (const enemy of this.state.run.currentFloor.enemies) {
       const previousStatuses = [...enemy.statuses];
       enemy.statuses = enemy.statuses
-        .map((status) => ({ ...status, turns: status.turns - 1 }))
+        .map((status) => status.fresh ? { ...status, fresh: false } : { ...status, turns: status.turns - 1 })
         .filter((status) => status.turns > 0);
       if (this.state.run.currentTargetId === enemy.id) {
         for (const status of previousStatuses) {

@@ -584,12 +584,13 @@ export function generateFinalBossFloor(runSeed, floorNumber, playerClass) {
   map[boss.y][boss.x].occupant = boss.id;
 
   const rewardItem = rng.pick([...FINAL_BOSS_REWARDS[playerClass], ...FINAL_BOSS_REWARDS.neutral]);
+  const bonusRewardPool = CHEST_TABLE.endgame.filter((itemId) => itemId !== rewardItem);
   const rewardChest = {
     id: "final-boss-reward",
     x: 31,
     y: 12,
     opened: false,
-    loot: [rewardItem, rng.pick(CHEST_TABLE.endgame)],
+    loot: [rewardItem, rng.pick(bonusRewardPool.length ? bonusRewardPool : CHEST_TABLE.endgame)],
     gold: rng.int(80, 120),
   };
   map[rewardChest.y][rewardChest.x].chestId = rewardChest.id;
