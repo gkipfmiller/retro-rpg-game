@@ -1,0 +1,113 @@
+import { Game } from "./game.js";
+import { Renderer } from "./render.js";
+import { loadAssets } from "./assets.js";
+
+const game = new Game();
+const renderer = new Renderer(game);
+game.attachRenderer(renderer);
+
+const screens = {
+  menu: document.getElementById("menu-screen"),
+  class: document.getElementById("class-screen"),
+  game: document.getElementById("game-screen"),
+};
+
+function syncScreens() {
+  Object.values(screens).forEach((screen) => screen.classList.remove("visible"));
+  if (game.state.mode === "menu") screens.menu.classList.add("visible");
+  else if (game.state.mode === "class") screens.class.classList.add("visible");
+  else screens.game.classList.add("visible");
+  renderer.render();
+}
+
+function refresh() {
+  syncScreens();
+  renderer.render();
+}
+
+function frame() {
+  renderer.render();
+  window.requestAnimationFrame(frame);
+}
+
+document.getElementById("new-run-button").addEventListener("click", () => {
+  game.setMode("class");
+  refresh();
+});
+
+document.getElementById("class-back-button").addEventListener("click", () => {
+  game.setMode("menu");
+  refresh();
+});
+
+document.getElementById("how-to-play-button").addEventListener("click", () => {
+  document.getElementById("how-to-play").classList.toggle("hidden");
+});
+
+for (const card of document.querySelectorAll(".class-card")) {
+  card.addEventListener("click", () => {
+    game.startRun(card.dataset.classId);
+    refresh();
+  });
+}
+
+document.getElementById("quick-slot-1").addEventListener("click", () => { game.useQuickSlot(0); refresh(); });
+document.getElementById("quick-slot-2").addEventListener("click", () => { game.useQuickSlot(1); refresh(); });
+document.getElementById("quick-slot-3").addEventListener("click", () => { game.useQuickSlot(2); refresh(); });
+document.getElementById("overlay-close-button").addEventListener("click", () => {
+  game.closeOverlay();
+  refresh();
+});
+
+document.getElementById("overlay-content").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-action]");
+  if (!button) return;
+  game.handleOverlayAction(button.dataset.action, button.dataset);
+  refresh();
+});
+
+window.addEventListener("keydown", (event) => {
+  if (game.state.mode !== "in_game") return;
+  if (game.state.ui.overlay) {
+    if (event.key === "Escape") {
+      game.closeOverlay();
+      refresh();
+    }
+    return;
+  }
+
+  const key = event.key.toLowerCase();
+  if (["arrowup", "arrowdown", "arrowleft", "arrowright", " ", "enter"].includes(key)) {
+    event.preventDefault();
+  }
+  if (key === "arrowup" || key === "w") game.movePlayer(0, -1);
+  else if (key === "arrowdown" || key === "s") game.movePlayer(0, 1);
+  else if (key === "arrowleft" || key === "a") game.movePlayer(-1, 0);
+  else if (key === "arrowright" || key === "d") game.movePlayer(1, 0);
+  else if (key === " ") {
+    game.state.run.player.lastAction = "wait";
+    game.log("You wait and listen.");
+    game.endPlayerTurn();
+  } else if (key === "enter") {
+    game.interact();
+  } else if (key === "i") {
+    game.openInventory();
+  } else if (key === "c") {
+    game.openCharacter();
+  } else if (key === "k") {
+    game.openSkills();
+  } else if (key === "1") {
+    game.useQuickSlot(0);
+  } else if (key === "2") {
+    game.useQuickSlot(1);
+  } else if (key === "3") {
+    game.useQuickSlot(2);
+  }
+  refresh();
+});
+
+loadAssets().then((assets) => {
+  renderer.setAssets(assets);
+  refresh();
+  window.requestAnimationFrame(frame);
+});

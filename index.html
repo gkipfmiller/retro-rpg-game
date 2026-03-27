@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Retro RPG Adventure</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <section id="menu-screen" class="screen visible">
+        <div class="panel hero-panel">
+          <p class="eyebrow">Milestone 3 Slice</p>
+          <h1>Retro RPG Adventure</h1>
+          <p class="subtitle">
+            Turn-based roguelike dungeon crawl through 20 procedural dungeon floors with class builds, vendors, loot, and permadeath.
+          </p>
+          <div class="menu-actions">
+            <button id="new-run-button" class="primary">New Run</button>
+            <button id="how-to-play-button">How to Play</button>
+          </div>
+          <div id="how-to-play" class="hint-card hidden">
+            <p><strong>Move:</strong> Arrow keys or WASD</p>
+            <p><strong>Wait:</strong> Space</p>
+            <p><strong>Inventory:</strong> I</p>
+            <p><strong>Character:</strong> C</p>
+            <p><strong>Skills:</strong> K</p>
+            <p><strong>Quick Slots:</strong> Manage from Character screen</p>
+            <p><strong>Use quick slots:</strong> 1-3</p>
+            <p><strong>Interact:</strong> Enter on stairs or vendor</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="class-screen" class="screen">
+        <div class="panel class-select-panel">
+          <h2>Choose Your Class</h2>
+          <div class="class-grid">
+            <button class="class-card" data-class-id="warrior">
+              <span class="class-icon">W</span>
+              <strong>Warrior</strong>
+              <span>High HP, melee damage, heavier armor.</span>
+            </button>
+            <button class="class-card" data-class-id="wizard">
+              <span class="class-icon">Z</span>
+              <strong>Wizard</strong>
+              <span>Low HP, high mana, ranged spellcasting.</span>
+            </button>
+          </div>
+          <button id="class-back-button">Back</button>
+        </div>
+      </section>
+
+      <section id="game-screen" class="screen">
+        <div id="critical-flash" class="critical-flash hidden"></div>
+        <aside class="sidebar left">
+          <div class="panel hud-block">
+            <div class="hud-row">
+              <span id="hud-class">Class</span>
+              <span id="hud-floor">Floor 1</span>
+            </div>
+            <div class="hud-row">
+              <span id="hud-level">Level 1</span>
+              <span id="hud-gold">0g</span>
+            </div>
+            <div id="hud-hp-group" class="meter-group">
+              <label>HP</label>
+              <div class="meter"><div id="hud-hp-bar" class="meter-fill hp"></div></div>
+              <span id="hud-hp-text"></span>
+            </div>
+            <div class="meter-group">
+              <label>Mana</label>
+              <div class="meter"><div id="hud-mana-bar" class="meter-fill mana"></div></div>
+              <span id="hud-mana-text"></span>
+            </div>
+            <div class="meter-group">
+              <label>XP</label>
+              <div class="meter"><div id="hud-xp-bar" class="meter-fill xp"></div></div>
+              <span id="hud-xp-text"></span>
+            </div>
+          </div>
+
+          <div class="panel hud-block">
+            <h3>Equipment</h3>
+            <p id="hud-weapon"></p>
+            <p id="hud-armor"></p>
+            <p id="hud-accessory"></p>
+          </div>
+
+          <div class="panel hud-block">
+            <h3>Quick Slots</h3>
+            <button id="quick-slot-1" class="quick-button"></button>
+            <button id="quick-slot-2" class="quick-button"></button>
+            <button id="quick-slot-3" class="quick-button"></button>
+          </div>
+        </aside>
+
+        <main class="play-area">
+          <div class="panel canvas-panel">
+            <canvas id="game-canvas" width="768" height="576"></canvas>
+          </div>
+          <div class="panel log-panel">
+            <div id="combat-log"></div>
+            <div class="control-strip">
+              <span>Move: WASD / Arrows</span>
+              <span>Wait: Space</span>
+              <span>Menus: I C K</span>
+            </div>
+          </div>
+        </main>
+
+        <aside class="sidebar right">
+          <div class="panel hud-block">
+            <h3>Target</h3>
+            <div id="target-panel">
+              <p>No target</p>
+            </div>
+          </div>
+          <div class="panel hud-block">
+            <h3>Stats</h3>
+            <p id="hud-strength"></p>
+            <p id="hud-dexterity"></p>
+            <p id="hud-vitality"></p>
+            <p id="hud-intelligence"></p>
+            <p id="hud-defense"></p>
+            <p id="hud-power"></p>
+          </div>
+        </aside>
+
+        <div id="overlay" class="overlay hidden">
+          <div class="panel overlay-panel">
+            <div class="overlay-header">
+              <h2 id="overlay-title"></h2>
+              <button id="overlay-close-button">Close</button>
+            </div>
+            <div id="overlay-content"></div>
+          </div>
+        </div>
+
+        <div id="transition-banner" class="transition-banner hidden"></div>
+      </section>
+    </div>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
