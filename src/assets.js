@@ -48,9 +48,9 @@ const assetManifest = {
     empty: `${BASE}/ui_heart_empty.png`,
   },
   traps: {
-    spikes: `${BASE}/floor_spikes_anim_f1.png`,
+    spikes: `${BASE}/floor_spikes_anim_f3.png`,
     darts: `${BASE}/bomb_f2.png`,
-    fire: `${BASE}/bomb_f1.png`,
+    fire: `${BASE}/bomb_f0.png`,
     curse: `${BASE}/skull.png`,
     alarm: `${BASE}/lever_right.png`,
   },

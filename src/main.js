@@ -9,6 +9,7 @@ game.attachRenderer(renderer);
 const screens = {
   menu: document.getElementById("menu-screen"),
   class: document.getElementById("class-screen"),
+  scores: document.getElementById("scores-screen"),
   game: document.getElementById("game-screen"),
 };
 const tooltip = document.getElementById("ui-tooltip");
@@ -39,11 +40,15 @@ function syncScreens() {
   Object.values(screens).forEach((screen) => screen.classList.remove("visible"));
   if (game.state.mode === "menu") screens.menu.classList.add("visible");
   else if (game.state.mode === "class") screens.class.classList.add("visible");
+  else if (game.state.mode === "scores") screens.scores.classList.add("visible");
   else screens.game.classList.add("visible");
   renderer.render();
 }
 
 function refresh() {
+  if (game.state.mode === "scores") {
+    document.getElementById("high-scores-content").innerHTML = game.renderHighScoreList(12);
+  }
   syncScreens();
   renderer.render();
 }
@@ -66,8 +71,18 @@ document.getElementById("class-back-button").addEventListener("click", () => {
   refresh();
 });
 
+document.getElementById("scores-back-button").addEventListener("click", () => {
+  game.setMode("menu");
+  refresh();
+});
+
 document.getElementById("how-to-play-button").addEventListener("click", () => {
   document.getElementById("how-to-play").classList.toggle("hidden");
+});
+
+document.getElementById("high-scores-button").addEventListener("click", () => {
+  game.openHighScores();
+  refresh();
 });
 
 for (const card of document.querySelectorAll(".class-card")) {
@@ -88,7 +103,12 @@ document.getElementById("overlay-close-button").addEventListener("click", () => 
 document.getElementById("overlay-content").addEventListener("click", (event) => {
   const button = event.target.closest("button[data-action]");
   if (!button) return;
-  game.handleOverlayAction(button.dataset.action, button.dataset);
+  const payload = { ...button.dataset };
+  if (payload.action === "save-score") {
+    const input = document.getElementById("score-name-input");
+    payload.playerName = input?.value ?? "";
+  }
+  game.handleOverlayAction(button.dataset.action, payload);
   refresh();
 });
 

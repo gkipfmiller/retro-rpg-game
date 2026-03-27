@@ -56,6 +56,23 @@ function getStatusColor(statusId) {
   }
 }
 
+function getTrapColor(trapId) {
+  switch (trapId) {
+    case "spikes":
+      return "#b8c6d8";
+    case "darts":
+      return "#d7a54d";
+    case "fire":
+      return "#ff7a47";
+    case "curse":
+      return "#b48cff";
+    case "alarm":
+      return "#f0d37a";
+    default:
+      return "#cf5f5f";
+  }
+}
+
 function renderStatusBadges(statuses = []) {
   if (!statuses.length) return `<span class="status-badge muted-badge">None</span>`;
   return statuses.map((status) => {
@@ -206,6 +223,15 @@ export class Renderer {
         if (tile.visible && trap?.revealed) {
           const trapSpritePath = getTrapSprite(this.assets?.manifest, getTrapPickupSpriteId(trap));
           const trapSprite = trapSpritePath ? this.assets?.images[trapSpritePath] : null;
+          ctx.save();
+          ctx.globalAlpha = 0.28;
+          ctx.fillStyle = getTrapColor(trap.templateId);
+          ctx.fillRect(px + Math.floor(tileSize * 0.12), py + Math.floor(tileSize * 0.12), Math.floor(tileSize * 0.76), Math.floor(tileSize * 0.76));
+          ctx.globalAlpha = 0.9;
+          ctx.strokeStyle = getTrapColor(trap.templateId);
+          ctx.lineWidth = Math.max(1, Math.floor(tileSize * 0.06));
+          ctx.strokeRect(px + Math.floor(tileSize * 0.14), py + Math.floor(tileSize * 0.14), Math.floor(tileSize * 0.72), Math.floor(tileSize * 0.72));
+          ctx.restore();
           if (trapSprite) this.drawSprite(trapSprite, px, py, tileSize, tileSize, 1.1);
           else drawText(ctx, TRAPS[trap.templateId].glyph, px + Math.floor(tileSize * 0.24), py + Math.floor(tileSize * 0.72), COLORS.trap, Math.max(11, tileSize - 5));
         }

@@ -104,6 +104,12 @@ export class Game {
       logs: ["Begin a new run to enter the dungeon."],
     };
     this.renderer = null;
+    this.highScoreStorageKey = "dungeon30_high_scores";
+    this.blockedNameTerms = [
+      "fuck", "shit", "bitch", "cunt", "nigger", "nigga", "fag", "faggot", "slut",
+      "whore", "asshole", "motherfucker", "dick", "cock", "pussy", "penis", "vagina",
+      "rape", "rapist", "cum", "jizz", "tits",
+    ];
   }
 
   attachRenderer(renderer) {
@@ -116,6 +122,154 @@ export class Game {
 
   log(message) {
     this.state.logs.push(message);
+  }
+
+  normalizePlayerName(name) {
+    return String(name ?? "")
+      .trim()
+      .replace(/\s+/g, " ")
+      .slice(0, 18);
+  }
+
+  containsBlockedNameTerm(name) {
+    const normalized = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+    return this.blockedNameTerms.some((term) => normalized.includes(term));
+  }
+
+  getHighScores() {
+    try {
+      const raw = window.localStorage.getItem(this.highScoreStorageKey);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  setHighScores(entries) {
+    try {
+      window.localStorage.setItem(this.highScoreStorageKey, JSON.stringify(entries));
+    } catch {
+      // Ignore storage failures and keep the run playable.
+    }
+  }
+
+  calculateRunScore(run, result) {
+    const victoryBonus = result === "victory" ? 1500 : 0;
+    return (run.floorNumber * 120)
+      + (run.player.level * 90)
+      + (run.runStats.kills * 12)
+      + run.player.gold
+      + victoryBonus;
+  }
+
+  renderHighScoreList(limit = 10) {
+    const scores = this.getHighScores().slice(0, limit);
+    if (!scores.length) {
+      return "<p class=\"muted\">No delvers recorded yet.</p>";
+    }
+    return `
+      <div class="scoreboard">
+        ${scores.map((entry, index) => `
+          <div class="score-row">
+            <div>
+              <strong>#${index + 1} ${entry.name}</strong>
+              <p class="muted">${entry.result === "victory" ? "Dungeon Cleared" : `Killed by ${entry.cause}`}</p>
+            </div>
+            <div class="score-meta">
+              <span>${entry.score} pts</span>
+              <span>F${entry.floor}</span>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  buildRunSummary(run, cause, result) {
+    return {
+      score: this.calculateRunScore(run, result),
+      floor: run.floorNumber,
+      level: run.player.level,
+      kills: run.runStats.kills,
+      gold: run.player.gold,
+      turns: run.turn,
+      className: CLASSES[run.player.classId].name,
+      cause,
+      result,
+    };
+  }
+
+  saveHighScore(playerName, summary) {
+    const normalizedName = this.normalizePlayerName(playerName);
+    if (normalizedName.length < 2) {
+      return { ok: false, error: "Enter a name with at least 2 characters." };
+    }
+    if (this.containsBlockedNameTerm(normalizedName)) {
+      return { ok: false, error: "That name is not allowed. Choose something else." };
+    }
+    const nextScores = [
+      {
+        name: normalizedName,
+        score: summary.score,
+        floor: summary.floor,
+        level: summary.level,
+        kills: summary.kills,
+        gold: summary.gold,
+        turns: summary.turns,
+        className: summary.className,
+        cause: summary.cause,
+        result: summary.result,
+        recordedAt: new Date().toISOString(),
+      },
+      ...this.getHighScores(),
+    ]
+      .sort((a, b) => b.score - a.score || b.floor - a.floor || b.kills - a.kills)
+      .slice(0, 20);
+    this.setHighScores(nextScores);
+    return { ok: true, name: normalizedName };
+  }
+
+  renderScoreSaveSection(summary, options = {}) {
+    const { feedback = "", feedbackTone = "muted", savedName = "" } = options;
+    return `
+      <div class="detail-card score-save-card">
+        <div class="detail-header">
+          <div>
+            <span class="section-kicker">High Score</span>
+            <h3>Record This Run</h3>
+          </div>
+          <div class="detail-price">${summary.score} pts</div>
+        </div>
+        <div class="detail-list">
+          <div>Floor: <strong>${summary.floor}</strong></div>
+          <div>Level: <strong>${summary.level}</strong></div>
+          <div>Kills: <strong>${summary.kills}</strong></div>
+          <div>Gold: <strong>${summary.gold}</strong></div>
+          <div>Cause: <strong>${summary.cause}</strong></div>
+          <div>Class: <strong>${summary.className}</strong></div>
+        </div>
+        <div class="score-save-row">
+          <input id="score-name-input" class="score-name-input" type="text" maxlength="18" placeholder="Enter your name" value="${savedName ? this.escapeTooltip(savedName).replaceAll("&#10;", "") : ""}">
+          <button class="primary" data-action="save-score">Save Score</button>
+        </div>
+        ${feedback ? `<p class="${feedbackTone}">${feedback}</p>` : `<p class="muted">Names with vulgar language are blocked.</p>`}
+      </div>
+      <div class="detail-card">
+        <div class="detail-header">
+          <div>
+            <span class="section-kicker">Leaderboard</span>
+            <h3>Top Delvers</h3>
+          </div>
+        </div>
+        ${this.renderHighScoreList(8)}
+      </div>
+    `;
+  }
+
+  openHighScores() {
+    this.state.mode = "scores";
+    this.state.ui.overlay = null;
   }
 
   getXpForLevel(level) {
@@ -1747,6 +1901,7 @@ export class Game {
 
   handleDeath(message) {
     this.log(message);
+    const summary = this.buildRunSummary(this.state.run, message.replace(/^Slain by /, "").replace(/^Killed by /, ""), "death");
     this.state.mode = "in_game";
     this.state.ui.overlay = {
       type: "death",
@@ -1758,6 +1913,7 @@ export class Game {
         <p>Level reached: <strong>${this.state.run.player.level}</strong></p>
         <p>Enemies defeated: <strong>${this.state.run.runStats.kills}</strong></p>
         <p>Every run resets from Floor 1.</p>
+        ${this.renderScoreSaveSection(summary)}
         <button data-action="new-run-from-death">Start New Run</button>
         <button data-action="main-menu">Main Menu</button>
       `,
@@ -1774,6 +1930,7 @@ export class Game {
     const victoryFooter = floorNumber >= 30
       ? "One run. No checkpoints. Full clear."
       : "The full Floor 30 final-boss run is still reserved for Milestone 3.";
+    const summary = this.buildRunSummary(this.state.run, floorNumber >= 30 ? "Dungeon Cleared" : `Reached Floor ${floorNumber}`, "victory");
     this.state.ui.overlay = {
       type: "victory",
       dismissible: false,
@@ -1791,6 +1948,7 @@ export class Game {
           <div>Max floor reached: <strong>${floorNumber}</strong></div>
         </div>
         <p>${victoryFooter}</p>
+        ${this.renderScoreSaveSection(summary)}
         <button data-action="new-run-from-death">Start New Run</button>
         <button data-action="main-menu">Main Menu</button>
       `,
@@ -1841,6 +1999,122 @@ export class Game {
         this.state.ui.overlay = null;
         this.state.logs = ["Begin a new run to enter the dungeon."];
         break;
+      case "save-score": {
+        if (!this.state.run) break;
+        const overlayType = this.state.ui.overlay?.type;
+        const result = overlayType === "victory" ? "victory" : "death";
+        const cause = result === "victory"
+          ? (this.state.run.floorNumber >= 30 ? "Dungeon Cleared" : `Reached Floor ${this.state.run.floorNumber}`)
+          : (this.state.logs[this.state.logs.length - 1] ?? "Unknown");
+        const summary = this.buildRunSummary(this.state.run, cause.replace(/^Slain by /, "").replace(/^Killed by /, ""), result);
+        const saveResult = this.saveHighScore(payload.playerName, summary);
+        if (saveResult.ok) {
+          const message = result === "victory"
+            ? (this.state.run.floorNumber >= 30
+              ? "The Abyssal Overlord is slain. The dungeon finally falls silent."
+              : `You reached Floor ${this.state.run.floorNumber} and cleared the current Milestone 2 build.`)
+            : this.state.logs[this.state.logs.length - 1];
+          if (result === "victory") {
+            const { player, floorNumber, runStats, turn } = this.state.run;
+            const unlockedSkills = player.unlockedSkills.length;
+            const learnedSpells = player.learnedSpells.filter((spellId) => SPELLS[spellId]).length;
+            const victoryFooter = floorNumber >= 30
+              ? "One run. No checkpoints. Full clear."
+              : "The full Floor 30 final-boss run is still reserved for Milestone 3.";
+            this.state.ui.overlay = {
+              type: "victory",
+              dismissible: false,
+              title: floorNumber >= 30 ? "Dungeon Cleared" : "Milestone 2 Clear",
+              html: `
+                <p>${message}</p>
+                <div class="detail-list">
+                  <div>Class: <strong>${CLASSES[player.classId].name}</strong></div>
+                  <div>Level: <strong>${player.level}</strong></div>
+                  <div>Enemies defeated: <strong>${runStats.kills}</strong></div>
+                  <div>Gold carried: <strong>${player.gold}</strong></div>
+                  <div>Skills unlocked: <strong>${unlockedSkills}</strong></div>
+                  <div>Spells learned: <strong>${learnedSpells}</strong></div>
+                  <div>Turns taken: <strong>${turn}</strong></div>
+                  <div>Max floor reached: <strong>${floorNumber}</strong></div>
+                </div>
+                <p>${victoryFooter}</p>
+                ${this.renderScoreSaveSection(summary, { savedName: saveResult.name, feedback: "Score saved.", feedbackTone: "positive" })}
+                <button data-action="new-run-from-death">Start New Run</button>
+                <button data-action="main-menu">Main Menu</button>
+              `,
+            };
+          } else {
+            this.state.ui.overlay = {
+              type: "death",
+              dismissible: false,
+              title: "You Died",
+              html: `
+                <p>${message}</p>
+                <p>Floor reached: <strong>${this.state.run.floorNumber}</strong></p>
+                <p>Level reached: <strong>${this.state.run.player.level}</strong></p>
+                <p>Enemies defeated: <strong>${this.state.run.runStats.kills}</strong></p>
+                <p>Every run resets from Floor 1.</p>
+                ${this.renderScoreSaveSection(summary, { savedName: saveResult.name, feedback: "Score saved.", feedbackTone: "positive" })}
+                <button data-action="new-run-from-death">Start New Run</button>
+                <button data-action="main-menu">Main Menu</button>
+              `,
+            };
+          }
+        } else {
+          const message = result === "victory"
+            ? (this.state.run.floorNumber >= 30
+              ? "The Abyssal Overlord is slain. The dungeon finally falls silent."
+              : `You reached Floor ${this.state.run.floorNumber} and cleared the current Milestone 2 build.`)
+            : this.state.logs[this.state.logs.length - 1];
+          if (result === "victory") {
+            const { player, floorNumber, runStats, turn } = this.state.run;
+            const unlockedSkills = player.unlockedSkills.length;
+            const learnedSpells = player.learnedSpells.filter((spellId) => SPELLS[spellId]).length;
+            const victoryFooter = floorNumber >= 30
+              ? "One run. No checkpoints. Full clear."
+              : "The full Floor 30 final-boss run is still reserved for Milestone 3.";
+            this.state.ui.overlay = {
+              type: "victory",
+              dismissible: false,
+              title: floorNumber >= 30 ? "Dungeon Cleared" : "Milestone 2 Clear",
+              html: `
+                <p>${message}</p>
+                <div class="detail-list">
+                  <div>Class: <strong>${CLASSES[player.classId].name}</strong></div>
+                  <div>Level: <strong>${player.level}</strong></div>
+                  <div>Enemies defeated: <strong>${runStats.kills}</strong></div>
+                  <div>Gold carried: <strong>${player.gold}</strong></div>
+                  <div>Skills unlocked: <strong>${unlockedSkills}</strong></div>
+                  <div>Spells learned: <strong>${learnedSpells}</strong></div>
+                  <div>Turns taken: <strong>${turn}</strong></div>
+                  <div>Max floor reached: <strong>${floorNumber}</strong></div>
+                </div>
+                <p>${victoryFooter}</p>
+                ${this.renderScoreSaveSection(summary, { savedName: this.normalizePlayerName(payload.playerName), feedback: saveResult.error, feedbackTone: "negative" })}
+                <button data-action="new-run-from-death">Start New Run</button>
+                <button data-action="main-menu">Main Menu</button>
+              `,
+            };
+          } else {
+            this.state.ui.overlay = {
+              type: "death",
+              dismissible: false,
+              title: "You Died",
+              html: `
+                <p>${message}</p>
+                <p>Floor reached: <strong>${this.state.run.floorNumber}</strong></p>
+                <p>Level reached: <strong>${this.state.run.player.level}</strong></p>
+                <p>Enemies defeated: <strong>${this.state.run.runStats.kills}</strong></p>
+                <p>Every run resets from Floor 1.</p>
+                ${this.renderScoreSaveSection(summary, { savedName: this.normalizePlayerName(payload.playerName), feedback: saveResult.error, feedbackTone: "negative" })}
+                <button data-action="new-run-from-death">Start New Run</button>
+                <button data-action="main-menu">Main Menu</button>
+              `,
+            };
+          }
+        }
+        break;
+      }
       default:
         break;
     }

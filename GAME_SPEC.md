@@ -4,37 +4,91 @@
 
 Dungeon 30: The Abyssal Throne is a single-player, turn-based, retro pixel-art roguelike RPG.
 
-The player chooses a class and attempts a full dungeon run from Floor 1 to Floor 30. Death is permanent for the current run. A new run always restarts on Floor 1 with a newly generated dungeon.
+The player chooses one of two named delvers, descends from Floor 1 to Floor 30, and attempts to defeat the Abyssal Overlord on the final floor. Death is permanent for the current run. A new run always starts over on Floor 1 with a newly generated dungeon and no persistent power carried over.
 
 Current project status:
 - Milestone 1: complete
-- Milestone 2: complete as a polished vertical slice through Floor 20
-- Milestone 3: in active endgame polish
+- Milestone 2: complete
+- Milestone 3: playable end-to-end, with ongoing balance and polish
+
+## Current Title and Branding
+
+Current title:
+- Dungeon 30: The Abyssal Throne
+
+Current menu structure:
+- New Run
+- How to Play
+- High Scores
 
 ## Core Run Structure
 
 - One run starts on Floor 1
-- Floors are procedurally generated
-- Death ends the run immediately
+- Floors are procedurally generated from a seeded run
+- Death immediately ends the run
+- Victory requires clearing Floor 30
 - No permanent progression carries between runs
-- The game now scaffolds a full run through Floor 30
-- Floors 21-29 and the Floor 30 boss path are implemented
-- Endgame enemies, endgame rewards, and a phased final boss are now live
+- The full Floor 1-30 path is implemented
+
+Current run-end support:
+- death overlay
+- victory overlay
+- local high score entry
+- local high score leaderboard
+
+## Playable Delvers
+
+The game still uses two classes internally, but the class-select screen now presents them as named characters.
+
+### Garrick Ironhand
+
+Role:
+- Warrior
+
+Flavor:
+- A scarred sellsword who survives by breaking shields, holding chokepoints, and outlasting whatever lurks below.
+
+Strengths:
+- high HP
+- strong melee damage
+- heavier armor scaling
+- stable front-line play
+
+Weaknesses:
+- poor ranged pressure
+- low mana growth
+- limited spell utility
+
+### Malric Ashveil
+
+Role:
+- Wizard
+
+Flavor:
+- An arcane scholar of the underdeep who wins with distance, control, and precise bursts of destructive magic.
+
+Strengths:
+- high mana
+- ranged spellcasting
+- control and reposition tools
+- stronger class-level spell scaling
+
+Weaknesses:
+- low HP
+- weaker armor
+- punished hard when cornered
 
 ## Class Design
 
 ### Warrior
 
-Role:
-- durable melee front-liner
-
 Identity:
-- high HP growth
+- durable melee front-liner
 - strong melee scaling
-- low mana growth
 - active-ability driven combat
+- low mana growth
 
-Implemented starting kit:
+Starting kit:
 - Rusty Sword
 - Leather Armor
 - Healing Potion
@@ -51,16 +105,13 @@ Implemented Warrior build traits:
 
 ### Wizard
 
-Role:
-- fragile ranged spellcaster
-
 Identity:
-- lower HP growth
+- fragile ranged spellcaster
 - strong mana growth
-- high spell scaling
+- offensive spell scaling
 - utility and control tools
 
-Implemented starting kit:
+Starting kit:
 - Apprentice Staff
 - Cloth Robe
 - Mana Potion
@@ -70,6 +121,8 @@ Implemented starting kit:
 - Arcane Shield
 
 Implemented Wizard build traits:
+- class-level spell damage bonus
+- class-level flat spell power bonus
 - spell damage scaling
 - spell accuracy scaling
 - longer control effects
@@ -95,10 +148,10 @@ Current XP thresholds:
 - Level 9: 5300
 - Level 10: 7000
 
-Target pacing:
+Current pacing targets:
 - around Level 4 by Floor 10
 - around Level 8 by Floor 20
-- Level 10 reserved for the full late game
+- Level 10 reserved for the late game
 
 ## Combat Model
 
@@ -117,9 +170,9 @@ Player actions:
 - interact
 - wait
 
-## Current Spells and Abilities
+## Spells and Abilities
 
-### Warrior
+### Warrior abilities
 
 - Power Strike
   - cheap melee burst
@@ -130,7 +183,7 @@ Player actions:
   - melee strike
   - applies Sundered
 
-### Wizard
+### Wizard spells
 
 - Magic Missile
   - reliable low-cost ranged damage
@@ -149,6 +202,25 @@ Player actions:
   - heavier single-target burst
   - applies Weakened
 
+## Projectile Spell Presentation
+
+Projectile-style spells now use visible travel animations instead of resolving invisibly.
+
+Implemented projectile animation coverage:
+- Magic Missile
+- Frost Shard
+- Arcane Burst
+- Cultist Shadow Bolt
+- Shaman Hexfire
+- Infernal Imp Cinder Hex
+- Abyssal Bolt
+
+Presentation rules:
+- projectiles travel across the grid
+- travel duration is intentionally slowed enough to read
+- spell misses still show the projectile
+- projectile colors differ by spell type
+
 ## Status Effects
 
 Implemented statuses:
@@ -159,16 +231,42 @@ Implemented statuses:
 - Weakened
   - reduces outgoing damage
 - Hexed
-  - reduces player defense
+  - reduces defense on the affected side
 - Arcane Shield
-  - temporary defensive state
+  - temporary defensive ward
 
-UX behavior:
-- status badges in HUD/target panels
+Status UX:
+- status badges in HUD and target panel
 - status pips above actors
-- status fade messages in combat log
+- hover tooltips for status badges
+- fade messages in the combat log
 
-## Equipment and Loot
+## Enemies and AI
+
+Current AI roles:
+- melee rush
+- skirmisher
+- blocker
+- ranged caster
+- boss behavior
+
+Detection rules:
+- enemies use sight-based aggro
+- alerted enemies pursue the player
+- casters attempt to keep useful range
+
+Current caster identity:
+- Cultist uses Shadow Bolt and can inflict Weakened
+- Orc Shaman uses Hexfire and can inflict Hexed
+- Infernal Imp applies chill pressure
+- Abyssal Overlord uses Abyssal Bolt in the final fight
+
+Recent AI tuning:
+- ranged enemies no longer kite as aggressively as earlier builds
+- Cultists and related casters were reduced in damage output
+- ranged enemies can stand and cast more often instead of endlessly retreating
+
+## Equipment and Itemization
 
 Implemented item categories:
 - weapons
@@ -177,39 +275,71 @@ Implemented item categories:
 - consumables
 - tomes
 
-Rarity presentation:
+Current rarity presentation:
 - common
 - uncommon
 - rare
 - boss
 
-Loot philosophy after Milestone 2 tuning:
-- fewer random enemy item drops
-- more meaningful chest rewards
-- more reliable floor pickups
-- stronger vendor moments
-- class-biased loot pools in midgame generation
+Current itemization direction:
+- broader low-level basic gear variety
+- additional midgame gear variety
+- enchanted weapons with explicit gameplay effects
+- endgame reward gear for both classes
 
-Current endgame reward additions:
-- enchanted endgame-tier Warrior weapons
-- enchanted endgame-tier Wizard weapons
-- late-game armor upgrades for both classes
-- Void Heart as a final-tier accessory
-- final reward chest after the Abyssal Overlord
+Implemented enchantment examples:
+- bonus hit damage
+- lifesteal
+- sunder chance
+- spell bonus damage
+- mana refund chance
+
+Enchantment UX:
+- shown in inventory detail
+- shown in vendor detail
+- affects gameplay directly in combat resolution
+
+## Loot Economy and Reward Rules
+
+Current loot philosophy:
+- less gear noise
+- fewer random gear drops from enemies
+- sustain items remain comparatively common
+- stronger chest moments
+- vendors matter more
+- selling excess gear no longer dominates run wealth as heavily
+
+Current sustain rules:
+- every floor start room now contains 1 Healing Potion and 1 Mana Potion
+- every spawned vendor always carries 1-3 regular Healing Potions
+- vendors may still also carry Greater Healing Potions and other stock
+
+Current drop direction:
+- potions are intentionally easier to find than gear
+- gear is meant to feel more meaningful and less constant
 
 ## Inventory and Vendor UX
 
 Implemented UX decisions:
-- inventory comparison pane
-- vendor comparison pane
-- item rarity/category badges
-- stat chip summaries
+- comparison pane for item details
 - equipped-versus-candidate comparison tables
-- sell values visible in shop
-- stacked inventory UI for duplicate items
-- stacked vendor sell list for duplicate items
+- stat chip summaries
+- rarity/category badges
+- hover tooltips for items, skills, quick slots, statuses, inventory rows, vendor rows, and sell rows
 
-Stacks are currently UI-only:
+Current inventory presentation:
+- icon-based grid layout
+- stack counts shown directly on tiles
+- stack grouping is UI-only
+- detail pane remains on the right
+
+Current vendor presentation:
+- icon-based stock grid
+- price badge on each vendor tile
+- detail/comparison pane on the right
+- stacked sell list for duplicate items
+
+Stacks remain UI-only:
 - underlying inventory still stores individual entries
 - using or selling from a stack consumes one underlying item
 
@@ -228,11 +358,32 @@ Implemented room types:
 - shrine
 - vendor
 
-Current encounter design rules:
+Encounter rules:
 - room type influences encounter pool
-- elite/trap/treasure rooms are prioritized for encounter placement
+- elite, trap, and treasure rooms are prioritized for encounter placement
 - vendor rooms are reserved before enemy placement
 - shrine rooms remain safe utility spaces
+
+## Trap Design and Readability
+
+Implemented trap types:
+- spikes
+- darts
+- fire
+- curse
+- alarm
+
+Current trap readability rules:
+- revealed traps use distinct tinting by trap type
+- revealed traps draw a hazard marker under the trap icon
+- trap visuals were remapped away from potion-like art where possible
+
+Trap color direction:
+- spikes: pale steel
+- darts: amber
+- fire: orange-red
+- curse: violet
+- alarm: gold
 
 ## Floors 1-10
 
@@ -244,56 +395,56 @@ Purpose:
 Implemented boss:
 - Bone Captain
 
-Floor 10 remains the Milestone 1 capstone encounter.
-
 ## Floors 11-20
 
 Purpose:
 - deepen builds
 - introduce stronger room identity
 - increase tactical pressure
-- serve as the Milestone 2 vertical slice
 
 Implemented additions:
-- new enemies
-- elite variants
-- shrine rooms
-- curse/alarm traps
-- stronger itemization
-- more structured encounter pools
-
-Current midgame enemy roster:
 - Orc Brute
 - Gloomblade
 - Dread Slime
 - Orc Shaman
 - Chort
+- shrine rooms
+- curse traps
+- alarm traps
+- stronger itemization
+- more structured encounter pools
+
+Milestone 2 tuning already applied:
+- encounter density eased
+- elite scaling softened
+- XP progression slowed
+- economy rebalanced toward better rewards, less clutter
 
 ## Floors 21-29
 
 Purpose:
-- create a distinct endgame band before the final boss
-- pressure Level 8-10 builds with more dangerous mixed encounters
-- improve late-run loot and vendor value
+- distinct endgame band before the final boss
+- pressure Level 8-10 builds with mixed late-game encounters
+- surface stronger rewards and vendors
 
 Implemented endgame enemy roster:
 - Infernal Imp
 - Void Stalker
 - Doom Ogre
 - Chort
-- selected late-game reused threats where needed
+- selected reused late threats where needed
 
 Implemented endgame tuning:
 - separate endgame encounter pools
-- softer late elite curve than the initial Milestone 3 scaffold
+- softer late elite curve than the first Milestone 3 scaffold
 - stronger late vendors and chest rewards
-- endgame-biased loot drops and item pools
+- endgame-biased loot pools
 
 ## Floor 30
 
 Purpose:
-- deliver a bespoke final-boss floor
-- gate full-run victory behind the Abyssal Overlord encounter
+- bespoke final boss floor
+- full-run victory gate
 
 Implemented Floor 30 structure:
 - entry room
@@ -308,37 +459,42 @@ Implemented final boss:
   - summons Infernal Imps
   - Abyssal Bolt ranged attack
   - melee cleave pressure
-  - clearer log telegraphs and target-panel phase labeling
+  - clearer combat log telegraphs
+  - target panel phase labeling
 
-Milestone 2 balance decisions:
-- deep-floor base enemy stats were softened
-- elite HP, damage, and accuracy scaling were reduced
-- Floors 15-20 encounter density was eased
-- loot economy was shifted toward chests, floor pickups, and vendors
+## Run-End and High Score System
 
-## Enemies and AI
+Implemented run-end support:
+- non-dismissible death overlay
+- non-dismissible victory overlay
+- name entry at the end of the run
+- score save to local browser storage
+- main-menu high score screen
 
-Current AI behaviors:
-- melee rush
-- skirmisher
-- blocker
-- ranged caster
-- boss behavior
+Stored fields per score:
+- player-entered name
+- score
+- floor reached
+- level
+- kills
+- gold
+- turns
+- class
+- cause of death or victory result
 
-Detection:
-- enemies use sight-based aggro
-- alerted enemies pursue the player
-- casters attempt to hold preferred range
+Current moderation rule:
+- vulgar/profane terms are blocked in submitted names
+- names are trimmed, normalized, and length-limited
 
-Enemy spell identity:
-- Cultist uses Shadow Bolt and can inflict Weakened
-- Orc Shaman uses Hexfire and can inflict Hexed
+Current score model:
+- based on floor progression, level, kills, gold, and victory bonus
 
 ## UI and Feedback
 
 Implemented screens:
 - Main Menu
 - Class Selection
+- High Scores
 - Gameplay HUD
 - Inventory
 - Character
@@ -346,28 +502,36 @@ Implemented screens:
 - Vendor
 - Quick Slot Loadout
 - Death Screen
+- Victory Screen
 - Floor Transition Banner
-- Floor 20 completion summary
 
 Implemented critical health feedback:
-- screen flash when entering critical HP
+- red screen flash when entering critical HP
 - persistent HP meter highlight below 20% HP
 
-Overlay behavior:
-- death and victory overlays are non-dismissible
+Other current UI details:
+- class select now uses animated class sprites
+- class select presents named delvers instead of generic class-only picks
+- death and victory overlays cannot be dismissed accidentally
 
 ## Art Direction
 
-Current build uses integrated pixel-art assets from the local asset pack:
+Current build uses local integrated pixel-art assets for:
 - player sprites
 - enemy sprites
+- vendor sprite
 - floor and wall tiles
 - chests
 - stairs
-- pickups
-- vendor
 - shrine
-- animated actor presentation
+- pickups
+- trap sprites
+
+Current visual polish layers:
+- animated actor sprites
+- fog-of-war rendering for both walls and floors
+- projectile spell visuals
+- improved trap hazard treatment
 
 ## Milestone Status
 
@@ -391,35 +555,45 @@ Completed:
 - Floors 11-20
 - expanded enemies and elite variants
 - expanded spells and tomes
-- encounter/room identity pass
+- encounter and room identity pass
 - XP progression rebalance
 - economy rebalance
 - class/build balance pass
-- inventory/vendor UX polish
+- inventory/vendor UX overhaul
 - status-effect polish
 - Floor 20 completion flow
-- final stabilization pass
+- stabilization pass
 
 ### Milestone 3
 
-In progress:
-- Floors 21-29 endgame encounter pools
+Playable and partially polished:
+- Floors 21-29
 - Floor 30 final boss floor
-- Abyssal Overlord phased boss encounter
-- endgame reward tier and final reward chest
-- full-run victory flow after Floor 30
+- Abyssal Overlord phased encounter
+- endgame reward tier
+- full-run victory flow
+- high score system
+- named class-select delvers
+- projectile spell presentation
 
-Still remaining:
-- final endgame balance pass based on real playthroughs
-- optional deeper boss telegraphs/visual effects
-- final biome/theme variation
-- ship-level polish and bug sweep
+## Remaining Work
 
-## Known Scope Boundary
+The current game is playable across Floors 1-30, but it still has a polish/balance tail.
 
-The current project has entered Milestone 3, and the full run is now playable, but the endgame still needs final tuning and release-quality polish.
+Main remaining work:
+- final endgame balance based on real playthroughs
+- additional boss polish and visual impact effects
+- more distinct biome/theme variation if desired
+- continued stabilization and bug sweep
+- optional deeper leaderboard or shared online score support
 
-The next major implementation target is Milestone 3:
-- finish endgame balance
-- polish the final boss presentation
-- stabilize the full Floor 1-30 run
+## Scope Boundary
+
+Dungeon 30: The Abyssal Throne is now beyond prototype scope and has a full playable run, but it is not yet at final release polish.
+
+The current focus is:
+- polish
+- full-run balance
+- readability
+- usability
+- final stabilization

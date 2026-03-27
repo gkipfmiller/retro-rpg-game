@@ -669,10 +669,12 @@ export function generateFloor(runSeed, floorNumber, playerClass) {
     const vendor = placeVendor(map, vendorRoom, rng, floorNumber);
 
     const startOpenTiles = findOpenTilesInRoom(rooms[0], map);
-    for (const tile of startOpenTiles.slice(0, 2)) {
-      if (!map[tile.y][tile.x].itemIds.length && rng.chance(0.4)) {
-        putItem(map, tile.x, tile.y, rng.pick(["healing_potion", "mana_potion"]));
-      }
+    if (startOpenTiles.length >= 2) {
+      putItem(map, startOpenTiles[0].x, startOpenTiles[0].y, "healing_potion");
+      putItem(map, startOpenTiles[1].x, startOpenTiles[1].y, "mana_potion");
+    } else if (startOpenTiles.length === 1) {
+      putItem(map, startOpenTiles[0].x, startOpenTiles[0].y, "healing_potion");
+      putItem(map, startOpenTiles[0].x, startOpenTiles[0].y, "mana_potion");
     }
 
     return {
