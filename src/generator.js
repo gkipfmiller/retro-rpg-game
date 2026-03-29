@@ -318,11 +318,11 @@ function placeTraps(map, rooms, rng, floorNumber, trapCount) {
 
 function getClassLootPools(playerClass, floorNumber) {
   const sharedCommon = ["healing_potion", "mana_potion"];
-  const sharedMid = ["greater_healing_potion", "greater_mana_potion", "ring_of_precision", "amulet_of_vitality", "charm_of_focus"];
+  const sharedMid = ["greater_healing_potion", "greater_mana_potion", "ring_of_precision", "ring_of_resolve", "amulet_of_vitality", "seal_of_clarity", "charm_of_focus", "wardens_loop", "spark_charm", "gauntlets_of_rime", "hexward_gloves", "gravedust_mitts", "runed_handwraps"];
   const warriorCore = ["militia_sword", "woodcutter_axe", "iron_sword", "raider_axe", "legion_spear", "padded_jerkin", "leather_armor", "iron_cuirass", "chain_armor", "scout_leathers"];
   const wizardCore = ["hedge_wand", "ash_staff", "oak_staff", "crystal_wand", "ember_rod", "apprentice_robes", "cloth_robe", "enchanted_robe", "dusk_robe"];
-  const warriorDeep = ["steel_greatsword", "war_hammer", "flame_touched_sword", "vampire_axe", "sundering_hammer", "guardian_plate", "sigil_of_fortune"];
-  const wizardDeep = ["elder_staff", "storm_wand", "runic_staff", "sage_wand", "archmage_robe", "sigil_of_fortune"];
+  const warriorDeep = ["steel_greatsword", "war_hammer", "flame_touched_sword", "vampire_axe", "sundering_hammer", "guardian_plate", "emberguard_cuirass", "vanguard_warplate", "sundergrip_gauntlets", "wardens_grips", "sigil_of_fortune", "talisman_of_vigor", "warbrand_token", "charm_of_guarding"];
+  const wizardDeep = ["elder_staff", "storm_wand", "runic_staff", "sage_wand", "archmage_robe", "spellweave_mantle", "hexwoven_robe", "spellcatcher_gloves", "cinderwraps", "sigil_of_fortune", "arcseal_pendant", "mirror_sigil", "chain_of_insight"];
   const warriorEndgame = ["sunfire_blade", "soulreaver_axe", "abyssal_plate", "void_heart"];
   const wizardEndgame = ["voidglass_staff", "astral_wand", "starweave_robe", "void_heart"];
   const warriorTomes = ["arcane_shield_tome"];
@@ -418,14 +418,18 @@ function placeVendor(map, room, rng, floorNumber) {
     "greater_healing_potion",
     "greater_mana_potion",
     "ring_of_precision",
+    "ring_of_resolve",
     "scroll_of_escape",
+    "seal_of_clarity",
+    "wardens_loop",
+    "spark_charm",
     "frost_shard_tome",
     "blink_tome",
     "arcane_burst_tome",
     ...(floorNumber >= 21
-      ? ["steel_greatsword", "war_hammer", "flame_touched_sword", "vampire_axe", "sundering_hammer", "sunfire_blade", "soulreaver_axe", "elder_staff", "storm_wand", "runic_staff", "sage_wand", "voidglass_staff", "astral_wand", "guardian_plate", "abyssal_plate", "archmage_robe", "starweave_robe", "sigil_of_fortune", "void_heart", "chain_armor", "scout_leathers", "bastion_mail", "enchanted_robe", "dusk_robe", "runespun_robe", "crystal_wand", "ember_rod", "moon_staff"]
+      ? ["steel_greatsword", "war_hammer", "flame_touched_sword", "vampire_axe", "sundering_hammer", "sunfire_blade", "soulreaver_axe", "elder_staff", "storm_wand", "runic_staff", "sage_wand", "voidglass_staff", "astral_wand", "guardian_plate", "emberguard_cuirass", "vanguard_warplate", "abyssal_plate", "archmage_robe", "spellweave_mantle", "hexwoven_robe", "starweave_robe", "gauntlets_of_rime", "hexward_gloves", "gravedust_mitts", "runed_handwraps", "sundergrip_gauntlets", "spellcatcher_gloves", "cinderwraps", "wardens_grips", "sigil_of_fortune", "talisman_of_vigor", "arcseal_pendant", "warbrand_token", "mirror_sigil", "charm_of_guarding", "chain_of_insight", "void_heart", "chain_armor", "scout_leathers", "bastion_mail", "enchanted_robe", "dusk_robe", "runespun_robe", "crystal_wand", "ember_rod", "moon_staff"]
       : floorNumber >= 11
-        ? ["steel_greatsword", "war_hammer", "flame_touched_sword", "vampire_axe", "sundering_hammer", "elder_staff", "storm_wand", "runic_staff", "sage_wand", "guardian_plate", "archmage_robe", "sigil_of_fortune", "chain_armor", "scout_leathers", "bastion_mail", "enchanted_robe", "dusk_robe", "runespun_robe", "crystal_wand", "ember_rod", "moon_staff"]
+        ? ["steel_greatsword", "war_hammer", "flame_touched_sword", "vampire_axe", "sundering_hammer", "elder_staff", "storm_wand", "runic_staff", "sage_wand", "guardian_plate", "emberguard_cuirass", "vanguard_warplate", "archmage_robe", "spellweave_mantle", "hexwoven_robe", "gauntlets_of_rime", "hexward_gloves", "gravedust_mitts", "runed_handwraps", "sundergrip_gauntlets", "spellcatcher_gloves", "cinderwraps", "wardens_grips", "sigil_of_fortune", "talisman_of_vigor", "arcseal_pendant", "warbrand_token", "mirror_sigil", "charm_of_guarding", "chain_of_insight", "chain_armor", "scout_leathers", "bastion_mail", "enchanted_robe", "dusk_robe", "runespun_robe", "crystal_wand", "ember_rod", "moon_staff"]
         : ["militia_sword", "woodcutter_axe", "iron_sword", "raider_axe", "legion_spear", "hedge_wand", "ash_staff", "oak_staff", "ember_rod", "padded_jerkin", "leather_armor", "iron_cuirass", "cloth_robe", "apprentice_robes"]),
   ];
   const stock = [
@@ -477,6 +481,19 @@ export function generateBossFloor(runSeed, floorNumber, playerClass) {
   const spawn = { ...entry.center };
   const exit = { x: 27, y: 11 };
   map[exit.y][exit.x].stairs = true;
+  const ritualTiles = [
+    { x: arena.center.x - 3, y: arena.center.y - 3 },
+    { x: arena.center.x + 3, y: arena.center.y - 3 },
+    { x: arena.center.x - 3, y: arena.center.y + 3 },
+    { x: arena.center.x + 3, y: arena.center.y + 3 },
+    { x: arena.center.x, y: arena.center.y - 4 },
+    { x: arena.center.x, y: arena.center.y + 4 },
+  ];
+  for (const tile of ritualTiles) {
+    if (map[tile.y]?.[tile.x]?.type === "floor") {
+      map[tile.y][tile.x].graveCircle = true;
+    }
+  }
 
   const boss = {
     id: "enemy-boss",
@@ -700,8 +717,8 @@ export function getDropForEnemy(enemy, rng, playerClass) {
   const template = ENEMIES[enemy.templateId];
   const drops = [];
   const deepBiasPool = playerClass === "warrior"
-    ? ["steel_greatsword", "war_hammer", "butcher_cleaver", "flame_touched_sword", "vampire_axe", "sundering_hammer", "guardian_plate", "bastion_mail", "greater_healing_potion"]
-    : ["elder_staff", "storm_wand", "moon_staff", "runic_staff", "sage_wand", "archmage_robe", "runespun_robe", "greater_mana_potion", "frost_shard_tome", "blink_tome", "arcane_burst_tome"];
+    ? ["steel_greatsword", "war_hammer", "butcher_cleaver", "flame_touched_sword", "vampire_axe", "sundering_hammer", "guardian_plate", "emberguard_cuirass", "vanguard_warplate", "bastion_mail", "gauntlets_of_rime", "gravedust_mitts", "sundergrip_gauntlets", "wardens_grips", "ring_of_resolve", "talisman_of_vigor", "warbrand_token", "charm_of_guarding", "greater_healing_potion"]
+    : ["elder_staff", "storm_wand", "moon_staff", "runic_staff", "sage_wand", "archmage_robe", "spellweave_mantle", "hexwoven_robe", "runespun_robe", "hexward_gloves", "runed_handwraps", "spellcatcher_gloves", "cinderwraps", "seal_of_clarity", "spark_charm", "arcseal_pendant", "mirror_sigil", "chain_of_insight", "greater_mana_potion", "frost_shard_tome", "blink_tome", "arcane_burst_tome"];
   const endgameBiasPool = playerClass === "warrior"
     ? ["sunfire_blade", "soulreaver_axe", "abyssal_plate", "void_heart", "greater_healing_potion"]
     : ["voidglass_staff", "astral_wand", "starweave_robe", "void_heart", "greater_mana_potion", "arcane_burst_tome"];

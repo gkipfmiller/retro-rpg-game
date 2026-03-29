@@ -84,6 +84,11 @@ function renderStatusBadges(statuses = []) {
   }).join("");
 }
 
+function renderOptionalStatusBadges(statuses = []) {
+  if (!statuses.length) return "";
+  return `<div class="status-badge-row">${renderStatusBadges(statuses)}</div>`;
+}
+
 function formatEntryTooltip(entryId) {
   if (SPELLS[entryId]) {
     const spell = SPELLS[entryId];
@@ -106,6 +111,15 @@ function formatEntryTooltip(entryId) {
   }
 
   return "";
+}
+
+function escapeTooltip(text) {
+  return String(text ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\n", "&#10;");
 }
 
 function getProjectileAppearance(projectile) {
@@ -162,7 +176,13 @@ export class Renderer {
 
   renderMap() {
     const { ctx } = this;
-    const { currentFloor, player } = this.game.state.run;
+    const { currentFloor, player, floorNumber } = this.game.state.run;
+    const bossRoom = currentFloor.rooms?.find((room) => room.type === "boss") ?? null;
+    const inBossRoom = (x, y) => bossRoom
+      && x >= bossRoom.x
+      && x < bossRoom.x + bossRoom.width
+      && y >= bossRoom.y
+      && y < bossRoom.y + bossRoom.height;
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     const animationFrame = Math.floor(performance.now() / 220);
     const tileSize = Math.floor(Math.min(this.canvas.width / currentFloor.width, this.canvas.height / currentFloor.height));
@@ -202,6 +222,30 @@ export class Renderer {
           }
           ctx.drawImage(wallSprite, px, py, tileSize, tileSize);
           ctx.restore();
+        }
+
+        if (floorNumber === 10 && tile.type === "floor" && inBossRoom(x, y)) {
+          ctx.save();
+          ctx.fillStyle = tile.visible ? "rgba(88, 24, 36, 0.26)" : "rgba(52, 16, 24, 0.18)";
+          ctx.fillRect(px, py, tileSize, tileSize);
+          ctx.restore();
+          if (tile.visible && tile.graveCircle) {
+            const cx = px + tileSize / 2;
+            const cy = py + tileSize / 2;
+            const radius = tileSize * 0.26;
+            ctx.save();
+            ctx.strokeStyle = "rgba(210, 110, 140, 0.92)";
+            ctx.lineWidth = Math.max(1, Math.floor(tileSize * 0.06));
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius * 0.42, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.fillStyle = "rgba(245, 196, 124, 0.95)";
+            ctx.fillRect(Math.floor(cx - tileSize * 0.05), Math.floor(cy - tileSize * 0.05), Math.max(2, Math.floor(tileSize * 0.1)), Math.max(2, Math.floor(tileSize * 0.1)));
+            ctx.restore();
+          }
         }
 
         if (tile.visible) {
@@ -244,7 +288,7 @@ export class Renderer {
       const spritePath = this.assets ? getActorSpriteFrame(this.assets.manifest, getEntitySpriteId(enemy), animationFrame) : null;
       const sprite = spritePath ? this.assets?.images[spritePath] : null;
       if (sprite) {
-        this.drawSprite(sprite, offsetX + enemy.x * tileSize, offsetY + enemy.y * tileSize, tileSize, tileSize, enemy.templateId === "bone_captain" ? 2 : 1.45);
+        this.drawSprite(sprite, offsetX + enemy.x * tileSize, offsetY + enemy.y * tileSize, tileSize, tileSize, enemy.templateId === "bone_captain" ? 1.55 : 1.45);
         this.drawStatusPips(offsetX + enemy.x * tileSize, offsetY + enemy.y * tileSize, tileSize, enemy.statuses);
       } else {
         const template = ENEMIES[enemy.templateId];
@@ -376,16 +420,69 @@ export class Renderer {
     }
     this.wasCriticalHp = isCriticalHp;
 
-    document.getElementById("hud-weapon").textContent = `Weapon: ${player.equipment.weapon ? ITEMS[player.equipment.weapon].name : "None"}`;
-    document.getElementById("hud-armor").textContent = `Armor: ${player.equipment.armor ? ITEMS[player.equipment.armor].name : "None"}`;
-    document.getElementById("hud-accessory").textContent = `Accessory: ${player.equipment.accessory ? ITEMS[player.equipment.accessory].name : "None"}`;
-    document.getElementById("hud-strength").textContent = `Strength: ${derived.strength}`;
-    document.getElementById("hud-dexterity").textContent = `Dexterity: ${derived.dexterity}`;
-    document.getElementById("hud-vitality").textContent = `Vitality: ${derived.vitality}`;
-    document.getElementById("hud-intelligence").textContent = `Intelligence: ${derived.intelligence}`;
-    document.getElementById("hud-defense").textContent = `Defense: ${derived.defense}`;
+    const weaponLine = document.getElementById("hud-weapon");
+    const armorLine = document.getElementById("hud-armor");
+    const handsLine = document.getElementById("hud-hands");
+    const accessoryLine = document.getElementById("hud-accessory");
+    const strengthLine = document.getElementById("hud-strength");
+    const dexterityLine = document.getElementById("hud-dexterity");
+    const vitalityLine = document.getElementById("hud-vitality");
+    const intelligenceLine = document.getElementById("hud-intelligence");
+    const defenseLine = document.getElementById("hud-defense");
+
+    const equippedWeapon = player.equipment.weapon ? ITEMS[player.equipment.weapon] : null;
+    const equippedArmor = player.equipment.armor ? ITEMS[player.equipment.armor] : null;
+    const equippedHands = player.equipment.hands ? ITEMS[player.equipment.hands] : null;
+    const equippedAccessory = player.equipment.accessory ? ITEMS[player.equipment.accessory] : null;
+    const applyEquipmentRarity = (element, item) => {
+      element.classList.remove("rarity-common", "rarity-uncommon", "rarity-rare", "rarity-boss");
+      if (item) {
+        element.classList.add(`rarity-${this.game.getItemRarity(item.id)}`);
+      }
+    };
+
+    weaponLine.textContent = `Weapon: ${equippedWeapon ? equippedWeapon.name : "None"}`;
+    armorLine.textContent = `Armor: ${equippedArmor ? equippedArmor.name : "None"}`;
+    handsLine.textContent = `Hands: ${equippedHands ? equippedHands.name : "None"}`;
+    accessoryLine.textContent = `Accessory: ${equippedAccessory ? equippedAccessory.name : "None"}`;
+    applyEquipmentRarity(weaponLine, equippedWeapon);
+    applyEquipmentRarity(armorLine, equippedArmor);
+    applyEquipmentRarity(handsLine, equippedHands);
+    applyEquipmentRarity(accessoryLine, equippedAccessory);
+    strengthLine.textContent = `Strength: ${derived.strength}`;
+    dexterityLine.textContent = `Dexterity: ${derived.dexterity}`;
+    vitalityLine.textContent = `Vitality: ${derived.vitality}`;
+    intelligenceLine.textContent = `Intelligence: ${derived.intelligence}`;
+    defenseLine.textContent = `Defense: ${derived.defense}`;
+
+    weaponLine.dataset.tooltip = (
+      equippedWeapon
+        ? `${equippedWeapon.name}\nMain weapon. Improves melee or spell output depending on the item.\n${formatEntryTooltip(equippedWeapon.id)}`
+        : "Weapon slot\nNo weapon equipped."
+    );
+    armorLine.dataset.tooltip = (
+      equippedArmor
+        ? `${equippedArmor.name}\nArmor reduces incoming damage and may grant bonus stats.\n${formatEntryTooltip(equippedArmor.id)}`
+        : "Armor slot\nNo armor equipped."
+    );
+    handsLine.dataset.tooltip = (
+      equippedHands
+        ? `${equippedHands.name}\nHands slot for gloves, wraps, and gauntlets with tactical status effects or wards.\n${formatEntryTooltip(equippedHands.id)}`
+        : "Hands slot\nNo hands item equipped."
+    );
+    accessoryLine.dataset.tooltip = (
+      equippedAccessory
+        ? `${equippedAccessory.name}\nAccessory slot for passive stat bonuses.\n${formatEntryTooltip(equippedAccessory.id)}`
+        : "Accessory slot\nNo accessory equipped."
+    );
+    strengthLine.dataset.tooltip = "Strength\nImproves melee damage.";
+    dexterityLine.dataset.tooltip = "Dexterity\nImproves accuracy and helps with evasion.";
+    vitalityLine.dataset.tooltip = "Vitality\nRaises maximum HP.";
+    intelligenceLine.dataset.tooltip = "Intelligence\nImproves spell damage and maximum mana.";
+    defenseLine.dataset.tooltip = "Defense\nReduces incoming damage from enemy attacks.";
     const powerLine = document.getElementById("hud-power");
-    powerLine.innerHTML = `Power: ${derived.meleeBonus}/${derived.spellBonus}<div class="status-badge-row">${renderStatusBadges(player.statuses)}</div>`;
+    powerLine.innerHTML = `Power: ${derived.meleeBonus}/${derived.spellBonus}${renderOptionalStatusBadges(player.statuses)}`;
+    powerLine.dataset.tooltip = "Power\nFirst value is melee power.\nSecond value is spell power.";
 
     const quickButtons = [
       document.getElementById("quick-slot-1"),
@@ -403,7 +500,7 @@ export class Renderer {
       const label = SPELLS[entry]?.name ?? ITEMS[entry]?.name ?? entry;
       const iconPath = ITEMS[entry] ? getItemSprite(this.assets?.manifest, entry) : null;
       const icon = iconPath ? `<img src="${iconPath}" alt="" class="slot-icon">` : "";
-      button.innerHTML = `${icon}<span>${index + 1}. ${label}</span>`;
+      button.innerHTML = `<span>${index + 1}.</span>${icon}<span>${label}</span>`;
       button.disabled = false;
       button.dataset.tooltip = formatEntryTooltip(entry);
     });
@@ -427,7 +524,7 @@ export class Renderer {
         <p><strong>${target.name}</strong></p>
         <p>HP: ${target.hp}/${target.maxHp}</p>
         <p>${bossLabel}</p>
-        <div class="status-badge-row">${renderStatusBadges(target.statuses)}</div>
+        ${renderOptionalStatusBadges(target.statuses)}
       `;
     }
   }
@@ -468,15 +565,26 @@ export class Renderer {
     window.setTimeout(() => this.transitionBanner.classList.add("hidden"), 1300);
   }
 
-  triggerCriticalFlash() {
+  triggerFlash(variant = "critical") {
     if (!this.criticalFlash) return;
+    this.criticalFlash.classList.remove("critical", "necro");
+    this.criticalFlash.classList.add(variant);
     this.criticalFlash.classList.remove("hidden");
     this.criticalFlash.classList.remove("active");
     void this.criticalFlash.offsetWidth;
     this.criticalFlash.classList.add("active");
     window.setTimeout(() => {
       this.criticalFlash?.classList.remove("active");
+      this.criticalFlash?.classList.remove("critical", "necro");
       this.criticalFlash?.classList.add("hidden");
     }, 380);
+  }
+
+  triggerCriticalFlash() {
+    this.triggerFlash("critical");
+  }
+
+  triggerNecroFlash() {
+    this.triggerFlash("necro");
   }
 }

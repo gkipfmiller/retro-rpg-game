@@ -154,6 +154,13 @@ export class Game {
     }
   }
 
+  getStackIndexByItemId(stacks, itemId, fallbackIndex = 0) {
+    const foundIndex = stacks.findIndex((stack) => stack.itemId === itemId);
+    if (foundIndex !== -1) return foundIndex;
+    if (!stacks.length) return -1;
+    return clamp(fallbackIndex, 0, stacks.length - 1);
+  }
+
   calculateRunScore(run, result) {
     const victoryBonus = result === "victory" ? 1500 : 0;
     return (run.floorNumber * 120)
@@ -288,7 +295,7 @@ export class Game {
       baseStats: deepClone(definition.startingStats),
       hp: 1,
       mana: 1,
-      equipment: { weapon: null, armor: null, accessory: null },
+      equipment: { weapon: null, armor: null, hands: null, accessory: null },
       inventory,
       learnedSpells: [],
       unlockedSkills: [],
@@ -414,6 +421,11 @@ export class Game {
     };
   }
 
+  getHandsItem(player = this.state.run?.player) {
+    const handsId = player?.equipment?.hands;
+    return handsId ? ITEMS[handsId] : null;
+  }
+
   findSkill(skillId) {
     for (const branch of SKILL_TREES[this.state.run.player.classId]) {
       const skill = branch.skills.find((entry) => entry.id === skillId);
@@ -491,6 +503,23 @@ export class Game {
   }
 
   upsertStatus(entity, status) {
+    if (entity === this.state.run?.player && status.id !== "arcane_shield") {
+      const hands = this.getHandsItem(entity);
+      const effect = hands?.handsEffect;
+      if (effect?.type === "ignoreSpellStatusChance" && status.source === "enemySpell") {
+        const rng = createRng(hashSeed(this.state.run.turn, status.id, hands.id));
+        if (rng.chance(effect.chance)) {
+          this.log(`${hands.name} repels the incoming ${STATUS_DEFINITIONS[status.id]?.name ?? status.id}.`);
+          return;
+        }
+      }
+      if (effect?.type === "shortenStatus" && effect.statusId === status.id) {
+        status.turns = Math.max(1, status.turns - effect.amount);
+      }
+      if (effect?.type === "shortenNegativeStatuses") {
+        status.turns = Math.max(1, status.turns - effect.amount);
+      }
+    }
     entity.statuses = entity.statuses ?? [];
     const existing = entity.statuses.find((entry) => entry.id === status.id);
     if (existing) {
@@ -600,8 +629,12 @@ export class Game {
       for (const [key, value] of Object.entries(item.bonus)) {
         if (key === "maxHpFlat") parts.push(`HP +${value}`);
         if (key === "maxManaFlat") parts.push(`Mana +${value}`);
+        if (key === "defenseFlat") parts.push(`DEF +${value}`);
+        if (key === "accuracyFlat") parts.push(`ACC +${value}`);
         if (key === "magicPowerFlat") parts.push(`MAG +${value}`);
         if (key === "intelligenceFlat") parts.push(`INT +${value}`);
+        if (key === "controlDuration") parts.push(`Control +${value}`);
+        if (key === "meleeDamagePct") parts.push(`Melee +${value}%`);
         if (key === "spellDamagePct") parts.push(`Spell +${value}%`);
       }
     }
@@ -613,6 +646,9 @@ export class Game {
     if (item.enchantment?.type === "sunderChance") parts.push(`Enchant ${Math.round(item.enchantment.chance * 100)}% sunder`);
     if (item.enchantment?.type === "spellBonusDamage") parts.push(`Enchant +${item.enchantment.value} spell`);
     if (item.enchantment?.type === "manaRefundChance") parts.push(`Enchant ${Math.round(item.enchantment.chance * 100)}% refund`);
+    if (item.handsEffect?.type === "meleeStatusProc") parts.push(`${Math.round(item.handsEffect.chance * 100)}% ${item.handsEffect.statusId}`);
+    if (item.handsEffect?.type === "spellStatusProc") parts.push(`${Math.round(item.handsEffect.chance * 100)}% ${item.handsEffect.statusId}`);
+    if (item.handsEffect?.type === "ignoreSpellStatusChance") parts.push(`${Math.round(item.handsEffect.chance * 100)}% ward`);
     return parts.join(" | ");
   }
 
@@ -667,7 +703,10 @@ export class Game {
     pushRow("Evasion", item.evasion ?? 0, equipped.evasion ?? 0);
     pushRow("HP", item.bonus?.maxHpFlat ?? 0, equipped.bonus?.maxHpFlat ?? 0);
     pushRow("Mana", item.bonus?.maxManaFlat ?? 0, equipped.bonus?.maxManaFlat ?? 0);
+    pushRow("DEF+", item.bonus?.defenseFlat ?? 0, equipped.bonus?.defenseFlat ?? 0);
+    pushRow("ACC+", item.bonus?.accuracyFlat ?? 0, equipped.bonus?.accuracyFlat ?? 0);
     pushRow("INT", item.bonus?.intelligenceFlat ?? 0, equipped.bonus?.intelligenceFlat ?? 0);
+    pushRow("Melee %", item.bonus?.meleeDamagePct ?? 0, equipped.bonus?.meleeDamagePct ?? 0);
     pushRow("Spell %", item.bonus?.spellDamagePct ?? 0, equipped.bonus?.spellDamagePct ?? 0);
     pushRow("Spell Acc", item.bonus?.spellAccuracyFlat ?? 0, equipped.bonus?.spellAccuracyFlat ?? 0);
     return rows;
@@ -873,6 +912,20 @@ export class Game {
     }
   }
 
+  maybeApplyHandsEffect(enemy, mode, rng) {
+    const hands = this.getHandsItem();
+    const effect = hands?.handsEffect;
+    if (!effect) return;
+    if (effect.type === "meleeStatusProc" && mode.type !== "spell" && rng.chance(effect.chance)) {
+      this.upsertStatus(enemy, { id: effect.statusId, turns: effect.turns, value: effect.value });
+      this.log(`${hands.name} inflicts ${STATUS_DEFINITIONS[effect.statusId]?.name ?? effect.statusId}.`);
+    }
+    if (effect.type === "spellStatusProc" && mode.type === "spell" && rng.chance(effect.chance)) {
+      this.upsertStatus(enemy, { id: effect.statusId, turns: effect.turns, value: effect.value });
+      this.log(`${hands.name} inflicts ${STATUS_DEFINITIONS[effect.statusId]?.name ?? effect.statusId}.`);
+    }
+  }
+
   getInventoryStacks() {
     const stacks = [];
     const indexByItemId = new Map();
@@ -898,6 +951,28 @@ export class Game {
       ...stack,
       sellValue: Math.max(1, Math.floor((ITEMS[stack.itemId]?.value ?? 0) * 0.45)),
     }));
+  }
+
+  getVendorStacks() {
+    const vendor = this.state.run.currentFloor.vendor;
+    if (!vendor) return [];
+    const stacks = [];
+    const indexByItemId = new Map();
+    for (const [index, itemId] of vendor.stock.entries()) {
+      const existingIndex = indexByItemId.get(itemId);
+      if (existingIndex !== undefined) {
+        stacks[existingIndex].count += 1;
+        stacks[existingIndex].indices.push(index);
+        continue;
+      }
+      indexByItemId.set(itemId, stacks.length);
+      stacks.push({
+        itemId,
+        count: 1,
+        indices: [index],
+      });
+    }
+    return stacks;
   }
 
   performPlayerAttack(enemy, mode) {
@@ -972,6 +1047,7 @@ export class Game {
       this.upsertStatus(enemy, { id: "weakened", turns: 2 + this.getControlDurationBonus(player), value: 1 });
       this.log(`${enemy.name} is weakened by the burst.`);
     }
+    this.maybeApplyHandsEffect(enemy, mode, rng);
     if (derived.weakenOnHit && mode.type !== "spell") {
       this.upsertStatus(enemy, { id: "weakened", turns: 1 + derived.weakenOnHit, value: 1 });
       this.log(`${enemy.name} is weakened.`);
@@ -1177,8 +1253,9 @@ export class Game {
       }
       player.inventory.splice(index, 1);
       if (reopenInventoryIndex !== null) {
-        const nextIndex = Math.max(0, Math.min(reopenInventoryIndex, this.getInventoryStacks().length - 1));
-        this.openInventory(this.getInventoryStacks().length ? nextIndex : 0);
+        const stacks = this.getInventoryStacks();
+        const nextIndex = this.getStackIndexByItemId(stacks, itemId, reopenInventoryIndex);
+        this.openInventory(nextIndex >= 0 ? nextIndex : 0);
       }
       this.endPlayerTurn();
       return;
@@ -1196,8 +1273,9 @@ export class Game {
       }
       player.inventory.splice(index, 1);
       if (reopenInventoryIndex !== null) {
-        const nextIndex = Math.max(0, Math.min(reopenInventoryIndex, this.getInventoryStacks().length - 1));
-        this.openInventory(this.getInventoryStacks().length ? nextIndex : 0);
+        const stacks = this.getInventoryStacks();
+        const nextIndex = this.getStackIndexByItemId(stacks, itemId, reopenInventoryIndex);
+        this.openInventory(nextIndex >= 0 ? nextIndex : 0);
       } else {
         this.openInventory();
       }
@@ -1459,7 +1537,8 @@ export class Game {
   }
 
   equipInventoryIndex(index) {
-    const stack = this.getInventoryStacks()[index];
+    const stacks = this.getInventoryStacks();
+    const stack = stacks[index];
     const entryIndex = stack?.indices[0];
     const entry = entryIndex !== undefined ? this.state.run.player.inventory[entryIndex] : null;
     if (!entry) return;
@@ -1483,25 +1562,30 @@ export class Game {
     player.hp = Math.min(player.hp, derived.maxHp);
     player.mana = Math.min(player.mana, derived.maxMana);
     this.log(`Equipped ${item.name}.`);
-    this.openInventory(Math.max(0, Math.min(index, this.getInventoryStacks().length - 1)));
+    const nextStacks = this.getInventoryStacks();
+    const nextIndex = this.getStackIndexByItemId(nextStacks, entry.itemId, index);
+    this.openInventory(nextIndex >= 0 ? nextIndex : 0);
   }
 
   openVendor(selectedIndex = 0) {
     const vendor = this.state.run.currentFloor.vendor;
     if (!vendor) return;
-    const safeIndex = vendor.stock.length ? clamp(selectedIndex, 0, vendor.stock.length - 1) : -1;
-    const selectedItemId = safeIndex >= 0 ? vendor.stock[safeIndex] : null;
-    const vendorList = vendor.stock.map((itemId, index) => `
+    const vendorStacks = this.getVendorStacks();
+    const safeIndex = vendorStacks.length ? clamp(selectedIndex, 0, vendorStacks.length - 1) : -1;
+    const selectedStack = safeIndex >= 0 ? vendorStacks[safeIndex] : null;
+    const selectedItemId = selectedStack?.itemId ?? null;
+    const vendorList = vendorStacks.map((stack, index) => `
       <button
-        class="inventory-tile vendor-tile ${index === safeIndex ? "selected" : ""} ${this.getItemRarity(itemId)}"
+        class="inventory-tile vendor-tile ${index === safeIndex ? "selected" : ""} ${this.getItemRarity(stack.itemId)}"
         data-action="vendor-select"
         data-index="${index}"
-        data-tooltip="${this.escapeTooltip(this.getItemTooltip(itemId, { includeCompare: true, includeValue: true }))}"
+        data-tooltip="${this.escapeTooltip(this.getItemTooltip(stack.itemId, { stackCount: stack.count, includeCompare: true, includeValue: true }))}"
       >
-        <span class="inventory-tile-rarity">${this.getItemRarity(itemId)}</span>
-        <span class="inventory-tile-price">${ITEMS[itemId].value}g</span>
-        ${this.renderItemIcon(itemId)}
-        <span class="inventory-tile-name">${ITEMS[itemId].name}</span>
+        <span class="inventory-tile-rarity">${this.getItemRarity(stack.itemId)}</span>
+        <span class="inventory-tile-price">${ITEMS[stack.itemId].value}g</span>
+        ${this.renderItemIcon(stack.itemId)}
+        ${stack.count > 1 ? `<span class="inventory-stack-count">x${stack.count}</span>` : ""}
+        <span class="inventory-tile-name">${ITEMS[stack.itemId].name}</span>
       </button>
     `).join("");
 
@@ -1525,9 +1609,9 @@ export class Game {
         actionIndex: safeIndex,
         actionDisabled: this.state.run.player.gold < ITEMS[selectedItemId].value,
         priceLabel: `${ITEMS[selectedItemId].value}g`,
-        footer: this.state.run.player.gold < ITEMS[selectedItemId].value
+        footer: `${selectedStack?.count > 1 ? `<p class="muted">Vendor stack: ${selectedStack.count}</p>` : ""}${this.state.run.player.gold < ITEMS[selectedItemId].value
           ? `<p class="negative">You need ${ITEMS[selectedItemId].value - this.state.run.player.gold} more gold.</p>`
-          : `<p class="positive">You can afford this item.</p>`,
+          : `<p class="positive">You can afford this item.</p>`}`,
       })
       : "<p>No items for sale.</p>";
 
@@ -1538,12 +1622,12 @@ export class Game {
       </div>
       <div class="compare-layout">
         <div class="compare-list">
-          <div class="compare-list-header">
-            <h3>Vendor Stock</h3>
-            <span class="muted">${vendor.stock.length} item${vendor.stock.length === 1 ? "" : "s"}</span>
-          </div>
-          <div class="inventory-grid vendor-grid">
-            ${vendorList || "<p>No items for sale.</p>"}
+            <div class="compare-list-header">
+              <h3>Vendor Stock</h3>
+              <span class="muted">${vendorStacks.length} stack${vendorStacks.length === 1 ? "" : "s"} • ${vendor.stock.length} item${vendor.stock.length === 1 ? "" : "s"}</span>
+            </div>
+            <div class="inventory-grid vendor-grid">
+              ${vendorList || "<p>No items for sale.</p>"}
           </div>
         </div>
         <div class="compare-detail-pane">
@@ -1565,15 +1649,19 @@ export class Game {
 
   vendorBuy(index) {
     const vendor = this.state.run.currentFloor.vendor;
-    const itemId = vendor?.stock[index];
+    const stack = this.getVendorStacks()[index];
+    const stockIndex = stack?.indices[0];
+    const itemId = stockIndex !== undefined ? vendor?.stock[stockIndex] : null;
     if (!itemId) return;
     const item = ITEMS[itemId];
     if (this.state.run.player.gold < item.value) return;
     this.state.run.player.gold -= item.value;
     this.state.run.player.inventory.push({ id: `inv-${Date.now()}-${itemId}`, itemId });
-    vendor.stock.splice(index, 1);
+    vendor.stock.splice(stockIndex, 1);
     this.log(`Bought ${item.name}.`);
-    this.openVendor(index);
+    const nextStacks = this.getVendorStacks();
+    const nextIndex = this.getStackIndexByItemId(nextStacks, itemId, index);
+    this.openVendor(nextIndex >= 0 ? nextIndex : 0);
   }
 
   vendorSell(index) {
@@ -1624,8 +1712,9 @@ export class Game {
     }
     this.updateVisibility();
     if (this.state.run.player.hp <= 0) return;
-    if (this.state.run.floorNumber === 10 && !this.state.run.currentFloor.enemies.length) {
-      this.log("The Bone Captain is defeated. The deeper halls open.");
+    if (this.state.run.floorNumber === 10 && !this.state.run.currentFloor.enemies.length && !this.state.run.player.floorFlags.boneCaptainDefeatedLogged) {
+      this.state.run.player.floorFlags.boneCaptainDefeatedLogged = true;
+      this.log("Super Skeletor is defeated. The deeper halls open.");
     }
   }
 
@@ -1693,10 +1782,36 @@ export class Game {
         }
       }
 
+      if (enemy.templateId === "bone_captain" && canSee) {
+        if (distance > 1 && distance <= (template.range ?? 5) && enemy.turnCounter % 3 === 2) {
+          this.log("Super Skeletor hurls a bolt of gravefire.");
+        } else if (distance === 1 && enemy.turnCounter % 4 === 0) {
+          this.log("Super Skeletor raises a bony hand for a crushing strike.");
+        }
+      }
+
       if (enemy.templateId === "abyssal_overlord" && distance > 1 && canSee && distance <= (template.range ?? 6) && enemy.turnCounter % 3 === 0) {
         this.enemyAttack(enemy, "abyssal_bolt");
         if (player.hp <= 0) return;
         continue;
+      }
+
+      if (enemy.templateId === "bone_captain") {
+        const activeSkeletons = currentFloor.enemies.filter((candidate) => candidate.summonedBy === enemy.id).length;
+        if (canSee && activeSkeletons < 2 && enemy.turnCounter % 3 === 1) {
+          const summonTile = this.findAdjacentOpen(enemy.x, enemy.y);
+          if (summonTile) {
+            this.summonEnemy("skeleton", summonTile.x, summonTile.y, { summonedBy: enemy.id });
+            this.log(`Super Skeletor summons a Skeleton (${activeSkeletons + 1}/2).`);
+            this.renderer?.triggerNecroFlash();
+            continue;
+          }
+        }
+        if (distance > 1 && canSee && distance <= (template.range ?? 5) && enemy.turnCounter % 3 === 0) {
+          this.enemyAttack(enemy, "spell");
+          if (player.hp <= 0) return;
+          continue;
+        }
       }
 
       if (template.behavior === "boss" && distance === 1 && enemy.turnCounter % 3 === 0) {
@@ -1737,16 +1852,6 @@ export class Game {
             currentFloor.map[enemy.y][enemy.x].occupant = enemy.id;
             continue;
           }
-        }
-      }
-
-      if (enemy.templateId === "bone_captain" && template.behavior === "boss" && !enemy.summonUsed && enemy.hp <= enemy.maxHp / 2 && currentFloor.enemies.length < 3) {
-        const summonTile = this.findAdjacentOpen(enemy.x, enemy.y);
-        if (summonTile) {
-          this.summonEnemy("skeleton", summonTile.x, summonTile.y);
-          enemy.summonUsed = true;
-          this.log("Bone Captain summons a Skeleton.");
-          continue;
         }
       }
 
@@ -1820,6 +1925,8 @@ export class Game {
             ? "shadow_bolt"
             : enemy.templateId === "infernal_imp"
               ? "cinder_hex"
+              : enemy.templateId === "bone_captain"
+                ? "shadow_bolt"
               : "shadow_bolt";
       this.renderer?.queueProjectile({
         kind: projectileKind,
@@ -1864,30 +1971,36 @@ export class Game {
             ? "Shadow Bolt"
             : enemy.templateId === "infernal_imp"
               ? "Cinder Hex"
+              : enemy.templateId === "bone_captain"
+                ? "Grave Bolt"
               : "Spell";
       this.log(`${enemy.name} casts ${spellName} for ${damage} damage.`);
     } else {
       this.log(`${enemy.name} hits you for ${damage} damage.`);
     }
     if (mode === "spell" && enemy.templateId === "shaman" && rng.chance(0.5)) {
-      this.upsertStatus(player, { id: "hexed", turns: 2, value: 1 });
+      this.upsertStatus(player, { id: "hexed", turns: 2, value: 1, source: "enemySpell" });
       this.log("You are hexed.");
     }
     if (mode === "spell" && enemy.templateId === "cultist" && rng.chance(0.35)) {
-      this.upsertStatus(player, { id: "weakened", turns: 2, value: 1 });
+      this.upsertStatus(player, { id: "weakened", turns: 2, value: 1, source: "enemySpell" });
       this.log("Shadow clings to you. You are weakened.");
     }
     if (mode === "spell" && enemy.templateId === "infernal_imp" && rng.chance(0.4)) {
-      this.upsertStatus(player, { id: "chilled", turns: 2, value: 1 });
+      this.upsertStatus(player, { id: "chilled", turns: 2, value: 1, source: "enemySpell" });
       this.log("Scorching cinders blind and chill you.");
+    }
+    if (mode === "spell" && enemy.templateId === "bone_captain" && rng.chance(0.45)) {
+      this.upsertStatus(player, { id: "weakened", turns: 2, value: 1, source: "enemySpell" });
+      this.log("Gravefire drains your strength. You are weakened.");
     }
     if (mode === "abyssal_bolt") {
       if (rng.chance(enemy.phaseTwo ? 0.6 : 0.4)) {
-        this.upsertStatus(player, { id: "hexed", turns: 2, value: 1 });
+        this.upsertStatus(player, { id: "hexed", turns: 2, value: 1, source: "enemySpell" });
         this.log("Abyssal fire hexes you.");
       }
       if (enemy.phaseTwo && rng.chance(0.35)) {
-        this.upsertStatus(player, { id: "weakened", turns: 2, value: 1 });
+        this.upsertStatus(player, { id: "weakened", turns: 2, value: 1, source: "enemySpell" });
         this.log("Your strength buckles under the void's pressure.");
       }
     }
@@ -2001,6 +2114,13 @@ export class Game {
         break;
       case "save-score": {
         if (!this.state.run) break;
+        if (this.state.run.scoreSaved) {
+          this.state.mode = "scores";
+          this.state.ui.overlay = null;
+          this.state.run = null;
+          this.state.logs = ["Begin a new run to enter the dungeon."];
+          break;
+        }
         const overlayType = this.state.ui.overlay?.type;
         const result = overlayType === "victory" ? "victory" : "death";
         const cause = result === "victory"
@@ -2009,57 +2129,11 @@ export class Game {
         const summary = this.buildRunSummary(this.state.run, cause.replace(/^Slain by /, "").replace(/^Killed by /, ""), result);
         const saveResult = this.saveHighScore(payload.playerName, summary);
         if (saveResult.ok) {
-          const message = result === "victory"
-            ? (this.state.run.floorNumber >= 30
-              ? "The Abyssal Overlord is slain. The dungeon finally falls silent."
-              : `You reached Floor ${this.state.run.floorNumber} and cleared the current Milestone 2 build.`)
-            : this.state.logs[this.state.logs.length - 1];
-          if (result === "victory") {
-            const { player, floorNumber, runStats, turn } = this.state.run;
-            const unlockedSkills = player.unlockedSkills.length;
-            const learnedSpells = player.learnedSpells.filter((spellId) => SPELLS[spellId]).length;
-            const victoryFooter = floorNumber >= 30
-              ? "One run. No checkpoints. Full clear."
-              : "The full Floor 30 final-boss run is still reserved for Milestone 3.";
-            this.state.ui.overlay = {
-              type: "victory",
-              dismissible: false,
-              title: floorNumber >= 30 ? "Dungeon Cleared" : "Milestone 2 Clear",
-              html: `
-                <p>${message}</p>
-                <div class="detail-list">
-                  <div>Class: <strong>${CLASSES[player.classId].name}</strong></div>
-                  <div>Level: <strong>${player.level}</strong></div>
-                  <div>Enemies defeated: <strong>${runStats.kills}</strong></div>
-                  <div>Gold carried: <strong>${player.gold}</strong></div>
-                  <div>Skills unlocked: <strong>${unlockedSkills}</strong></div>
-                  <div>Spells learned: <strong>${learnedSpells}</strong></div>
-                  <div>Turns taken: <strong>${turn}</strong></div>
-                  <div>Max floor reached: <strong>${floorNumber}</strong></div>
-                </div>
-                <p>${victoryFooter}</p>
-                ${this.renderScoreSaveSection(summary, { savedName: saveResult.name, feedback: "Score saved.", feedbackTone: "positive" })}
-                <button data-action="new-run-from-death">Start New Run</button>
-                <button data-action="main-menu">Main Menu</button>
-              `,
-            };
-          } else {
-            this.state.ui.overlay = {
-              type: "death",
-              dismissible: false,
-              title: "You Died",
-              html: `
-                <p>${message}</p>
-                <p>Floor reached: <strong>${this.state.run.floorNumber}</strong></p>
-                <p>Level reached: <strong>${this.state.run.player.level}</strong></p>
-                <p>Enemies defeated: <strong>${this.state.run.runStats.kills}</strong></p>
-                <p>Every run resets from Floor 1.</p>
-                ${this.renderScoreSaveSection(summary, { savedName: saveResult.name, feedback: "Score saved.", feedbackTone: "positive" })}
-                <button data-action="new-run-from-death">Start New Run</button>
-                <button data-action="main-menu">Main Menu</button>
-              `,
-            };
-          }
+          this.state.run.scoreSaved = true;
+          this.state.mode = "scores";
+          this.state.ui.overlay = null;
+          this.state.run = null;
+          this.state.logs = ["Begin a new run to enter the dungeon."];
         } else {
           const message = result === "victory"
             ? (this.state.run.floorNumber >= 30

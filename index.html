@@ -73,7 +73,7 @@
       <section id="game-screen" class="screen">
         <div id="critical-flash" class="critical-flash hidden"></div>
         <aside class="sidebar left">
-          <div class="panel hud-block">
+          <div class="panel hud-block hud-character-panel">
             <div class="hud-row">
               <span id="hud-class">Class</span>
               <span id="hud-floor">Floor 1</span>
@@ -97,13 +97,24 @@
               <div class="meter"><div id="hud-xp-bar" class="meter-fill xp"></div></div>
               <span id="hud-xp-text"></span>
             </div>
-          </div>
-
-          <div class="panel hud-block">
-            <h3>Equipment</h3>
-            <p id="hud-weapon"></p>
-            <p id="hud-armor"></p>
-            <p id="hud-accessory"></p>
+            <div class="hud-subsection">
+              <h3>Equipment</h3>
+              <p id="hud-weapon"></p>
+              <p id="hud-armor"></p>
+              <p id="hud-hands"></p>
+              <p id="hud-accessory"></p>
+            </div>
+            <div class="hud-subsection">
+              <h3>Stats</h3>
+              <div class="hud-stat-grid">
+                <p id="hud-strength"></p>
+                <p id="hud-dexterity"></p>
+                <p id="hud-vitality"></p>
+                <p id="hud-intelligence"></p>
+                <p id="hud-defense"></p>
+                <p id="hud-power"></p>
+              </div>
+            </div>
           </div>
 
           <div class="panel hud-block">
@@ -118,14 +129,6 @@
           <div class="panel canvas-panel">
             <canvas id="game-canvas" width="768" height="576"></canvas>
           </div>
-          <div class="panel log-panel">
-            <div id="combat-log"></div>
-            <div class="control-strip">
-              <span>Move: WASD / Arrows</span>
-              <span>Wait: Space</span>
-              <span>Menus: I C K</span>
-            </div>
-          </div>
         </main>
 
         <aside class="sidebar right">
@@ -135,14 +138,14 @@
               <p>No target</p>
             </div>
           </div>
-          <div class="panel hud-block">
-            <h3>Stats</h3>
-            <p id="hud-strength"></p>
-            <p id="hud-dexterity"></p>
-            <p id="hud-vitality"></p>
-            <p id="hud-intelligence"></p>
-            <p id="hud-defense"></p>
-            <p id="hud-power"></p>
+
+          <div class="panel log-panel sidebar-log-panel">
+            <div id="combat-log"></div>
+            <div class="control-strip">
+              <span>Move: WASD / Arrows</span>
+              <span>Wait: Space</span>
+              <span>Menus: I C K</span>
+            </div>
           </div>
         </aside>
 
