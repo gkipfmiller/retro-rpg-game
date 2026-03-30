@@ -363,17 +363,24 @@ function placeLoot(map, rooms, rng, floorNumber, playerClass) {
       opened: false,
       loot: [
         rng.pick([...CHEST_TABLE.common, ...lootPools.common]),
-        ...(floorNumber >= 6 && rng.chance(floorNumber >= 11 ? 0.65 : 0.4) ? [rng.pick([...CHEST_TABLE.rare, ...lootPools.extra])] : []),
-        ...(floorNumber >= 12 && rng.chance(floorNumber >= 16 ? 0.7 : 0.55) ? [rng.pick([...CHEST_TABLE.deep, ...lootPools.deep])] : []),
+        ...(floorNumber >= 6 && rng.chance(floorNumber >= 11 ? 0.5 : 0.4) ? [rng.pick([...CHEST_TABLE.rare, ...lootPools.extra])] : []),
+        ...(floorNumber >= 12 && rng.chance(floorNumber >= 16 ? 0.55 : 0.4) ? [rng.pick([...CHEST_TABLE.deep, ...lootPools.deep])] : []),
         ...(floorNumber >= 21 && rng.chance(0.72) ? [rng.pick([...CHEST_TABLE.endgame, ...lootPools.endgame])] : []),
       ],
-      gold: rng.int(10 + floorNumber, floorNumber >= 21 ? 34 + floorNumber * 2 : 24 + floorNumber * 2),
+      gold: rng.int(
+        10 + floorNumber,
+        floorNumber >= 21
+          ? 34 + floorNumber * 2
+          : floorNumber >= 11
+            ? 18 + floorNumber
+            : 24 + floorNumber * 2
+      ),
     });
   }
 
   const floorDrops = rng.int(
-    floorNumber >= 21 ? 3 : floorNumber >= 11 ? 2 : 1,
-    floorNumber >= 21 ? 4 : floorNumber >= 12 ? 3 : floorNumber >= 6 ? 3 : 2
+    floorNumber >= 21 ? 3 : floorNumber >= 11 ? 1 : 1,
+    floorNumber >= 21 ? 4 : floorNumber >= 12 ? 2 : floorNumber >= 6 ? 3 : 2
   );
   const availableRooms = rng.shuffle(rooms.slice(2));
 
@@ -394,7 +401,7 @@ function placeLoot(map, rooms, rng, floorNumber, playerClass) {
           : [...lootPools.common, ...lootPools.extra];
     const itemId = room.type === "treasure" || room.type === "elite"
       ? rng.pick(roomPool)
-      : rng.chance(0.55)
+      : rng.chance(floorNumber >= 11 ? 0.68 : 0.55)
         ? rng.pick(sustainPool)
         : rng.pick(roomPool);
     putItem(map, tile.x, tile.y, itemId);
@@ -825,21 +832,23 @@ export function getDropForEnemy(enemy, rng, playerClass) {
     ? ["sunfire_blade", "soulreaver_axe", "abyssal_plate", "void_heart", "greater_healing_potion"]
     : ["voidglass_staff", "astral_wand", "starweave_robe", "void_heart", "greater_mana_potion", "arcane_burst_tome"];
 
-  if (rng.chance((enemy.floorNumber ?? 1) >= 11 ? 0.34 : 0.52)) {
+  if (rng.chance((enemy.floorNumber ?? 1) >= 11 ? 0.26 : 0.52)) {
     const biasPool = playerClass === "warrior"
       ? ["militia_sword", "woodcutter_axe", "iron_sword", "raider_axe", "legion_spear", "padded_jerkin", "chain_armor", "scout_leathers", "healing_potion"]
       : ["hedge_wand", "ash_staff", "oak_staff", "crystal_wand", "ember_rod", "apprentice_robes", "enchanted_robe", "dusk_robe", "mana_potion"];
     const midGame = (enemy.floorNumber ?? 1) >= 11;
     const endgame = (enemy.floorNumber ?? 1) >= 21;
-    if (rng.chance(endgame ? 0.1 : midGame ? 0.08 : 0.09)) {
+    if (rng.chance(endgame ? 0.1 : midGame ? 0.05 : 0.09)) {
       drops.push(rng.pick(endgame ? [...biasPool, ...deepBiasPool, ...endgameBiasPool] : midGame ? [...biasPool, ...deepBiasPool] : biasPool));
     } else if (rng.chance(midGame ? 0.2 : 0.3)) {
       drops.push(rng.pick(midGame ? ["greater_healing_potion", "greater_mana_potion", "healing_potion", "mana_potion"] : ["healing_potion", "mana_potion"]));
     }
   }
 
+  const floorNumber = enemy.floorNumber ?? 1;
+  const floorGoldBonus = floorNumber >= 21 ? 4 : floorNumber >= 11 ? Math.max(0, floorNumber - 6) : Math.max(0, floorNumber - 1);
   return {
-    gold: rng.int(template.gold[0], template.gold[1]) + Math.max(0, (enemy.floorNumber ?? 1) - 1) + ((enemy.floorNumber ?? 1) >= 21 ? 6 : 0),
+    gold: rng.int(template.gold[0], template.gold[1]) + floorGoldBonus,
     items: drops.filter((itemId) => ITEMS[itemId]),
   };
 }

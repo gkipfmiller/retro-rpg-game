@@ -174,7 +174,7 @@ export const ITEMS = {
   war_hammer: { id: "war_hammer", name: "War Hammer", category: "weapon", slot: "weapon", classBias: "warrior", damage: [8, 12], accuracy: -3, bonus: { defenseFlat: 1 }, rarity: "uncommon", value: 58 },
   sundering_hammer: { id: "sundering_hammer", name: "Sundering Hammer", category: "weapon", slot: "weapon", classBias: "warrior", damage: [8, 11], accuracy: -2, rarity: "rare", value: 66, bonus: { defenseFlat: 1 }, enchantment: { type: "sunderChance", chance: 0.4, turns: 3, value: 1 }, description: "Enchantment: melee hits have a 40% chance to Sunder the target." },
   sunfire_blade: { id: "sunfire_blade", name: "Sunfire Blade", category: "weapon", slot: "weapon", classBias: "warrior", damage: [9, 13], accuracy: 4, rarity: "boss", value: 96, bonus: { meleeDamagePct: 8 }, enchantment: { type: "onHitBonusDamage", value: 3 }, description: "Enchantment: blazing strikes deal 3 bonus damage and hit harder overall." },
-  soulreaver_axe: { id: "soulreaver_axe", name: "Soulreaver Axe", category: "weapon", slot: "weapon", classBias: "warrior", damage: [10, 14], accuracy: -1, rarity: "boss", value: 98, bonus: { maxHpFlat: 8 }, enchantment: { type: "lifesteal", value: 3 }, description: "Enchantment: each heavy hit restores 3 HP." },
+  soulreaver_axe: { id: "soulreaver_axe", name: "Soulreaver Axe", category: "weapon", slot: "weapon", classBias: "warrior", damage: [10, 14], accuracy: -1, rarity: "boss", value: 98, bonus: { maxHpFlat: 8 }, enchantment: { type: "healOnKill", value: 3 }, description: "Enchantment: killing an enemy restores 3 HP." },
   captains_blade: { id: "captains_blade", name: "Captain's Blade", category: "weapon", slot: "weapon", classBias: "warrior", damage: [7, 10], accuracy: 5, rarity: "boss", value: 70 },
   apprentice_staff: { id: "apprentice_staff", name: "Apprentice Staff", category: "weapon", slot: "weapon", classBias: "wizard", damage: [1, 3], magicPower: 1, value: 14 },
   oak_staff: { id: "oak_staff", name: "Oak Staff", category: "weapon", slot: "weapon", classBias: "wizard", damage: [2, 4], magicPower: 2, rarity: "uncommon", value: 28 },
@@ -367,7 +367,7 @@ export const BOONS = {
     id: "iron_remnant",
     name: "Iron Remnant",
     description: "The sage presses a fragment of old armor into your palm.",
-    summary: "+3 permanent defense.",
+    summary: "+2 permanent defense.",
   },
   crimson_hunger: {
     id: "crimson_hunger",

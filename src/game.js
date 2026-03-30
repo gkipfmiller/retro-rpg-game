@@ -672,7 +672,7 @@ export class Game {
         stats.critBonus += 12;
         break;
       case "iron_remnant":
-        stats.defenseFlat += 3;
+        stats.defenseFlat += 2;
         break;
       case "stoneblood":
         stats.maxHpFlat += 18;
@@ -935,6 +935,7 @@ export class Game {
     if (item.category === "tome") parts.push(`Learn ${SPELLS[item.spellId]?.name ?? item.spellId}`);
     if (item.enchantment?.type === "onHitBonusDamage") parts.push(`Enchant +${item.enchantment.value} hit`);
     if (item.enchantment?.type === "lifesteal") parts.push(`Enchant lifesteal ${item.enchantment.value}`);
+    if (item.enchantment?.type === "healOnKill") parts.push(`Enchant heal ${item.enchantment.value} on kill`);
     if (item.enchantment?.type === "sunderChance") parts.push(`Enchant ${Math.round(item.enchantment.chance * 100)}% sunder`);
     if (item.enchantment?.type === "spellBonusDamage") parts.push(`Enchant +${item.enchantment.value} spell`);
     if (item.enchantment?.type === "manaRefundChance") parts.push(`Enchant ${Math.round(item.enchantment.chance * 100)}% refund`);
@@ -1193,6 +1194,8 @@ export class Game {
         return `Enchantment: each hit deals ${item.enchantment.value} bonus damage.`;
       case "lifesteal":
         return `Enchantment: recover ${item.enchantment.value} HP on each melee hit.`;
+      case "healOnKill":
+        return `Enchantment: killing an enemy restores ${item.enchantment.value} HP.`;
       case "sunderChance":
         return `Enchantment: melee hits have a ${Math.round(item.enchantment.chance * 100)}% chance to Sunder enemies.`;
       case "spellBonusDamage":
@@ -1241,8 +1244,16 @@ export class Game {
   getInventoryStacksWithSellValue() {
     return this.getInventoryStacks().map((stack) => ({
       ...stack,
-      sellValue: Math.max(1, Math.floor((ITEMS[stack.itemId]?.value ?? 0) * 0.45)),
+      sellValue: Math.max(1, Math.floor((ITEMS[stack.itemId]?.value ?? 0) * 0.25)),
     }));
+  }
+
+  getVendorBuyPrice(itemId) {
+    const item = ITEMS[itemId];
+    if (!item) return 0;
+    const rarity = this.getItemRarity(itemId);
+    const multiplier = rarity === "boss" ? 1.4 : rarity === "rare" ? 1.25 : 1;
+    return Math.max(1, Math.floor(item.value * multiplier));
   }
 
   getVendorStacks() {
@@ -1398,6 +1409,12 @@ export class Game {
       const derived = this.getDerivedStats(this.state.run.player);
       this.state.run.player.hp = Math.min(derived.maxHp, this.state.run.player.hp + 2);
       this.log("Crimson Hunger restores 2 HP.");
+    }
+    const weapon = ITEMS[this.state.run.player.equipment.weapon];
+    if (weapon?.enchantment?.type === "healOnKill") {
+      const derived = this.getDerivedStats(this.state.run.player);
+      this.state.run.player.hp = Math.min(derived.maxHp, this.state.run.player.hp + weapon.enchantment.value);
+      this.log(`${weapon.name} restores ${weapon.enchantment.value} HP on the kill.`);
     }
     this.gainXp(enemyStats.xp);
     const rng = createRng(hashSeed(this.state.run.turn, enemy.id, "drop"));
@@ -1912,7 +1929,7 @@ export class Game {
         data-tooltip="${this.escapeTooltip(this.getItemTooltip(stack.itemId, { stackCount: stack.count, includeCompare: true, includeValue: true }))}"
       >
         <span class="inventory-tile-rarity">${this.getItemRarity(stack.itemId)}</span>
-        <span class="inventory-tile-price">${ITEMS[stack.itemId].value}g</span>
+        <span class="inventory-tile-price">${this.getVendorBuyPrice(stack.itemId)}g</span>
         ${this.renderItemIcon(stack.itemId)}
         ${stack.count > 1 ? `<span class="inventory-stack-count">x${stack.count}</span>` : ""}
         <span class="inventory-tile-name">${ITEMS[stack.itemId].name}</span>
@@ -1937,10 +1954,10 @@ export class Game {
         action: "vendor-buy",
         actionLabel: "Buy",
         actionIndex: safeIndex,
-        actionDisabled: this.state.run.player.gold < ITEMS[selectedItemId].value,
-        priceLabel: `${ITEMS[selectedItemId].value}g`,
-        footer: `${selectedStack?.count > 1 ? `<p class="muted">Vendor stack: ${selectedStack.count}</p>` : ""}${this.state.run.player.gold < ITEMS[selectedItemId].value
-          ? `<p class="negative">You need ${ITEMS[selectedItemId].value - this.state.run.player.gold} more gold.</p>`
+        actionDisabled: this.state.run.player.gold < this.getVendorBuyPrice(selectedItemId),
+        priceLabel: `${this.getVendorBuyPrice(selectedItemId)}g`,
+        footer: `${selectedStack?.count > 1 ? `<p class="muted">Vendor stack: ${selectedStack.count}</p>` : ""}${this.state.run.player.gold < this.getVendorBuyPrice(selectedItemId)
+          ? `<p class="negative">You need ${this.getVendorBuyPrice(selectedItemId) - this.state.run.player.gold} more gold.</p>`
           : `<p class="positive">You can afford this item.</p>`}`,
       })
       : "<p>No items for sale.</p>";
@@ -1984,8 +2001,9 @@ export class Game {
     const itemId = stockIndex !== undefined ? vendor?.stock[stockIndex] : null;
     if (!itemId) return;
     const item = ITEMS[itemId];
-    if (this.state.run.player.gold < item.value) return;
-    this.state.run.player.gold -= item.value;
+    const price = this.getVendorBuyPrice(itemId);
+    if (this.state.run.player.gold < price) return;
+    this.state.run.player.gold -= price;
     this.state.run.player.inventory.push({ id: `inv-${Date.now()}-${itemId}`, itemId });
     vendor.stock.splice(stockIndex, 1);
     this.log(`Bought ${item.name}.`);
@@ -2000,7 +2018,7 @@ export class Game {
     const entry = entryIndex !== undefined ? this.state.run.player.inventory[entryIndex] : null;
     if (!entry) return;
     const item = ITEMS[entry.itemId];
-    const value = Math.max(1, Math.floor(item.value * 0.45));
+    const value = Math.max(1, Math.floor(item.value * 0.25));
     this.state.run.player.gold += value;
     this.state.run.player.inventory.splice(entryIndex, 1);
     this.log(`Sold ${item.name} for ${value} gold.`);
