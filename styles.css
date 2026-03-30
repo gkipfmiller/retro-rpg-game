@@ -90,6 +90,10 @@ button:hover {
   background: radial-gradient(circle at center, rgba(182, 92, 154, 0.24), rgba(96, 34, 74, 0.14) 40%, transparent 72%);
 }
 
+.critical-flash.slam {
+  background: radial-gradient(circle at center, rgba(214, 150, 74, 0.26), rgba(120, 72, 22, 0.16) 42%, transparent 74%);
+}
+
 .critical-flash.active {
   animation: critical-flash 360ms ease-out;
 }

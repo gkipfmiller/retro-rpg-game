@@ -262,6 +262,7 @@ export const ENEMIES = {
   doom_ogre: { id: "doom_ogre", name: "Doom Ogre", behavior: "blocker", hp: 33, damage: [7, 10], accuracy: 81, defense: 4, xp: 46, gold: [16, 24], glyph: "O" },
   abyssal_overlord: { id: "abyssal_overlord", name: "Abyssal Overlord", behavior: "boss", hp: 104, damage: [8, 13], accuracy: 88, defense: 5, xp: 160, gold: [60, 96], glyph: "M", range: 6 },
   bone_captain: { id: "bone_captain", name: "Super Skeletor", behavior: "boss", hp: 54, damage: [5, 8], accuracy: 85, defense: 3, xp: 60, gold: [25, 40], glyph: "S", range: 5 },
+  patches: { id: "patches", name: "Patches", behavior: "boss", hp: 78, damage: [7, 11], accuracy: 84, defense: 4, xp: 96, gold: [40, 60], glyph: "P", range: 1 },
 };
 
 export const FLOOR_CONFIGS = {
@@ -366,4 +367,10 @@ export const FINAL_BOSS_REWARDS = {
   warrior: ["sunfire_blade", "soulreaver_axe", "abyssal_plate"],
   wizard: ["voidglass_staff", "astral_wand", "starweave_robe"],
   neutral: ["void_heart", "sigil_of_fortune"],
+};
+
+export const FLOOR20_BOSS_REWARDS = {
+  warrior: ["flame_touched_sword", "vampire_axe", "sundering_hammer", "emberguard_cuirass", "vanguard_warplate", "sundergrip_gauntlets"],
+  wizard: ["runic_staff", "sage_wand", "spellweave_mantle", "hexwoven_robe", "spellcatcher_gloves", "cinderwraps"],
+  neutral: ["sigil_of_fortune", "talisman_of_vigor", "arcseal_pendant", "mirror_sigil", "charm_of_guarding", "chain_of_insight"],
 };

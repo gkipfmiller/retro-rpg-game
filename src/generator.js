@@ -1,4 +1,4 @@
-import { BOSS_REWARDS, CHEST_TABLE, ENEMIES, FINAL_BOSS_REWARDS, FLOOR_CONFIGS, FLOOR_ENCOUNTERS, ITEMS, ROOM_ENCOUNTERS, TRAPS } from "./data.js";
+import { BOSS_REWARDS, CHEST_TABLE, ENEMIES, FINAL_BOSS_REWARDS, FLOOR20_BOSS_REWARDS, FLOOR_CONFIGS, FLOOR_ENCOUNTERS, ITEMS, ROOM_ENCOUNTERS, TRAPS } from "./data.js";
 import { createRng, hashSeed, toKey } from "./utils.js";
 
 function makeTile(type = "wall") {
@@ -248,7 +248,7 @@ function spawnEncounter(map, room, rng, floorNumber, state) {
 }
 
 function reserveVendorRoom(rooms, rng, floorNumber) {
-  if (floorNumber === 1 || floorNumber === 10) return null;
+  if (floorNumber === 1 || floorNumber === 10 || floorNumber === 20) return null;
   const config = FLOOR_CONFIGS[floorNumber];
   if (!rng.chance(config.vendorChance ?? 0)) return null;
   const pool = rooms
@@ -540,6 +540,84 @@ export function generateBossFloor(runSeed, floorNumber, playerClass) {
   };
 }
 
+export function generateFloor20BossFloor(runSeed, floorNumber, playerClass) {
+  const rng = createRng(hashSeed(runSeed, floorNumber, "mid-boss"));
+  const width = 36;
+  const height = 24;
+  const map = createMap(width, height);
+
+  const entry = { id: 0, x: 2, y: 8, width: 7, height: 8, center: { x: 5, y: 12 }, type: "start" };
+  const corridor = { id: 1, x: 9, y: 11, width: 9, height: 3, center: { x: 13, y: 12 }, type: "normal" };
+  const arena = { id: 2, x: 18, y: 5, width: 14, height: 14, center: { x: 25, y: 12 }, type: "boss" };
+
+  for (const room of [entry, corridor, arena]) {
+    carveRoom(map, room);
+  }
+  carveCorridor(map, entry.center, corridor.center);
+  carveCorridor(map, corridor.center, arena.center);
+
+  const spawn = { ...entry.center };
+  const exit = { x: 29, y: 12 };
+  map[exit.y][exit.x].stairs = true;
+  const patchTiles = [
+    { x: arena.center.x - 3, y: arena.center.y - 3 },
+    { x: arena.center.x + 3, y: arena.center.y - 3 },
+    { x: arena.center.x - 3, y: arena.center.y + 3 },
+    { x: arena.center.x + 3, y: arena.center.y + 3 },
+    { x: arena.center.x, y: arena.center.y - 4 },
+    { x: arena.center.x, y: arena.center.y + 4 },
+  ];
+  for (const tile of patchTiles) {
+    if (map[tile.y]?.[tile.x]?.type === "floor") {
+      map[tile.y][tile.x].patchMarker = true;
+    }
+  }
+
+  const boss = {
+    id: "enemy-floor20-boss",
+    templateId: "patches",
+    name: ENEMIES.patches.name,
+    x: arena.center.x,
+    y: arena.center.y,
+    hp: ENEMIES.patches.hp,
+    maxHp: ENEMIES.patches.hp,
+    alerted: true,
+    lastKnownPlayerPosition: { ...spawn },
+    statuses: [],
+    elite: false,
+    turnCounter: 0,
+  };
+  map[boss.y][boss.x].occupant = boss.id;
+
+  const rewardItem = rng.pick([...FLOOR20_BOSS_REWARDS[playerClass], ...FLOOR20_BOSS_REWARDS.neutral]);
+  const chests = [
+    {
+      id: "floor20-boss-reward",
+      x: 30,
+      y: 12,
+      opened: false,
+      loot: [rewardItem],
+      gold: rng.int(32, 48),
+    },
+  ];
+  map[12][30].chestId = "floor20-boss-reward";
+
+  return {
+    width,
+    height,
+    map,
+    rooms: [entry, corridor, arena],
+    spawn,
+    exit,
+    enemies: [boss],
+    traps: [],
+    chests,
+    looseItems: [],
+    vendor: null,
+    shrine: null,
+  };
+}
+
 export function generateFinalBossFloor(runSeed, floorNumber, playerClass) {
   const rng = createRng(hashSeed(runSeed, floorNumber, "final-boss"));
   const width = 38;
@@ -646,6 +724,9 @@ export function generateFinalBossFloor(runSeed, floorNumber, playerClass) {
 export function generateFloor(runSeed, floorNumber, playerClass) {
   if (floorNumber === 10) {
     return generateBossFloor(runSeed, floorNumber, playerClass);
+  }
+  if (floorNumber === 20) {
+    return generateFloor20BossFloor(runSeed, floorNumber, playerClass);
   }
   if (floorNumber === 30) {
     return generateFinalBossFloor(runSeed, floorNumber, playerClass);

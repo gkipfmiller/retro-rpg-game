@@ -1716,6 +1716,10 @@ export class Game {
       this.state.run.player.floorFlags.boneCaptainDefeatedLogged = true;
       this.log("Super Skeletor is defeated. The deeper halls open.");
     }
+    if (this.state.run.floorNumber === 20 && !this.state.run.currentFloor.enemies.length && !this.state.run.player.floorFlags.patchesDefeatedLogged) {
+      this.state.run.player.floorFlags.patchesDefeatedLogged = true;
+      this.log("Patches collapses. The abyss opens below.");
+    }
   }
 
   processStatuses() {
@@ -1790,6 +1794,10 @@ export class Game {
         }
       }
 
+      if (enemy.templateId === "patches" && canSee && distance === 1 && enemy.turnCounter % 4 === 0) {
+        this.log("Patches lifts both fists for a brutal smash.");
+      }
+
       if (enemy.templateId === "abyssal_overlord" && distance > 1 && canSee && distance <= (template.range ?? 6) && enemy.turnCounter % 3 === 0) {
         this.enemyAttack(enemy, "abyssal_bolt");
         if (player.hp <= 0) return;
@@ -1812,6 +1820,13 @@ export class Game {
           if (player.hp <= 0) return;
           continue;
         }
+      }
+
+      if (enemy.templateId === "patches" && distance === 1 && enemy.turnCounter % 4 === 0) {
+        this.renderer?.triggerSlamFlash();
+        this.enemyAttack(enemy, "slam");
+        if (player.hp <= 0) return;
+        continue;
       }
 
       if (template.behavior === "boss" && distance === 1 && enemy.turnCounter % 3 === 0) {
@@ -1945,6 +1960,7 @@ export class Game {
 
     let damage = Math.max(1, rng.int(template.damage[0], template.damage[1]) - defense);
     if (mode === "cleave") damage += 3;
+    if (mode === "slam") damage += 2;
     if (mode === "abyssal_bolt") damage += 1;
 
     if (!player.floorFlags.firstHitTaken && derived.firstHitReduction) {
@@ -1977,6 +1993,10 @@ export class Game {
       this.log(`${enemy.name} casts ${spellName} for ${damage} damage.`);
     } else {
       this.log(`${enemy.name} hits you for ${damage} damage.`);
+    }
+    if (mode === "slam" && enemy.templateId === "patches" && rng.chance(0.45)) {
+      this.upsertStatus(player, { id: "sundered", turns: 2, value: 1 });
+      this.log("The smash leaves your guard sundered.");
     }
     if (mode === "spell" && enemy.templateId === "shaman" && rng.chance(0.5)) {
       this.upsertStatus(player, { id: "hexed", turns: 2, value: 1, source: "enemySpell" });

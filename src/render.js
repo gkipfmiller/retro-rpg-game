@@ -224,9 +224,11 @@ export class Renderer {
           ctx.restore();
         }
 
-        if (floorNumber === 10 && tile.type === "floor" && inBossRoom(x, y)) {
+        if ((floorNumber === 10 || floorNumber === 20) && tile.type === "floor" && inBossRoom(x, y)) {
           ctx.save();
-          ctx.fillStyle = tile.visible ? "rgba(88, 24, 36, 0.26)" : "rgba(52, 16, 24, 0.18)";
+          ctx.fillStyle = floorNumber === 10
+            ? (tile.visible ? "rgba(88, 24, 36, 0.26)" : "rgba(52, 16, 24, 0.18)")
+            : (tile.visible ? "rgba(72, 58, 28, 0.28)" : "rgba(38, 28, 12, 0.18)");
           ctx.fillRect(px, py, tileSize, tileSize);
           ctx.restore();
           if (tile.visible && tile.graveCircle) {
@@ -244,6 +246,27 @@ export class Renderer {
             ctx.stroke();
             ctx.fillStyle = "rgba(245, 196, 124, 0.95)";
             ctx.fillRect(Math.floor(cx - tileSize * 0.05), Math.floor(cy - tileSize * 0.05), Math.max(2, Math.floor(tileSize * 0.1)), Math.max(2, Math.floor(tileSize * 0.1)));
+            ctx.restore();
+          }
+          if (tile.visible && tile.patchMarker) {
+            const cx = px + tileSize / 2;
+            const cy = py + tileSize / 2;
+            ctx.save();
+            ctx.strokeStyle = "rgba(214, 162, 78, 0.92)";
+            ctx.lineWidth = Math.max(1, Math.floor(tileSize * 0.06));
+            ctx.strokeRect(
+              Math.floor(cx - tileSize * 0.18),
+              Math.floor(cy - tileSize * 0.18),
+              Math.floor(tileSize * 0.36),
+              Math.floor(tileSize * 0.36)
+            );
+            ctx.strokeStyle = "rgba(238, 204, 132, 0.92)";
+            ctx.beginPath();
+            ctx.moveTo(cx - tileSize * 0.16, cy - tileSize * 0.16);
+            ctx.lineTo(cx + tileSize * 0.16, cy + tileSize * 0.16);
+            ctx.moveTo(cx + tileSize * 0.16, cy - tileSize * 0.16);
+            ctx.lineTo(cx - tileSize * 0.16, cy + tileSize * 0.16);
+            ctx.stroke();
             ctx.restore();
           }
         }
@@ -288,7 +311,9 @@ export class Renderer {
       const spritePath = this.assets ? getActorSpriteFrame(this.assets.manifest, getEntitySpriteId(enemy), animationFrame) : null;
       const sprite = spritePath ? this.assets?.images[spritePath] : null;
       if (sprite) {
-        this.drawSprite(sprite, offsetX + enemy.x * tileSize, offsetY + enemy.y * tileSize, tileSize, tileSize, enemy.templateId === "bone_captain" ? 1.55 : 1.45);
+        const isBoss = ENEMIES[enemy.templateId]?.behavior === "boss";
+        const scale = enemy.templateId === "abyssal_overlord" ? 1.45 : isBoss ? 1.55 : 1.45;
+        this.drawSprite(sprite, offsetX + enemy.x * tileSize, offsetY + enemy.y * tileSize, tileSize, tileSize, scale);
         this.drawStatusPips(offsetX + enemy.x * tileSize, offsetY + enemy.y * tileSize, tileSize, enemy.statuses);
       } else {
         const template = ENEMIES[enemy.templateId];
@@ -297,7 +322,7 @@ export class Renderer {
           template.glyph,
           offsetX + enemy.x * tileSize + Math.floor(tileSize * 0.28),
           offsetY + enemy.y * tileSize + Math.floor(tileSize * 0.72),
-          enemy.templateId === "bone_captain" ? COLORS.boss : enemy.elite ? COLORS.elite : COLORS.enemy,
+          template.behavior === "boss" ? COLORS.boss : enemy.elite ? COLORS.elite : COLORS.enemy,
           Math.max(11, tileSize - 5)
         );
       }
@@ -514,7 +539,7 @@ export class Renderer {
       const spriteMarkup = spritePath ? `<img src="${spritePath}" alt="${target.name}" class="target-sprite">` : "";
       const bossLabel = target.templateId === "abyssal_overlord"
         ? `Final Boss${target.phaseTwo ? " • Phase 2" : " • Phase 1"}`
-        : target.templateId === "bone_captain"
+        : ENEMIES[target.templateId]?.behavior === "boss"
           ? "Boss"
           : target.elite
             ? "Elite"
@@ -567,7 +592,7 @@ export class Renderer {
 
   triggerFlash(variant = "critical") {
     if (!this.criticalFlash) return;
-    this.criticalFlash.classList.remove("critical", "necro");
+    this.criticalFlash.classList.remove("critical", "necro", "slam");
     this.criticalFlash.classList.add(variant);
     this.criticalFlash.classList.remove("hidden");
     this.criticalFlash.classList.remove("active");
@@ -575,7 +600,7 @@ export class Renderer {
     this.criticalFlash.classList.add("active");
     window.setTimeout(() => {
       this.criticalFlash?.classList.remove("active");
-      this.criticalFlash?.classList.remove("critical", "necro");
+      this.criticalFlash?.classList.remove("critical", "necro", "slam");
       this.criticalFlash?.classList.add("hidden");
     }, 380);
   }
@@ -586,5 +611,9 @@ export class Renderer {
 
   triggerNecroFlash() {
     this.triggerFlash("necro");
+  }
+
+  triggerSlamFlash() {
+    this.triggerFlash("slam");
   }
 }

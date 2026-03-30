@@ -74,6 +74,7 @@ const assetManifest = {
     doom_ogre: frameSet("ogre_run_anim_f"),
     abyssal_overlord: frameSet("big_demon_run_anim_f"),
     bone_captain: frameSet("necromancer_anim_f"),
+    patches: frameSet("big_zombie_run_anim_f"),
     vendor: frameSet("dwarf_m_idle_anim_f"),
   },
   items: {
