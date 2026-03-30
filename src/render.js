@@ -152,6 +152,9 @@ export class Renderer {
     this.overlay = document.getElementById("overlay");
     this.overlayTitle = document.getElementById("overlay-title");
     this.overlayContent = document.getElementById("overlay-content");
+    this.npcDialog = document.getElementById("npc-dialog");
+    this.npcDialogSpeaker = document.getElementById("npc-dialog-speaker");
+    this.npcDialogText = document.getElementById("npc-dialog-text");
     this.transitionBanner = document.getElementById("transition-banner");
     this.criticalFlash = document.getElementById("critical-flash");
     this.assets = null;
@@ -172,6 +175,7 @@ export class Renderer {
     this.renderHud();
     this.renderLog();
     this.renderOverlay();
+    this.renderNpcDialog();
   }
 
   renderMap() {
@@ -276,12 +280,18 @@ export class Renderer {
           const shrineSprite = this.assets?.images[this.assets.manifest.shrine];
           const vendorSpritePath = this.assets ? getActorSpriteFrame(this.assets.manifest, "vendor", animationFrame) : null;
           const vendorSprite = vendorSpritePath ? this.assets?.images[vendorSpritePath] : null;
+          const sage = currentFloor.sage;
+          const sageSpritePath = (sage && !sage.vanished && sage.x === x && sage.y === y && this.assets)
+            ? getActorSpriteFrame(this.assets.manifest, sage.actorId ?? "sage", animationFrame)
+            : null;
+          const sageSprite = sageSpritePath ? this.assets?.images[sageSpritePath] : null;
           const chestSprite = this.assets?.images[tile.chestId ? this.assets.manifest.chestClosed : ""];
           const pickupSpritePath = tile.itemIds.length ? getItemSprite(this.assets?.manifest, getPickupSpriteId(tile.itemIds)) : null;
           const pickupSprite = pickupSpritePath ? this.assets?.images[pickupSpritePath] : null;
           if (tile.stairs && stairsSprite) ctx.drawImage(stairsSprite, px, py, tileSize, tileSize);
           if (tile.shrineId && shrineSprite) this.drawSprite(shrineSprite, px, py, tileSize, tileSize, 1.2);
           if (tile.vendor && vendorSprite) this.drawSprite(vendorSprite, px, py, tileSize, tileSize, 1.6);
+          if (sageSprite) this.drawSprite(sageSprite, px, py, tileSize, tileSize, 1.7);
           if (tile.chestId && chestSprite) this.drawSprite(chestSprite, px, py, tileSize, tileSize, 1.2);
           if (tile.itemIds.length && pickupSprite) this.drawSprite(pickupSprite, px, py, tileSize, tileSize, 1.1);
         }
@@ -426,7 +436,7 @@ export class Renderer {
     const isCriticalHp = hpRatio > 0 && hpRatio <= 0.2;
 
     document.getElementById("hud-class").textContent = CLASSES[player.classId].name;
-    document.getElementById("hud-floor").textContent = `Floor ${run.floorNumber}`;
+    document.getElementById("hud-floor").textContent = run.floorNumber === 0 ? "Prelude" : `Floor ${run.floorNumber}`;
     document.getElementById("hud-level").textContent = `Level ${player.level}`;
     document.getElementById("hud-gold").textContent = `${player.gold}g`;
     document.getElementById("hud-hp-text").textContent = `${player.hp}/${derived.maxHp}`;
@@ -449,6 +459,7 @@ export class Renderer {
     const armorLine = document.getElementById("hud-armor");
     const handsLine = document.getElementById("hud-hands");
     const accessoryLine = document.getElementById("hud-accessory");
+    const boonLine = document.getElementById("hud-boon");
     const strengthLine = document.getElementById("hud-strength");
     const dexterityLine = document.getElementById("hud-dexterity");
     const vitalityLine = document.getElementById("hud-vitality");
@@ -459,6 +470,7 @@ export class Renderer {
     const equippedArmor = player.equipment.armor ? ITEMS[player.equipment.armor] : null;
     const equippedHands = player.equipment.hands ? ITEMS[player.equipment.hands] : null;
     const equippedAccessory = player.equipment.accessory ? ITEMS[player.equipment.accessory] : null;
+    const boon = this.game.getBoonDefinition(player.boonId);
     const applyEquipmentRarity = (element, item) => {
       element.classList.remove("rarity-common", "rarity-uncommon", "rarity-rare", "rarity-boss");
       if (item) {
@@ -470,6 +482,7 @@ export class Renderer {
     armorLine.textContent = `Armor: ${equippedArmor ? equippedArmor.name : "None"}`;
     handsLine.textContent = `Hands: ${equippedHands ? equippedHands.name : "None"}`;
     accessoryLine.textContent = `Accessory: ${equippedAccessory ? equippedAccessory.name : "None"}`;
+    boonLine.textContent = boon ? boon.name : "None";
     applyEquipmentRarity(weaponLine, equippedWeapon);
     applyEquipmentRarity(armorLine, equippedArmor);
     applyEquipmentRarity(handsLine, equippedHands);
@@ -500,6 +513,9 @@ export class Renderer {
         ? `${equippedAccessory.name}\nAccessory slot for passive stat bonuses.\n${formatEntryTooltip(equippedAccessory.id)}`
         : "Accessory slot\nNo accessory equipped."
     );
+    boonLine.dataset.tooltip = boon
+      ? `${boon.name}\n${boon.description}\n${boon.summary}`
+      : "Boon\nNo boon chosen yet.";
     strengthLine.dataset.tooltip = "Strength\nImproves melee damage.";
     dexterityLine.dataset.tooltip = "Dexterity\nImproves accuracy and helps with evasion.";
     vitalityLine.dataset.tooltip = "Vitality\nRaises maximum HP.";
@@ -582,6 +598,21 @@ export class Renderer {
       this.overlayContent.innerHTML = overlay.html;
       this.lastOverlaySignature = signature;
     }
+  }
+
+  renderNpcDialog() {
+    const dialog = this.game.state.ui.npcDialog;
+    if (!this.npcDialog) return;
+    if (!dialog || Date.now() > dialog.until) {
+      if (dialog && Date.now() > dialog.until) {
+        this.game.state.ui.npcDialog = null;
+      }
+      this.npcDialog.classList.add("hidden");
+      return;
+    }
+    this.npcDialogSpeaker.textContent = dialog.speaker;
+    this.npcDialogText.textContent = dialog.text;
+    this.npcDialog.classList.remove("hidden");
   }
 
   showTransition(text) {

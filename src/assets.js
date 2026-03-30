@@ -59,6 +59,7 @@ const assetManifest = {
   actors: {
     warrior: frameSet("knight_m_idle_anim_f"),
     wizard: frameSet("wizzard_m_idle_anim_f"),
+    sage: frameSet("wizzard_m_idle_anim_f"),
     rat: frameSet("tiny_slug_anim_f"),
     goblin: frameSet("goblin_run_anim_f"),
     slime: frameSet("swampy_anim_f"),

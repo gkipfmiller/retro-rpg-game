@@ -185,7 +185,7 @@ function assignRoomTypes(rooms, rng, floorNumber) {
   }
 
   if (floorNumber >= 7) {
-    const eliteChance = floorNumber >= 14 ? 0.6 : 0.35;
+    const eliteChance = floorNumber >= 14 ? 0.45 : 0.25;
     const eliteRoom = takeNormalRoom();
     if (eliteRoom && rng.chance(eliteChance)) eliteRoom.type = "elite";
   }
@@ -436,11 +436,32 @@ function placeVendor(map, room, rng, floorNumber) {
     ...Array.from({ length: guaranteedHealingPotions }, () => "healing_potion"),
     ...rng.shuffle(stockPool).slice(0, Math.max(0, stockSize - guaranteedHealingPotions)),
   ];
+  const archetypes = floorNumber >= 21
+    ? [
+      { id: "ash_dealer", name: "Ash Dealer", title: "Ash Dealer" },
+      { id: "void_huckster", name: "Void Huckster", title: "Void Huckster" },
+      { id: "ember_factor", name: "Ember Factor", title: "Ember Factor" },
+    ]
+    : floorNumber >= 11
+      ? [
+        { id: "ragpicker_broker", name: "Ragpicker Broker", title: "Ragpicker Broker" },
+        { id: "tunnel_apothecary", name: "Tunnel Apothecary", title: "Tunnel Apothecary" },
+        { id: "grave_merchant", name: "Grave Merchant", title: "Grave Merchant" },
+      ]
+      : [
+        { id: "wary_peddler", name: "Wary Peddler", title: "Wary Peddler" },
+        { id: "roadside_chapman", name: "Roadside Chapman", title: "Roadside Chapman" },
+        { id: "lantern_trader", name: "Lantern Trader", title: "Lantern Trader" },
+      ];
+  const archetype = rng.pick(archetypes);
   return {
     id: `vendor-${floorNumber}`,
     x: tile.x,
     y: tile.y,
     stock,
+    archetypeId: archetype.id,
+    name: archetype.name,
+    title: archetype.title,
   };
 }
 

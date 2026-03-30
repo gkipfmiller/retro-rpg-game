@@ -1,4 +1,4 @@
-import { BOSS_REWARDS, CLASSES, ENEMIES, ITEMS, SKILL_TREES, SPELLS, STATUS_DEFINITIONS, TRAPS } from "./data.js";
+import { BOONS, BOSS_REWARDS, CHEST_TABLE, CLASSES, ENEMIES, ITEMS, SKILL_TREES, SPELLS, STATUS_DEFINITIONS, TRAPS } from "./data.js";
 import { generateFloor, getDropForEnemy } from "./generator.js";
 import { getItemSprite } from "./assets.js";
 import { clamp, createRng, deepClone, hashSeed, manhattan, toKey } from "./utils.js";
@@ -97,10 +97,11 @@ function pathfind(map, start, end, blockers = new Set()) {
 
 export class Game {
   constructor() {
+    this.sageName = "The Grey Witness";
     this.state = {
       mode: "menu",
       run: null,
-      ui: { overlay: null, selectedId: null },
+      ui: { overlay: null, selectedId: null, npcDialog: null },
       logs: ["Begin a new run to enter the dungeon."],
     };
     this.renderer = null;
@@ -120,8 +121,263 @@ export class Game {
     this.state.mode = mode;
   }
 
+  getFloorTransitionBanner(floorNumber) {
+    const bossFloorTitles = {
+      0: "The Sage Waits",
+      10: "Floor 10 - Super Skeletor's Lair",
+      20: "Floor 20 - The Stitching Pit",
+      30: "Floor 30 - Abyssal Throne",
+    };
+    return bossFloorTitles[floorNumber] ?? `Floor ${floorNumber}`;
+  }
+
+  getBoonDefinition(boonId) {
+    return BOONS[boonId] ?? null;
+  }
+
+  getNegativeStatusIds() {
+    return ["chilled", "sundered", "weakened", "hexed"];
+  }
+
+  getBoonChoices(classId, runSeed) {
+    const rng = createRng(hashSeed(runSeed, classId, "boons"));
+    const pool = Object.keys(BOONS);
+    const picks = [];
+    while (pool.length && picks.length < 3) {
+      picks.push(pool.splice(rng.int(0, pool.length - 1), 1)[0]);
+    }
+    return picks;
+  }
+
+  getSageFarewellLine(runSeed, boonId) {
+    const lines = [
+      "A gift, and a burden. Descend.",
+      "Choose well, delver. The dungeon remembers every debt.",
+      "Good luck. You will need more than that.",
+      "Take this blessing. Spend it before the dark spends you.",
+    ];
+    return lines[hashSeed(runSeed, boonId, "sage-line") % lines.length];
+  }
+
+  getVendorGreeting(vendor, runSeed, floorNumber) {
+    const dialogueByArchetype = {
+      wary_peddler: [
+        "Coin first. Complaints later.",
+        "Buy while the lantern still burns.",
+        "First ten floors teach caution. I sell some.",
+      ],
+      roadside_chapman: [
+        "You look half-dead. Good. Half-dead still pays.",
+        "I've seen worse delvers. Not many lived longer.",
+        "Spend now. Regret later.",
+      ],
+      lantern_trader: [
+        "Keep your flame fed and the dark may blink first.",
+        "Take what light you can carry.",
+        "Down here, a potion is worth more than pride.",
+      ],
+      ragpicker_broker: [
+        "Everything down here has an owner. Today it can be you.",
+        "Deep floors reward the prepared and bury the rest.",
+        "Buy quickly. These halls never stay quiet.",
+      ],
+      tunnel_apothecary: [
+        "I sell cures, tonics, and one or two bad decisions.",
+        "If the poison doesn't get you, the price might.",
+        "These mixtures sting less than dying.",
+      ],
+      grave_merchant: [
+        "The dead leave excellent inventory behind.",
+        "If you survive, come back richer.",
+        "The deeper halls always collect interest.",
+      ],
+      ash_dealer: [
+        "Ash, steel, and nerve. That's all anyone brings this deep.",
+        "Past this point, the dungeon stops bluffing.",
+        "Spend like this is your last market. It may be.",
+      ],
+      void_huckster: [
+        "The void strips fools first. Buy accordingly.",
+        "I trade in certainties: pain, prices, and poor odds.",
+        "Even the Overlord's halls have customers.",
+      ],
+      ember_factor: [
+        "Embers die fast down here. So do bargains.",
+        "Take what you need before the throne takes you.",
+        "You've made it far enough to know cheap gear won't save you.",
+      ],
+    };
+    const lines = dialogueByArchetype[vendor?.archetypeId] ?? [
+      "Coin first. Complaints later.",
+      "Buy quickly. These halls never stay quiet.",
+      "If you're going deeper, spend like you mean to survive.",
+    ];
+    return lines[hashSeed(runSeed, floorNumber, vendor?.archetypeId ?? "vendor-line") % lines.length];
+  }
+
+  createSageChamber(runSeed, classId) {
+    const width = 15;
+    const height = 11;
+    const map = Array.from({ length: height }, (_, y) =>
+      Array.from({ length: width }, (_, x) => ({
+        type: x === 0 || y === 0 || x === width - 1 || y === height - 1 ? "wall" : "floor",
+        visible: false,
+        explored: false,
+        occupant: null,
+        itemIds: [],
+        stairs: false,
+        chestId: null,
+        vendor: false,
+        shrineId: null,
+      }))
+    );
+
+    const room = { id: 0, x: 1, y: 1, width: 13, height: 9, center: { x: 7, y: 5 }, type: "sage" };
+    return {
+      floorNumber: 0,
+      seed: hashSeed(runSeed, "sage-chamber"),
+      width,
+      height,
+      map,
+      rooms: [room],
+      enemies: [],
+      traps: [],
+      chests: [],
+      vendor: null,
+      shrine: null,
+      spawn: { x: 7, y: 8 },
+      exit: { x: 7, y: 2 },
+      sage: {
+        name: this.sageName,
+        x: 7,
+        y: 4,
+        actorId: "sage",
+        vanished: false,
+        choices: this.getBoonChoices(classId, runSeed),
+      },
+    };
+  }
+
+  getChestBoonPool(floorNumber, playerClassId) {
+    const tiers = [];
+    tiers.push(...CHEST_TABLE.common);
+    if (floorNumber >= 6) tiers.push(...CHEST_TABLE.rare);
+    if (floorNumber >= 12) tiers.push(...CHEST_TABLE.deep);
+    if (floorNumber >= 21) tiers.push(...CHEST_TABLE.endgame);
+    const classPool = tiers.filter((itemId) => {
+      const item = ITEMS[itemId];
+      return item && (!item.classBias || item.classBias === playerClassId);
+    });
+    return classPool.length ? classPool : tiers;
+  }
+
+  applyBoonFloorAdjustments(floorData, floorNumber, player) {
+    const boonId = player.boonId;
+    if (!boonId || floorNumber < 1) return floorData;
+    const rng = createRng(hashSeed(this.state.run?.runSeed ?? floorData.seed, floorNumber, boonId, "boon-floor"));
+
+    if (boonId === "fortunes_ledger" && floorData.vendor) {
+      const vendorPool = this.getChestBoonPool(floorNumber, player.classId)
+        .filter((itemId) => !floorData.vendor.stock.includes(itemId) || rng.chance(0.35));
+      for (let index = 0; index < 2; index += 1) {
+        if (!vendorPool.length) break;
+        floorData.vendor.stock.push(rng.pick(vendorPool));
+      }
+    }
+
+    if (boonId === "treasure_sense" && floorData.chests?.length) {
+      const chestPool = this.getChestBoonPool(floorNumber, player.classId);
+      for (const chest of floorData.chests) {
+        const candidates = chestPool.filter((itemId) => !chest.loot.includes(itemId));
+        const extraItem = rng.pick(candidates.length ? candidates : chestPool);
+        if (extraItem) {
+          chest.loot.push(extraItem);
+        }
+      }
+    }
+
+    return floorData;
+  }
+
+  openSageChoice() {
+    const sage = this.state.run?.currentFloor?.sage;
+    if (!sage || sage.vanished) return;
+    const choices = sage.choices
+      .map((boonId) => {
+        const boon = BOONS[boonId];
+        return `
+          <button class="class-card boon-card" data-action="choose-boon" data-boon-id="${boon.id}">
+            <span class="class-role">Sage's Gift</span>
+            <strong class="class-name">${boon.name}</strong>
+            <span class="class-flavor">${boon.description}</span>
+            <span class="class-traits">${boon.summary}</span>
+          </button>
+        `;
+      })
+      .join("");
+    this.state.ui.overlay = {
+      type: "boon-choice",
+      dismissible: false,
+      title: this.sageName,
+      html: `
+        <p class="muted">${this.sageName} offers three gifts. Accept one and carry its burden below.</p>
+        <div class="class-grid boon-grid">
+          ${choices}
+        </div>
+      `,
+    };
+  }
+
+  chooseBoon(boonId) {
+    const run = this.state.run;
+    const boon = BOONS[boonId];
+    if (!run || !boon || run.player.boonId) return;
+    run.player.boonId = boonId;
+    run.player.boonState = { sageEchoCount: 0 };
+    const sage = run.currentFloor.sage;
+    if (sage) sage.vanished = true;
+    const exitTile = run.currentFloor.map[run.currentFloor.exit.y]?.[run.currentFloor.exit.x];
+    if (exitTile) exitTile.stairs = true;
+    const derived = this.getDerivedStats(run.player);
+    run.player.hp = Math.min(derived.maxHp, run.player.hp + (boonId === "stoneblood" ? 18 : 0));
+    run.player.mana = Math.min(derived.maxMana, run.player.mana + (boonId === "deep_wells" ? 14 : 0));
+    const farewell = this.getSageFarewellLine(run.runSeed, boonId);
+    this.showNpcDialog(this.sageName, farewell, 3200);
+    this.log(`${this.sageName} grants ${boon.name}.`);
+    this.log(`${this.sageName} fades, revealing the stairs to Floor 1.`);
+    this.state.ui.overlay = {
+      type: "sage-farewell",
+      dismissible: false,
+      title: this.sageName,
+      html: `
+        <p>${boon.description}</p>
+        <p><strong>${boon.summary}</strong></p>
+        <p class="muted">${farewell}</p>
+        <button class="primary" data-action="close-sage-message">Continue</button>
+      `,
+    };
+  }
+
+  triggerRelentlessStep() {
+    const player = this.state.run.player;
+    if (player.boonId !== "relentless_step" || player.floorFlags.relentlessStepUsed || player.hp <= 0) return;
+    const derived = this.getDerivedStats(player);
+    if (player.hp / Math.max(1, derived.maxHp) > 0.25) return;
+    player.floorFlags.relentlessStepUsed = true;
+    player.hp = Math.min(derived.maxHp, player.hp + 10);
+    this.log("Relentless Step surges through you. You recover 10 HP.");
+  }
+
   log(message) {
     this.state.logs.push(message);
+  }
+
+  showNpcDialog(speaker, text, duration = 2600) {
+    this.state.ui.npcDialog = {
+      speaker,
+      text,
+      until: Date.now() + duration,
+    };
   }
 
   normalizePlayerName(name) {
@@ -306,6 +562,8 @@ export class Game {
       statuses: [],
       turnFlags: {},
       lastAction: "none",
+      boonId: null,
+      boonState: {},
     };
 
     for (const itemId of definition.startingItems) {
@@ -336,13 +594,13 @@ export class Game {
   startRun(classId) {
     const runSeed = hashSeed(classId, Date.now());
     const player = this.createPlayer(classId);
-    const floorData = generateFloor(runSeed, 1, classId);
+    const floorData = this.createSageChamber(runSeed, classId);
     player.x = floorData.spawn.x;
     player.y = floorData.spawn.y;
 
     this.state.run = {
       runSeed,
-      floorNumber: 1,
+      floorNumber: 0,
       turn: 0,
       player,
       currentFloor: floorData,
@@ -350,10 +608,13 @@ export class Game {
       currentTargetId: null,
     };
     this.updateVisibility();
-    this.state.logs = [`${CLASSES[classId].name} enters Floor 1.`];
+    this.state.logs = [
+      `${this.sageName} waits before the first descent.`,
+      "Approach the sage and press Enter to choose a boon.",
+    ];
     this.state.ui.overlay = null;
     this.state.mode = "in_game";
-    this.renderer?.showTransition("Floor 1");
+    this.renderer?.showTransition(this.getFloorTransitionBanner(0));
   }
 
   getDerivedStats(player) {
@@ -404,6 +665,23 @@ export class Game {
 
     for (const bonus of skillBonuses) {
       stats[bonus.stat] = (stats[bonus.stat] ?? 0) + bonus.value;
+    }
+
+    switch (player.boonId) {
+      case "vicious_star":
+        stats.critBonus += 12;
+        break;
+      case "iron_remnant":
+        stats.defenseFlat += 3;
+        break;
+      case "stoneblood":
+        stats.maxHpFlat += 18;
+        break;
+      case "deep_wells":
+        stats.maxManaFlat += 14;
+        break;
+      default:
+        break;
     }
 
     const maxHp = 14 + stats.vitality * 3 + (player.level - 1) * CLASSES[player.classId].hpGrowth + stats.maxHpFlat;
@@ -504,6 +782,13 @@ export class Game {
 
   upsertStatus(entity, status) {
     if (entity === this.state.run?.player && status.id !== "arcane_shield") {
+      if (this.getNegativeStatusIds().includes(status.id) && this.state.run.player.boonId === "ward_of_ash") {
+        const boonRng = createRng(hashSeed(this.state.run.turn, status.id, "ward-of-ash"));
+        if (boonRng.chance(0.6)) {
+          this.log(`Ward of Ash repels ${STATUS_DEFINITIONS[status.id]?.name ?? status.id}.`);
+          return;
+        }
+      }
       const hands = this.getHandsItem(entity);
       const effect = hands?.handsEffect;
       if (effect?.type === "ignoreSpellStatusChance" && status.source === "enemySpell") {
@@ -566,6 +851,12 @@ export class Game {
       return;
     }
 
+    const sage = run.currentFloor.sage;
+    if (sage && !sage.vanished && sage.x === targetX && sage.y === targetY) {
+      this.showNpcDialog(this.sageName, "One gift. One burden. Step close and choose.", 2600);
+      return;
+    }
+
     run.player.x = targetX;
     run.player.y = targetY;
     run.player.lastAction = "move";
@@ -613,6 +904,7 @@ export class Game {
       }
       this.log("The alarm echoes through the halls.");
     }
+    this.triggerRelentlessStep();
     if (this.state.run.player.hp <= 0) this.handleDeath(`Killed by ${template.name}.`);
   }
 
@@ -999,8 +1291,9 @@ export class Game {
     let damage = 0;
     if (mode.type === "melee" || mode.type === "ability") {
       const momentumBonus = player.turnFlags.killMomentum ?? 0;
+      const boonBattleTrance = player.turnFlags.boonBattleTrance ?? 0;
       const movedIntoPressureBonus = player.lastAction === "move" && derived.advanceDamagePct ? derived.advanceDamagePct / 100 : 0;
-      const base = rng.int(weapon?.damage?.[0] ?? 1, weapon?.damage?.[1] ?? 2) + derived.meleeBonus + momentumBonus;
+      const base = rng.int(weapon?.damage?.[0] ?? 1, weapon?.damage?.[1] ?? 2) + derived.meleeBonus + momentumBonus + boonBattleTrance;
       damage = Math.max(1, Math.floor(base * (1 + derived.meleeDamagePct / 100)) - enemyStats.defense);
       damage = Math.max(1, Math.floor(damage * (1 + movedIntoPressureBonus)));
       if (mode.abilityId === "power_strike") damage += 3;
@@ -1019,7 +1312,7 @@ export class Game {
         to: { x: enemy.x, y: enemy.y },
       });
       const firstSpellBonus = !enemy.firstSpellHitTaken && derived.firstSpellPct ? derived.firstSpellPct / 100 : 0;
-      const base = rng.int(spell.damage[0], spell.damage[1]) + derived.spellBonus;
+      const base = rng.int(spell.damage[0], spell.damage[1]) + derived.spellBonus + (player.turnFlags.boonBattleTrance ?? 0);
       damage = Math.max(1, Math.floor(base * (1 + derived.spellDamagePct / 100 + firstSpellBonus)) - enemyStats.defense);
       if (derived.evocationBonus && (enemy.hp / enemy.maxHp >= 0.75 || enemy.hp / enemy.maxHp <= 0.25)) {
         damage += Math.floor(damage * (derived.evocationBonus / 100));
@@ -1033,8 +1326,14 @@ export class Game {
       enemy.firstSpellHitTaken = true;
     }
 
+    const critChance = clamp(5 + (derived.critBonus ?? 0), 5, 45);
+    const criticalHit = rng.chance(critChance / 100);
+    if (criticalHit) {
+      damage = Math.max(1, Math.floor(damage * 1.5));
+    }
+
     enemy.hp -= damage;
-    this.log(`You hit ${enemy.name} for ${damage} damage.`);
+    this.log(`You ${criticalHit ? "critically strike" : "hit"} ${enemy.name} for ${damage} damage.`);
     if (mode.abilityId === "guard_break") {
       this.upsertStatus(enemy, { id: "sundered", turns: 3, value: 2 });
       this.log(`${enemy.name} is sundered.`);
@@ -1064,6 +1363,9 @@ export class Game {
       player.mana = Math.min(derived.maxMana, player.mana + enchantment.value);
       this.log(`${weapon.name} refunds ${enchantment.value} mana.`);
     }
+    if (player.turnFlags.boonBattleTrance) {
+      player.turnFlags.boonBattleTrance = 0;
+    }
     if (mode.abilityId === "power_strike" && derived.cleave) {
       const splashDamage = Math.max(1, Math.floor(damage * derived.cleave));
       const adjacentEnemies = this.state.run.currentFloor.enemies.filter((candidate) => candidate.id !== enemy.id && manhattan(candidate, enemy) === 1);
@@ -1089,6 +1391,14 @@ export class Game {
     if (playerSnapshot.killMomentum) {
       this.state.run.player.turnFlags.killMomentum = playerSnapshot.killMomentum;
     }
+    if (this.state.run.player.boonId === "battle_trance") {
+      this.state.run.player.turnFlags.boonBattleTrance = 2;
+    }
+    if (this.state.run.player.boonId === "crimson_hunger") {
+      const derived = this.getDerivedStats(this.state.run.player);
+      this.state.run.player.hp = Math.min(derived.maxHp, this.state.run.player.hp + 2);
+      this.log("Crimson Hunger restores 2 HP.");
+    }
     this.gainXp(enemyStats.xp);
     const rng = createRng(hashSeed(this.state.run.turn, enemy.id, "drop"));
     const drop = getDropForEnemy(enemy, rng, this.state.run.player.classId);
@@ -1103,7 +1413,8 @@ export class Game {
   gainXp(amount) {
     const player = this.state.run.player;
     if (player.level >= 10) return;
-    player.xp += amount;
+    const bonusXp = player.boonId === "grave_insight" ? Math.floor(amount * 0.2) : 0;
+    player.xp += amount + bonusXp;
     while (player.level < 10 && player.xp >= this.getXpForLevel(player.level + 1)) {
       player.level += 1;
       player.skillPoints += 1;
@@ -1133,10 +1444,12 @@ export class Game {
     const player = this.state.run.player;
     const derived = this.getPlayerCombatSnapshot();
     const spell = SPELLS[spellId];
+    const sageEchoCount = player.boonState.sageEchoCount ?? 0;
+    const sageEchoFree = spell.type === "spell" && player.boonId === "sages_echo" && (sageEchoCount + 1) % 3 === 0;
     const utilitySpell = spellId === "arcane_shield" || spellId === "blink";
     const utilityDiscount = utilitySpell ? derived.utilityDiscount : 0;
     const freeUtility = utilitySpell && derived.freeUtility && !player.turnFlags.freeUtilityUsed;
-    const cost = freeUtility ? 0 : Math.max(0, spell.cost - utilityDiscount);
+    const cost = (freeUtility || sageEchoFree) ? 0 : Math.max(0, spell.cost - utilityDiscount);
     if (player.mana < cost) {
       this.log("Not enough mana.");
       return;
@@ -1147,6 +1460,7 @@ export class Game {
       if (freeUtility) player.turnFlags.freeUtilityUsed = true;
       player.statuses = player.statuses.filter((status) => status.id !== "arcane_shield");
       player.statuses.push({ id: "arcane_shield", turns: 3, fresh: true });
+      if (player.boonId === "sages_echo") player.boonState.sageEchoCount = sageEchoCount + 1;
       this.log("Arcane Shield surrounds you.");
       this.endPlayerTurn();
       return;
@@ -1173,6 +1487,7 @@ export class Game {
       }
       player.mana -= cost;
       if (freeUtility) player.turnFlags.freeUtilityUsed = true;
+      if (spell.type === "spell" && player.boonId === "sages_echo") player.boonState.sageEchoCount = sageEchoCount + 1;
       player.x = destination.x;
       player.y = destination.y;
       this.log("You blink through the dark.");
@@ -1192,6 +1507,7 @@ export class Game {
     if (shouldSpendMana) {
       player.mana -= cost;
     }
+    if (spell.type === "spell" && player.boonId === "sages_echo") player.boonState.sageEchoCount = sageEchoCount + 1;
     this.performPlayerAttack(target, { type: "spell", spellId });
   }
 
@@ -1287,6 +1603,12 @@ export class Game {
     const { player, currentFloor } = this.state.run;
     const tile = currentFloor.map[player.y][player.x];
     const bossAlive = currentFloor.enemies.some((enemy) => ENEMIES[enemy.templateId]?.behavior === "boss");
+    const sage = currentFloor.sage;
+    if (sage && !sage.vanished && manhattan(player, sage) <= 1) {
+      this.showNpcDialog(this.sageName, "Choose, delver. The dungeon rarely offers twice.", 2800);
+      this.openSageChoice();
+      return;
+    }
     if (tile.stairs) {
       this.descend();
       return;
@@ -1310,6 +1632,8 @@ export class Game {
     }
 
     if (tile.vendor) {
+      const vendor = this.state.run.currentFloor.vendor;
+      this.showNpcDialog(vendor?.name ?? "Vendor", this.getVendorGreeting(vendor, this.state.run.runSeed, this.state.run.floorNumber), 2400);
       this.openVendor();
       return;
     }
@@ -1344,12 +1668,16 @@ export class Game {
     }
     this.state.run.floorNumber = nextFloor;
     this.state.run.player.floorFlags = {};
-    this.state.run.currentFloor = generateFloor(this.state.run.runSeed, nextFloor, this.state.run.player.classId);
+    this.state.run.currentFloor = this.applyBoonFloorAdjustments(
+      generateFloor(this.state.run.runSeed, nextFloor, this.state.run.player.classId),
+      nextFloor,
+      this.state.run.player
+    );
     this.state.run.player.x = this.state.run.currentFloor.spawn.x;
     this.state.run.player.y = this.state.run.currentFloor.spawn.y;
     this.updateVisibility();
     this.log(`You descend to Floor ${nextFloor}.`);
-    this.renderer?.showTransition(nextFloor === 30 ? "Floor 30 - Abyssal Throne" : `Floor ${nextFloor}`);
+    this.renderer?.showTransition(this.getFloorTransitionBanner(nextFloor));
   }
 
   openInventory(selectedIndex = 0) {
@@ -1408,12 +1736,14 @@ export class Game {
   openCharacter() {
     const player = this.state.run.player;
     const derived = this.getDerivedStats(player);
+    const boon = this.getBoonDefinition(player.boonId);
     this.state.ui.overlay = {
       type: "character",
       title: "Character",
       html: `
         <div class="stat-list">
           <div>Class: <strong>${CLASSES[player.classId].name}</strong></div>
+          <div>Boon: <strong>${boon?.name ?? "None"}</strong></div>
           <div>Level: <strong>${player.level}</strong></div>
           <div>Strength: <strong>${derived.strength}</strong></div>
           <div>Dexterity: <strong>${derived.dexterity}</strong></div>
@@ -1644,7 +1974,7 @@ export class Game {
         </div>
       </div>
     `;
-    this.state.ui.overlay = { type: "vendor", title: "Vendor", selectedIndex: safeIndex, html };
+    this.state.ui.overlay = { type: "vendor", title: vendor.title ?? "Vendor", selectedIndex: safeIndex, html };
   }
 
   vendorBuy(index) {
@@ -1978,6 +2308,7 @@ export class Game {
     }
 
     player.hp -= damage;
+    this.triggerRelentlessStep();
     if (mode === "spell" || mode === "abyssal_bolt") {
       const spellName = mode === "abyssal_bolt"
         ? "Abyssal Bolt"
@@ -2095,6 +2426,12 @@ export class Game {
 
   handleOverlayAction(action, payload) {
     switch (action) {
+      case "choose-boon":
+        this.chooseBoon(payload.boonId);
+        break;
+      case "close-sage-message":
+        this.state.ui.overlay = null;
+        break;
       case "inventory-use":
         this.equipInventoryIndex(Number(payload.index));
         break;

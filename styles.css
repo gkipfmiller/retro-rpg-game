@@ -280,6 +280,11 @@ button:hover {
   color: var(--accent);
 }
 
+.hud-boon-panel p {
+  color: #d9c27c;
+  font-weight: 700;
+}
+
 .hud-row {
   display: flex;
   justify-content: space-between;
@@ -462,6 +467,35 @@ button:hover {
   align-items: center;
   justify-content: center;
   padding: 1rem;
+}
+
+.npc-dialog {
+  position: fixed;
+  left: 50%;
+  bottom: 2rem;
+  transform: translateX(-50%);
+  width: min(560px, calc(100vw - 2rem));
+  padding: 0.8rem 1rem;
+  border: 1px solid rgba(214, 176, 92, 0.5);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(18, 22, 29, 0.96), rgba(10, 12, 18, 0.94));
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45);
+  z-index: 35;
+  pointer-events: none;
+}
+
+.npc-dialog-speaker {
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08rem;
+  text-transform: uppercase;
+  margin-bottom: 0.3rem;
+}
+
+.npc-dialog-text {
+  color: var(--text);
+  line-height: 1.45;
 }
 
 .overlay-panel {
