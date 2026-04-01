@@ -28,6 +28,99 @@ const COLORS = {
   health: "#cf5f5f",
 };
 
+const FLOOR_THEMES = {
+  sage: {
+    floorVisible: "#1c1824",
+    floorFog: "#17131d",
+    wallVisible: "#2d3144",
+    wallFog: "#1d2230",
+    floorOverlayVisible: "rgba(128, 106, 168, 0.16)",
+    floorOverlayFog: "rgba(88, 72, 120, 0.14)",
+    wallOverlayVisible: "rgba(124, 132, 196, 0.12)",
+    wallOverlayFog: "rgba(86, 92, 136, 0.12)",
+  },
+  crypt: {
+    floorVisible: "#141a20",
+    floorFog: "#11161b",
+    wallVisible: "#27303b",
+    wallFog: "#1a2129",
+    floorOverlayVisible: "rgba(82, 102, 126, 0.1)",
+    floorOverlayFog: "rgba(58, 74, 94, 0.12)",
+    wallOverlayVisible: "rgba(112, 130, 150, 0.08)",
+    wallOverlayFog: "rgba(74, 88, 106, 0.1)",
+  },
+  ember_halls: {
+    floorVisible: "#1d1615",
+    floorFog: "#181112",
+    wallVisible: "#352421",
+    wallFog: "#251917",
+    floorOverlayVisible: "rgba(184, 96, 62, 0.14)",
+    floorOverlayFog: "rgba(120, 66, 46, 0.14)",
+    wallOverlayVisible: "rgba(154, 90, 58, 0.12)",
+    wallOverlayFog: "rgba(98, 56, 38, 0.12)",
+  },
+  fungal_depths: {
+    floorVisible: "#141d17",
+    floorFog: "#101812",
+    wallVisible: "#223026",
+    wallFog: "#17211a",
+    floorOverlayVisible: "rgba(86, 154, 90, 0.14)",
+    floorOverlayFog: "rgba(58, 108, 62, 0.14)",
+    wallOverlayVisible: "rgba(94, 142, 102, 0.12)",
+    wallOverlayFog: "rgba(60, 96, 68, 0.12)",
+  },
+  sunken_vault: {
+    floorVisible: "#141a1f",
+    floorFog: "#10151a",
+    wallVisible: "#20313a",
+    wallFog: "#18242c",
+    floorOverlayVisible: "rgba(72, 138, 154, 0.14)",
+    floorOverlayFog: "rgba(50, 96, 110, 0.14)",
+    wallOverlayVisible: "rgba(96, 152, 168, 0.1)",
+    wallOverlayFog: "rgba(62, 102, 116, 0.12)",
+  },
+  necropolis: {
+    floorVisible: "#1f151d",
+    floorFog: "#171018",
+    wallVisible: "#342433",
+    wallFog: "#241a24",
+    floorOverlayVisible: "rgba(158, 74, 118, 0.14)",
+    floorOverlayFog: "rgba(102, 50, 78, 0.14)",
+    wallOverlayVisible: "rgba(130, 86, 126, 0.1)",
+    wallOverlayFog: "rgba(84, 58, 82, 0.12)",
+  },
+  stitchworks: {
+    floorVisible: "#231c15",
+    floorFog: "#19140f",
+    wallVisible: "#3b2d24",
+    wallFog: "#2a2018",
+    floorOverlayVisible: "rgba(168, 122, 66, 0.15)",
+    floorOverlayFog: "rgba(112, 80, 42, 0.14)",
+    wallOverlayVisible: "rgba(142, 106, 68, 0.12)",
+    wallOverlayFog: "rgba(90, 68, 44, 0.12)",
+  },
+  void_deep: {
+    floorVisible: "#12131e",
+    floorFog: "#0d0e16",
+    wallVisible: "#242540",
+    wallFog: "#17192a",
+    floorOverlayVisible: "rgba(92, 78, 172, 0.16)",
+    floorOverlayFog: "rgba(64, 54, 118, 0.16)",
+    wallOverlayVisible: "rgba(88, 84, 170, 0.12)",
+    wallOverlayFog: "rgba(58, 58, 110, 0.12)",
+  },
+  abyssal_throne: {
+    floorVisible: "#17111d",
+    floorFog: "#110d15",
+    wallVisible: "#2a1d36",
+    wallFog: "#1c1524",
+    floorOverlayVisible: "rgba(146, 68, 118, 0.16)",
+    floorOverlayFog: "rgba(96, 46, 78, 0.16)",
+    wallOverlayVisible: "rgba(118, 72, 142, 0.12)",
+    wallOverlayFog: "rgba(76, 46, 92, 0.12)",
+  },
+};
+
 function drawText(ctx, text, x, y, color = "#f0ead6", size = 14) {
   ctx.fillStyle = color;
   ctx.font = `${size}px monospace`;
@@ -181,6 +274,7 @@ export class Renderer {
   renderMap() {
     const { ctx } = this;
     const { currentFloor, player, floorNumber } = this.game.state.run;
+    const floorTheme = FLOOR_THEMES[currentFloor.theme] ?? FLOOR_THEMES.crypt;
     const bossRoom = currentFloor.rooms?.find((room) => room.type === "boss") ?? null;
     const inBossRoom = (x, y) => bossRoom
       && x >= bossRoom.x
@@ -210,7 +304,9 @@ export class Renderer {
           ? getWallSprite(this.assets.manifest, currentFloor.map, x, y, { useExploredMask: !tile.visible })
           : null;
         const wallSprite = wallSpritePath ? this.assets?.images[wallSpritePath] : null;
-        ctx.fillStyle = tile.type === "wall" ? (tile.visible ? COLORS.wall : "#1a2028") : tile.visible ? COLORS.floor : COLORS.explored;
+        ctx.fillStyle = tile.type === "wall"
+          ? (tile.visible ? floorTheme.wallVisible : floorTheme.wallFog)
+          : (tile.visible ? floorTheme.floorVisible : floorTheme.floorFog);
         ctx.fillRect(px, py, tileSize, tileSize);
         if (tile.type === "floor" && floorSprite) {
           ctx.save();
@@ -219,12 +315,20 @@ export class Renderer {
           }
           ctx.drawImage(floorSprite, px, py, tileSize, tileSize);
           ctx.restore();
+          ctx.save();
+          ctx.fillStyle = tile.visible ? floorTheme.floorOverlayVisible : floorTheme.floorOverlayFog;
+          ctx.fillRect(px, py, tileSize, tileSize);
+          ctx.restore();
         } else if (tile.type === "wall" && wallSprite) {
           ctx.save();
           if (!tile.visible) {
             ctx.globalAlpha = 0.38;
           }
           ctx.drawImage(wallSprite, px, py, tileSize, tileSize);
+          ctx.restore();
+          ctx.save();
+          ctx.fillStyle = tile.visible ? floorTheme.wallOverlayVisible : floorTheme.wallOverlayFog;
+          ctx.fillRect(px, py, tileSize, tileSize);
           ctx.restore();
         }
 

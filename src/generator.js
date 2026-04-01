@@ -20,6 +20,19 @@ function createMap(width, height) {
   return Array.from({ length: height }, () => Array.from({ length: width }, () => makeTile()));
 }
 
+function getFloorTheme(floorNumber) {
+  if (floorNumber === 0) return "sage";
+  if (floorNumber === 10) return "necropolis";
+  if (floorNumber === 20) return "stitchworks";
+  if (floorNumber === 30) return "abyssal_throne";
+  if (floorNumber <= 5) return "crypt";
+  if (floorNumber <= 9) return "ember_halls";
+  if (floorNumber <= 15) return "fungal_depths";
+  if (floorNumber <= 19) return "sunken_vault";
+  if (floorNumber <= 29) return "void_deep";
+  return "crypt";
+}
+
 function carveRoom(map, room) {
   for (let y = room.y; y < room.y + room.height; y += 1) {
     for (let x = room.x; x < room.x + room.width; x += 1) {
@@ -363,9 +376,9 @@ function placeLoot(map, rooms, rng, floorNumber, playerClass) {
       opened: false,
       loot: [
         rng.pick([...CHEST_TABLE.common, ...lootPools.common]),
-        ...(floorNumber >= 6 && rng.chance(floorNumber >= 11 ? 0.5 : 0.4) ? [rng.pick([...CHEST_TABLE.rare, ...lootPools.extra])] : []),
-        ...(floorNumber >= 12 && rng.chance(floorNumber >= 16 ? 0.55 : 0.4) ? [rng.pick([...CHEST_TABLE.deep, ...lootPools.deep])] : []),
-        ...(floorNumber >= 21 && rng.chance(0.72) ? [rng.pick([...CHEST_TABLE.endgame, ...lootPools.endgame])] : []),
+        ...(floorNumber >= 6 && rng.chance(floorNumber >= 11 ? 0.4 : 0.4) ? [rng.pick([...CHEST_TABLE.rare, ...lootPools.extra])] : []),
+        ...(floorNumber >= 12 && rng.chance(floorNumber >= 16 ? 0.45 : 0.4) ? [rng.pick([...CHEST_TABLE.deep, ...lootPools.deep])] : []),
+        ...(floorNumber >= 21 && rng.chance(0.6) ? [rng.pick([...CHEST_TABLE.endgame, ...lootPools.endgame])] : []),
       ],
       gold: rng.int(
         10 + floorNumber,
@@ -419,30 +432,71 @@ function placeVendor(map, room, rng, floorNumber) {
   map[tile.y][tile.x].vendor = true;
   const stockSize = floorNumber >= 21 ? 7 : floorNumber >= 14 ? 6 : 5;
   const guaranteedHealingPotions = rng.int(1, Math.min(3, stockSize));
+  const basePool = floorNumber >= 21
+    ? [
+      "mana_potion", "greater_healing_potion", "greater_mana_potion",
+      "ring_of_precision", "ring_of_resolve", "scroll_of_escape", "seal_of_clarity",
+      "wardens_loop", "spark_charm", "frost_shard_tome", "blink_tome", "arcane_burst_tome",
+      "steel_greatsword", "war_hammer", "elder_staff", "storm_wand", "chain_armor",
+      "scout_leathers", "bastion_mail", "enchanted_robe", "dusk_robe", "runespun_robe",
+      "crystal_wand", "ember_rod", "moon_staff", "gauntlets_of_rime", "hexward_gloves",
+      "gravedust_mitts", "runed_handwraps", "sigil_of_fortune",
+    ]
+    : floorNumber >= 11
+      ? [
+        "mana_potion", "greater_healing_potion", "greater_mana_potion",
+        "ring_of_precision", "ring_of_resolve", "scroll_of_escape", "seal_of_clarity",
+        "wardens_loop", "spark_charm", "frost_shard_tome", "blink_tome", "arcane_burst_tome",
+        "steel_greatsword", "war_hammer", "elder_staff", "chain_armor", "scout_leathers",
+        "bastion_mail", "enchanted_robe", "dusk_robe", "runespun_robe", "crystal_wand",
+        "ember_rod", "moon_staff", "gauntlets_of_rime", "hexward_gloves", "gravedust_mitts",
+        "runed_handwraps",
+      ]
+      : [
+        "mana_potion", "greater_healing_potion", "greater_mana_potion",
+        "militia_sword", "woodcutter_axe", "iron_sword", "raider_axe", "legion_spear",
+        "hedge_wand", "ash_staff", "oak_staff", "ember_rod", "padded_jerkin",
+        "leather_armor", "iron_cuirass", "cloth_robe", "apprentice_robes",
+      ];
+  const rarePool = floorNumber >= 21
+    ? [
+      "flame_touched_sword", "vampire_axe", "sundering_hammer", "runic_staff", "sage_wand",
+      "guardian_plate", "emberguard_cuirass", "vanguard_warplate", "archmage_robe",
+      "spellweave_mantle", "hexwoven_robe", "sundergrip_gauntlets", "spellcatcher_gloves",
+      "cinderwraps", "wardens_grips", "talisman_of_vigor", "arcseal_pendant",
+      "warbrand_token", "mirror_sigil", "charm_of_guarding", "chain_of_insight",
+    ]
+    : floorNumber >= 11
+      ? [
+        "flame_touched_sword", "vampire_axe", "sundering_hammer", "runic_staff", "sage_wand",
+        "guardian_plate", "emberguard_cuirass", "vanguard_warplate", "archmage_robe",
+        "spellweave_mantle", "hexwoven_robe", "sundergrip_gauntlets", "spellcatcher_gloves",
+        "cinderwraps", "wardens_grips", "talisman_of_vigor", "arcseal_pendant",
+        "warbrand_token", "mirror_sigil", "charm_of_guarding", "chain_of_insight",
+      ]
+      : [];
+  const bossPool = floorNumber >= 21
+    ? [
+      "sunfire_blade", "soulreaver_axe", "voidglass_staff", "astral_wand",
+      "abyssal_plate", "starweave_robe", "void_heart",
+    ]
+    : [];
 
-  const stockPool = [
-    "mana_potion",
-    "greater_healing_potion",
-    "greater_mana_potion",
-    "ring_of_precision",
-    "ring_of_resolve",
-    "scroll_of_escape",
-    "seal_of_clarity",
-    "wardens_loop",
-    "spark_charm",
-    "frost_shard_tome",
-    "blink_tome",
-    "arcane_burst_tome",
-    ...(floorNumber >= 21
-      ? ["steel_greatsword", "war_hammer", "flame_touched_sword", "vampire_axe", "sundering_hammer", "sunfire_blade", "soulreaver_axe", "elder_staff", "storm_wand", "runic_staff", "sage_wand", "voidglass_staff", "astral_wand", "guardian_plate", "emberguard_cuirass", "vanguard_warplate", "abyssal_plate", "archmage_robe", "spellweave_mantle", "hexwoven_robe", "starweave_robe", "gauntlets_of_rime", "hexward_gloves", "gravedust_mitts", "runed_handwraps", "sundergrip_gauntlets", "spellcatcher_gloves", "cinderwraps", "wardens_grips", "sigil_of_fortune", "talisman_of_vigor", "arcseal_pendant", "warbrand_token", "mirror_sigil", "charm_of_guarding", "chain_of_insight", "void_heart", "chain_armor", "scout_leathers", "bastion_mail", "enchanted_robe", "dusk_robe", "runespun_robe", "crystal_wand", "ember_rod", "moon_staff"]
-      : floorNumber >= 11
-        ? ["steel_greatsword", "war_hammer", "flame_touched_sword", "vampire_axe", "sundering_hammer", "elder_staff", "storm_wand", "runic_staff", "sage_wand", "guardian_plate", "emberguard_cuirass", "vanguard_warplate", "archmage_robe", "spellweave_mantle", "hexwoven_robe", "gauntlets_of_rime", "hexward_gloves", "gravedust_mitts", "runed_handwraps", "sundergrip_gauntlets", "spellcatcher_gloves", "cinderwraps", "wardens_grips", "sigil_of_fortune", "talisman_of_vigor", "arcseal_pendant", "warbrand_token", "mirror_sigil", "charm_of_guarding", "chain_of_insight", "chain_armor", "scout_leathers", "bastion_mail", "enchanted_robe", "dusk_robe", "runespun_robe", "crystal_wand", "ember_rod", "moon_staff"]
-        : ["militia_sword", "woodcutter_axe", "iron_sword", "raider_axe", "legion_spear", "hedge_wand", "ash_staff", "oak_staff", "ember_rod", "padded_jerkin", "leather_armor", "iron_cuirass", "cloth_robe", "apprentice_robes"]),
-  ];
-  const stock = [
-    ...Array.from({ length: guaranteedHealingPotions }, () => "healing_potion"),
-    ...rng.shuffle(stockPool).slice(0, Math.max(0, stockSize - guaranteedHealingPotions)),
-  ];
+  const stock = Array.from({ length: guaranteedHealingPotions }, () => "healing_potion");
+  const seen = new Set(stock);
+  while (stock.length < stockSize) {
+    let pool = basePool;
+    if (bossPool.length && rng.chance(0.08)) {
+      pool = bossPool;
+    } else if (rarePool.length && rng.chance(floorNumber >= 21 ? 0.18 : 0.12)) {
+      pool = rarePool;
+    }
+    const candidates = pool.filter((itemId) => !seen.has(itemId));
+    const fallback = basePool.filter((itemId) => !seen.has(itemId));
+    const itemId = rng.pick(candidates.length ? candidates : fallback.length ? fallback : pool);
+    stock.push(itemId);
+    seen.add(itemId);
+  }
   const archetypes = floorNumber >= 21
     ? [
       { id: "ash_dealer", name: "Ash Dealer", title: "Ash Dealer" },
@@ -554,6 +608,7 @@ export function generateBossFloor(runSeed, floorNumber, playerClass) {
   map[11][28].chestId = "boss-reward";
 
   return {
+    theme: getFloorTheme(floorNumber),
     width,
     height,
     map,
@@ -631,6 +686,7 @@ export function generateFloor20BossFloor(runSeed, floorNumber, playerClass) {
   map[12][30].chestId = "floor20-boss-reward";
 
   return {
+    theme: getFloorTheme(floorNumber),
     width,
     height,
     map,
@@ -734,6 +790,7 @@ export function generateFinalBossFloor(runSeed, floorNumber, playerClass) {
   map[rewardChest.y][rewardChest.x].chestId = rewardChest.id;
 
   return {
+    theme: getFloorTheme(floorNumber),
     width,
     height,
     map,
@@ -804,6 +861,7 @@ export function generateFloor(runSeed, floorNumber, playerClass) {
     }
 
     return {
+      theme: getFloorTheme(floorNumber),
       width: config.width,
       height: config.height,
       map,

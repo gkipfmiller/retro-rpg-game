@@ -699,6 +699,13 @@ export class Game {
     };
   }
 
+  applyResourceCapDelta(player, previousDerived, nextDerived) {
+    const hpDelta = (nextDerived?.maxHp ?? 0) - (previousDerived?.maxHp ?? 0);
+    const manaDelta = (nextDerived?.maxMana ?? 0) - (previousDerived?.maxMana ?? 0);
+    player.hp = clamp(player.hp + hpDelta, 0, nextDerived.maxHp);
+    player.mana = clamp(player.mana + manaDelta, 0, nextDerived.maxMana);
+  }
+
   getHandsItem(player = this.state.run?.player) {
     const handsId = player?.equipment?.hands;
     return handsId ? ITEMS[handsId] : null;
@@ -1896,6 +1903,7 @@ export class Game {
     }
 
     const player = this.state.run.player;
+    const previousDerived = this.getDerivedStats(player);
     const previous = player.equipment[item.slot];
     player.equipment[item.slot] = entry.itemId;
     if (previous) {
@@ -1906,8 +1914,7 @@ export class Game {
     }
     player.inventory.splice(entryIndex, 1);
     const derived = this.getDerivedStats(player);
-    player.hp = Math.min(player.hp, derived.maxHp);
-    player.mana = Math.min(player.mana, derived.maxMana);
+    this.applyResourceCapDelta(player, previousDerived, derived);
     this.log(`Equipped ${item.name}.`);
     const nextStacks = this.getInventoryStacks();
     const nextIndex = this.getStackIndexByItemId(nextStacks, entry.itemId, index);
