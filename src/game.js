@@ -1,5 +1,5 @@
 import { BOONS, BOSS_REWARDS, CHEST_TABLE, CLASSES, ENEMIES, ITEMS, SKILL_TREES, SPELLS, STATUS_DEFINITIONS, TRAPS } from "./data.js";
-import { generateFloor, getDropForEnemy } from "./generator.js";
+import { attachVaultFeaturesToFloor, generateFloor, getDropForEnemy } from "./generator.js";
 import { getItemSprite } from "./assets.js";
 import { clamp, createRng, deepClone, hashSeed, manhattan, toKey } from "./utils.js";
 
@@ -177,6 +177,39 @@ export class Game {
     return lines[hashSeed(runSeed, boonId, "sage-line") % lines.length];
   }
 
+  createVaultPlan(runSeed) {
+    const rng = createRng(hashSeed(runSeed, "vault-plan"));
+    const bands = [
+      { id: "crypt", label: "Crypt Vault", floorStart: 1, floorEnd: 9, keyItemId: "crypt_vault_key" },
+      { id: "sunken", label: "Sunken Vault", floorStart: 11, floorEnd: 19, keyItemId: "sunken_vault_key" },
+      { id: "void", label: "Void Vault", floorStart: 21, floorEnd: 29, keyItemId: "void_vault_key" },
+    ];
+    return bands.map((band) => {
+      const vaultFloor = rng.int(band.floorStart, band.floorEnd);
+      const keyFloor = rng.int(band.floorStart, vaultFloor);
+      return {
+        ...band,
+        chestId: `vault-${band.id}`,
+        vaultFloor,
+        keyFloor,
+        keyCollected: false,
+        opened: false,
+      };
+    });
+  }
+
+  hasVaultKey(keyItemId) {
+    return Boolean(this.state.run?.vaultPlan?.some((entry) => entry.keyItemId === keyItemId && entry.keyCollected));
+  }
+
+  collectVaultKey(itemId) {
+    const vault = this.state.run?.vaultPlan?.find((entry) => entry.keyItemId === itemId);
+    if (!vault || vault.keyCollected) return;
+    vault.keyCollected = true;
+    this.log(`You uncover the ${ITEMS[itemId].name}.`);
+    this.showNpcDialog("Hidden Cache", `${ITEMS[itemId].name} found. Somewhere below, ${vault.label.toLowerCase()} can now be opened.`, 2600);
+  }
+
   getVendorGreeting(vendor, runSeed, floorNumber) {
     const dialogueByArchetype = {
       wary_peddler: [
@@ -241,6 +274,7 @@ export class Game {
         type: x === 0 || y === 0 || x === width - 1 || y === height - 1 ? "wall" : "floor",
         visible: false,
         explored: false,
+        secretDoor: false,
         occupant: null,
         itemIds: [],
         stairs: false,
@@ -315,6 +349,18 @@ export class Game {
     }
 
     return floorData;
+  }
+
+  applyRunFloorAdjustments(floorData, floorNumber, player) {
+    if (floorNumber < 1) return floorData;
+    attachVaultFeaturesToFloor(
+      floorData,
+      this.state.run?.runSeed ?? floorData.seed,
+      floorNumber,
+      player.classId,
+      this.state.run?.vaultPlan ?? []
+    );
+    return this.applyBoonFloorAdjustments(floorData, floorNumber, player);
   }
 
   openSageChoice() {
@@ -621,6 +667,7 @@ export class Game {
       floorNumber: 0,
       turn: 0,
       player,
+      vaultPlan: this.createVaultPlan(runSeed),
       currentFloor: floorData,
       runStats: { kills: 0 },
       currentTargetId: null,
@@ -868,7 +915,16 @@ export class Game {
     const targetX = run.player.x + dx;
     const targetY = run.player.y + dy;
     const tile = run.currentFloor.map[targetY]?.[targetX];
-    if (!tile || tile.type !== "floor") return;
+    if (!tile) return;
+    if (tile.type !== "floor") {
+      if (tile.secretDoor) {
+        tile.secretDoor = false;
+        tile.type = "floor";
+        this.log("A hidden seam gives way. A secret passage opens.");
+      } else {
+        return;
+      }
+    }
 
     const enemy = occupiedByEnemy(run.currentFloor, targetX, targetY);
     if (enemy) {
@@ -894,6 +950,10 @@ export class Game {
     const tile = this.state.run.currentFloor.map[this.state.run.player.y][this.state.run.player.x];
     if (!tile.itemIds.length) return;
     for (const itemId of tile.itemIds) {
+      if (ITEMS[itemId]?.category === "quest") {
+        this.collectVaultKey(itemId);
+        continue;
+      }
       this.state.run.player.inventory.push({ id: `inv-${Date.now()}-${itemId}-${Math.random()}`, itemId });
       this.log(`Picked up ${ITEMS[itemId].name}.`);
     }
@@ -1670,14 +1730,25 @@ export class Game {
 
     const chest = currentFloor.chests.find((entry) => entry.x === player.x && entry.y === player.y);
     if (chest && !chest.opened) {
+      if (chest.locked && !this.hasVaultKey(chest.keyItemId)) {
+        this.log(`${chest.label ?? "The vault"} is locked. You need the ${ITEMS[chest.keyItemId]?.name ?? "matching key"}.`);
+        return;
+      }
       if (bossAlive) {
         this.log("A boss still guards this reward.");
         return;
       }
+      if (chest.locked) {
+        this.log(`The ${ITEMS[chest.keyItemId]?.name ?? "key"} unlocks ${chest.label?.toLowerCase() ?? "the vault"}.`);
+      }
       chest.opened = true;
+      if (chest.vaultId) {
+        const vault = this.state.run.vaultPlan.find((entry) => entry.id === chest.vaultId);
+        if (vault) vault.opened = true;
+      }
       currentFloor.map[player.y][player.x].chestId = null;
       player.gold += chest.gold;
-      this.log(`Chest opened. You collect ${chest.gold} gold.`);
+      this.log(`${chest.label ?? "Chest"} opened. You collect ${chest.gold} gold.`);
       for (const itemId of chest.loot) {
         player.inventory.push({ id: `inv-${Date.now()}-${itemId}-${Math.random()}`, itemId });
         this.log(`Found ${ITEMS[itemId].name}.`);
@@ -1722,7 +1793,7 @@ export class Game {
     }
     this.state.run.floorNumber = nextFloor;
     this.state.run.player.floorFlags = {};
-    this.state.run.currentFloor = this.applyBoonFloorAdjustments(
+    this.state.run.currentFloor = this.applyRunFloorAdjustments(
       generateFloor(this.state.run.runSeed, nextFloor, this.state.run.player.classId),
       nextFloor,
       this.state.run.player

@@ -6,6 +6,7 @@ function makeTile(type = "wall") {
     type,
     explored: false,
     visible: false,
+    secretDoor: false,
     trapId: null,
     occupant: null,
     itemIds: [],
@@ -175,6 +176,147 @@ function findOpenTilesInRoom(room, map) {
 
 function putItem(map, x, y, itemId) {
   map[y][x].itemIds.push(itemId);
+}
+
+function isSolidWall(tile) {
+  return tile && tile.type === "wall" && !tile.secretDoor;
+}
+
+function canCarveSecretRect(map, rect) {
+  for (let y = rect.y; y < rect.y + rect.height; y += 1) {
+    for (let x = rect.x; x < rect.x + rect.width; x += 1) {
+      if (!inBounds(map, x, y) || !isSolidWall(map[y][x])) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function createSecretRoomPlacements(room) {
+  const placements = [];
+  for (let y = room.y + 1; y < room.y + room.height - 1; y += 1) {
+    placements.push({
+      door: { x: room.x + room.width, y },
+      room: { x: room.x + room.width + 1, y: y - 1, width: 4, height: 4 },
+    });
+    placements.push({
+      door: { x: room.x - 1, y },
+      room: { x: room.x - 5, y: y - 1, width: 4, height: 4 },
+    });
+  }
+  for (let x = room.x + 1; x < room.x + room.width - 1; x += 1) {
+    placements.push({
+      door: { x, y: room.y - 1 },
+      room: { x: x - 1, y: room.y - 5, width: 4, height: 4 },
+    });
+    placements.push({
+      door: { x, y: room.y + room.height },
+      room: { x: x - 1, y: room.y + room.height + 1, width: 4, height: 4 },
+    });
+  }
+  return placements;
+}
+
+function placeSecretKeyRoom(map, rooms, rng, keyItemId) {
+  const candidateRooms = rng.shuffle(
+    rooms.slice(1, -1).filter((room) => !["vendor", "shrine", "boss", "start"].includes(room.type))
+  );
+  for (const room of candidateRooms) {
+    const placement = rng.pick(
+      rng.shuffle(createSecretRoomPlacements(room)).filter((entry) => canCarveSecretRect(map, entry.room))
+    );
+    if (!placement) continue;
+    carveRoom(map, placement.room);
+    map[placement.door.y][placement.door.x].secretDoor = true;
+    const keyTile = {
+      x: Math.floor(placement.room.x + placement.room.width / 2),
+      y: Math.floor(placement.room.y + placement.room.height / 2),
+    };
+    putItem(map, keyTile.x, keyTile.y, keyItemId);
+    return {
+      keyItemId,
+      door: placement.door,
+      room: placement.room,
+      x: keyTile.x,
+      y: keyTile.y,
+    };
+  }
+  return null;
+}
+
+function getVaultRewardItemPool(floorNumber, playerClass) {
+  const allowedRarities = floorNumber >= 21 ? new Set(["rare", "boss"]) : new Set(["rare"]);
+  const items = Object.values(ITEMS).filter((item) =>
+    item.slot
+    && allowedRarities.has(item.rarity)
+    && (!item.classBias || item.classBias === playerClass)
+  );
+  return items.map((item) => item.id);
+}
+
+function placeTreasureVault(map, rooms, rng, floorNumber, playerClass, vault) {
+  if (!vault || vault.opened) return null;
+  const candidateRooms = rooms
+    .slice(1, -1)
+    .filter((room) => !["vendor", "shrine", "boss", "start"].includes(room.type));
+  const preferredRooms = candidateRooms.filter((room) => room.type === "treasure");
+  const room = rng.pick(preferredRooms.length ? preferredRooms : candidateRooms);
+  if (!room) return null;
+  const openTiles = findOpenTilesInRoom(room, map).filter((tile) => !map[tile.y][tile.x].chestId);
+  if (!openTiles.length) return null;
+  const tile = rng.pick(openTiles);
+  const equipmentPool = getVaultRewardItemPool(floorNumber, playerClass);
+  const gearItem = rng.pick(equipmentPool.length ? equipmentPool : CHEST_TABLE.deep);
+  const supportPool = floorNumber >= 21
+    ? ["greater_healing_potion", "greater_mana_potion", "healing_potion", "mana_potion", "scroll_of_escape"]
+    : ["greater_healing_potion", "greater_mana_potion", "healing_potion", "mana_potion"];
+  const bonusPool = floorNumber >= 21
+    ? [...CHEST_TABLE.deep, ...CHEST_TABLE.endgame]
+    : floorNumber >= 11
+      ? [...CHEST_TABLE.rare, ...CHEST_TABLE.deep]
+      : CHEST_TABLE.rare;
+  const loot = [
+    rng.pick(supportPool),
+    rng.pick(supportPool),
+    gearItem,
+  ];
+  const bonusItem = rng.pick(bonusPool.filter((itemId) => itemId !== gearItem));
+  if (bonusItem && rng.chance(floorNumber >= 21 ? 0.7 : 0.5)) {
+    loot.push(bonusItem);
+  }
+  map[tile.y][tile.x].chestId = vault.chestId;
+  return {
+    id: vault.chestId,
+    x: tile.x,
+    y: tile.y,
+    opened: false,
+    locked: true,
+    isVault: true,
+    vaultId: vault.id,
+    keyItemId: vault.keyItemId,
+    label: vault.label,
+    loot,
+    gold: rng.int(floorNumber >= 21 ? 90 : floorNumber >= 11 ? 55 : 36, floorNumber >= 21 ? 130 : floorNumber >= 11 ? 80 : 52),
+  };
+}
+
+export function attachVaultFeaturesToFloor(floorData, runSeed, floorNumber, playerClass, vaultPlan) {
+  if (!floorData || floorNumber < 1 || !vaultPlan) return floorData;
+  const rng = createRng(hashSeed(runSeed, floorNumber, "vault-features"));
+  const vaultForKey = vaultPlan.find((entry) => entry.keyFloor === floorNumber && !entry.keyCollected);
+  if (vaultForKey) {
+    floorData.secretKeyRoom = placeSecretKeyRoom(floorData.map, floorData.rooms, rng, vaultForKey.keyItemId);
+  }
+  const vaultForChest = vaultPlan.find((entry) => entry.vaultFloor === floorNumber && !entry.opened);
+  if (vaultForChest) {
+    const vaultChest = placeTreasureVault(floorData.map, floorData.rooms, rng, floorNumber, playerClass, vaultForChest);
+    if (vaultChest) {
+      floorData.chests.push(vaultChest);
+      floorData.vaultChest = vaultChest;
+    }
+  }
+  return floorData;
 }
 
 function assignRoomTypes(rooms, rng, floorNumber) {
@@ -874,6 +1016,8 @@ export function generateFloor(runSeed, floorNumber, playerClass) {
       looseItems,
       vendor,
       shrine,
+      secretKeyRoom: null,
+      vaultChest: null,
     };
   }
 
