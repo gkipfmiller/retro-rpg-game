@@ -131,12 +131,30 @@ export class Game {
     return bossFloorTitles[floorNumber] ?? `Floor ${floorNumber}`;
   }
 
+  getBossFloorEntryLine(floorNumber) {
+    const lines = {
+      10: "The air turns cold. Bone and gravefire wait below the first seal.",
+      20: "The walls tighten with stitches and old pain. Something flesh-bound waits ahead.",
+      30: "The throne waits below. Whether you come as executioner or successor is no longer clear.",
+    };
+    return lines[floorNumber] ?? null;
+  }
+
+  getBossSightLine(templateId) {
+    const lines = {
+      bone_captain: "Super Skeletor turns, as if he had been expecting someone worthy to descend this far.",
+      patches: "Patches lurches forward from the stitched dark, guarding the next threshold like a butchered sentinel.",
+      abyssal_overlord: "The Abyssal Overlord rises before the throne. For a moment, it is unclear whether it bars your path or judges your claim.",
+    };
+    return lines[templateId] ?? null;
+  }
+
   getBoonDefinition(boonId) {
     return BOONS[boonId] ?? null;
   }
 
   getNegativeStatusIds() {
-    return ["chilled", "sundered", "weakened", "hexed"];
+    return ["chilled", "sundered", "weakened", "hexed", "poisoned"];
   }
 
   getBoonChoices(classId, runSeed) {
@@ -151,10 +169,10 @@ export class Game {
 
   getSageFarewellLine(runSeed, boonId) {
     const lines = [
-      "A gift, and a burden. Descend.",
-      "Choose well, delver. The dungeon remembers every debt.",
-      "Good luck. You will need more than that.",
-      "Take this blessing. Spend it before the dark spends you.",
+      "A gift, and a burden. Descend. The throne below is never empty for long.",
+      "Choose well, delver. The dungeon remembers every debt and every heir.",
+      "Good luck. You will need more than that before the throne takes notice.",
+      "Take this blessing. Spend it before the dark spends you, or seats you.",
     ];
     return lines[hashSeed(runSeed, boonId, "sage-line") % lines.length];
   }
@@ -899,17 +917,23 @@ export class Game {
       this.log(`${template.name} is triggered.`);
     }
     if (template.status) {
-      this.upsertStatus(this.state.run.player, { id: template.status, turns: 2, value: 1 });
+      const statusTurns = template.status === "poisoned" ? 4 : 2;
+      this.upsertStatus(this.state.run.player, { id: template.status, turns: statusTurns, value: 1 });
       this.log(`${STATUS_DEFINITIONS[template.status]?.name ?? template.status} takes hold.`);
     }
     if (template.alerts) {
+      let newlyAlerted = 0;
       for (const enemy of this.state.run.currentFloor.enemies) {
-        if (manhattan(enemy, this.state.run.player) <= 8) {
-          enemy.alerted = true;
-          enemy.lastKnownPlayerPosition = { x: this.state.run.player.x, y: this.state.run.player.y };
+        const wasAlerted = enemy.alerted;
+        enemy.alerted = true;
+        enemy.lastKnownPlayerPosition = { x: this.state.run.player.x, y: this.state.run.player.y };
+        if (!wasAlerted) {
+          newlyAlerted += 1;
         }
       }
-      this.log("The alarm echoes through the halls.");
+      this.log(newlyAlerted
+        ? `The alarm echoes through the halls. ${newlyAlerted} enem${newlyAlerted === 1 ? "y stirs" : "ies stir"}.`
+        : "The alarm echoes through the halls.");
     }
     this.triggerRelentlessStep();
     if (this.state.run.player.hp <= 0) this.handleDeath(`Killed by ${template.name}.`);
@@ -1480,6 +1504,7 @@ export class Game {
     }
 
     if (spellId === "arcane_shield") {
+      player.lastAction = "spell";
       player.mana -= cost;
       if (freeUtility) player.turnFlags.freeUtilityUsed = true;
       player.statuses = player.statuses.filter((status) => status.id !== "arcane_shield");
@@ -1499,6 +1524,7 @@ export class Game {
         return;
       }
       player.mana -= cost;
+      player.lastAction = "attack";
       this.performPlayerAttack(target, { type: "ability", abilityId: spellId });
       return;
     }
@@ -1509,6 +1535,7 @@ export class Game {
         this.log("Blink fizzles. No safe destination.");
         return;
       }
+      player.lastAction = "spell";
       player.mana -= cost;
       if (freeUtility) player.turnFlags.freeUtilityUsed = true;
       if (spell.type === "spell" && player.boonId === "sages_echo") player.boonState.sageEchoCount = sageEchoCount + 1;
@@ -1531,6 +1558,7 @@ export class Game {
     if (shouldSpendMana) {
       player.mana -= cost;
     }
+    player.lastAction = "spell";
     if (spell.type === "spell" && player.boonId === "sages_echo") player.boonState.sageEchoCount = sageEchoCount + 1;
     this.performPlayerAttack(target, { type: "spell", spellId });
   }
@@ -1577,6 +1605,7 @@ export class Game {
 
     const item = ITEMS[itemId];
     if (item.category === "consumable") {
+      player.lastAction = "item";
       if (item.effect.type === "heal") {
         const derived = this.getDerivedStats(player);
         player.hp = Math.min(derived.maxHp, player.hp + item.effect.value);
@@ -1602,6 +1631,7 @@ export class Game {
     }
 
     if (item.category === "tome") {
+      player.lastAction = "item";
       if (!player.learnedSpells.includes(item.spellId)) {
         player.learnedSpells.push(item.spellId);
         this.log(`Learned ${SPELLS[item.spellId].name}.`);
@@ -1629,7 +1659,7 @@ export class Game {
     const bossAlive = currentFloor.enemies.some((enemy) => ENEMIES[enemy.templateId]?.behavior === "boss");
     const sage = currentFloor.sage;
     if (sage && !sage.vanished && manhattan(player, sage) <= 1) {
-      this.showNpcDialog(this.sageName, "Choose, delver. The dungeon rarely offers twice.", 2800);
+      this.showNpcDialog(this.sageName, "Choose, delver. The gift is yours. The claim may not be.", 3200);
       this.openSageChoice();
       return;
     }
@@ -1702,6 +1732,11 @@ export class Game {
     this.updateVisibility();
     this.log(`You descend to Floor ${nextFloor}.`);
     this.renderer?.showTransition(this.getFloorTransitionBanner(nextFloor));
+    const bossEntryLine = this.getBossFloorEntryLine(nextFloor);
+    if (bossEntryLine) {
+      this.showNpcDialog(this.sageName, bossEntryLine, 3400);
+      this.log(bossEntryLine);
+    }
   }
 
   openInventory(selectedIndex = 0) {
@@ -2069,11 +2104,11 @@ export class Game {
     if (this.state.run.player.hp <= 0) return;
     if (this.state.run.floorNumber === 10 && !this.state.run.currentFloor.enemies.length && !this.state.run.player.floorFlags.boneCaptainDefeatedLogged) {
       this.state.run.player.floorFlags.boneCaptainDefeatedLogged = true;
-      this.log("Super Skeletor is defeated. The deeper halls open.");
+      this.log("Super Skeletor is defeated. The first seal breaks, and the deeper halls open.");
     }
     if (this.state.run.floorNumber === 20 && !this.state.run.currentFloor.enemies.length && !this.state.run.player.floorFlags.patchesDefeatedLogged) {
       this.state.run.player.floorFlags.patchesDefeatedLogged = true;
-      this.log("Patches collapses. The abyss opens below.");
+      this.log("Patches collapses. The second threshold is broken, and the abyss opens below.");
     }
   }
 
@@ -2081,12 +2116,25 @@ export class Game {
     const player = this.state.run.player;
     const previousPlayerStatuses = [...player.statuses];
     player.statuses = player.statuses
-      .map((status) => status.fresh ? { ...status, fresh: false } : { ...status, turns: status.turns - 1 })
+      .map((status) => {
+        if (status.fresh) return { ...status, fresh: false };
+        if (status.id === "poisoned") {
+          player.hp = Math.max(0, player.hp - 1);
+          this.log("Poisoned deals 1 damage.");
+          const turnLoss = player.lastAction === "wait" ? 2 : 1;
+          return { ...status, turns: status.turns - turnLoss };
+        }
+        return { ...status, turns: status.turns - 1 };
+      })
       .filter((status) => status.turns > 0);
     for (const status of previousPlayerStatuses) {
       if (!player.statuses.some((entry) => entry.id === status.id)) {
         this.log(`${STATUS_DEFINITIONS[status.id]?.name ?? status.id} fades from you.`);
       }
+    }
+    if (player.hp <= 0) {
+      this.handleDeath("Succumbed to poison.");
+      return;
     }
     for (const enemy of this.state.run.currentFloor.enemies) {
       const previousStatuses = [...enemy.statuses];
@@ -2114,6 +2162,17 @@ export class Game {
       if (canSee) {
         enemy.alerted = true;
         enemy.lastKnownPlayerPosition = { x: player.x, y: player.y };
+      }
+      if (canSee && ENEMIES[enemy.templateId]?.behavior === "boss") {
+        const sightKey = `${enemy.templateId}Seen`;
+        if (!player.floorFlags[sightKey]) {
+          player.floorFlags[sightKey] = true;
+          const sightLine = this.getBossSightLine(enemy.templateId);
+          if (sightLine) {
+            this.showNpcDialog(enemy.name, sightLine, 3400);
+            this.log(sightLine);
+          }
+        }
       }
       if (!enemy.alerted) continue;
 
@@ -2391,6 +2450,9 @@ export class Game {
   handleDeath(message) {
     this.log(message);
     const summary = this.buildRunSummary(this.state.run, message.replace(/^Slain by /, "").replace(/^Killed by /, ""), "death");
+    const deathFlavor = this.state.run.floorNumber >= 30
+      ? "<p class=\"muted\">The throne remains below, and whatever judged you there is not finished.</p>"
+      : "";
     this.state.mode = "in_game";
     this.state.ui.overlay = {
       type: "death",
@@ -2402,6 +2464,7 @@ export class Game {
         <p>Level reached: <strong>${this.state.run.player.level}</strong></p>
         <p>Enemies defeated: <strong>${this.state.run.runStats.kills}</strong></p>
         <p>Every run resets from Floor 1.</p>
+        ${deathFlavor}
         ${this.renderScoreSaveSection(summary)}
         <button data-action="new-run-from-death">Start New Run</button>
         <button data-action="main-menu">Main Menu</button>
@@ -2414,10 +2477,10 @@ export class Game {
     const unlockedSkills = player.unlockedSkills.length;
     const learnedSpells = player.learnedSpells.filter((spellId) => SPELLS[spellId]).length;
     const victoryHeadline = floorNumber >= 30
-      ? "The Abyssal Overlord is slain. The dungeon finally falls silent."
+      ? "The Abyssal Overlord is slain, and the throne below no longer stands empty."
       : `You reached Floor ${floorNumber} and cleared the current Milestone 2 build.`;
     const victoryFooter = floorNumber >= 30
-      ? "One run. No checkpoints. Full clear."
+      ? "Whether you broke the dungeon's cycle or fulfilled its oldest demand remains unclear."
       : "The full Floor 30 final-boss run is still reserved for Milestone 3.";
     const summary = this.buildRunSummary(this.state.run, floorNumber >= 30 ? "Dungeon Cleared" : `Reached Floor ${floorNumber}`, "victory");
     this.state.ui.overlay = {
@@ -2519,7 +2582,7 @@ export class Game {
         } else {
           const message = result === "victory"
             ? (this.state.run.floorNumber >= 30
-              ? "The Abyssal Overlord is slain. The dungeon finally falls silent."
+              ? "The Abyssal Overlord is slain, and the throne below no longer stands empty."
               : `You reached Floor ${this.state.run.floorNumber} and cleared the current Milestone 2 build.`)
             : this.state.logs[this.state.logs.length - 1];
           if (result === "victory") {
@@ -2527,7 +2590,7 @@ export class Game {
             const unlockedSkills = player.unlockedSkills.length;
             const learnedSpells = player.learnedSpells.filter((spellId) => SPELLS[spellId]).length;
             const victoryFooter = floorNumber >= 30
-              ? "One run. No checkpoints. Full clear."
+              ? "Whether you broke the dungeon's cycle or fulfilled its oldest demand remains unclear."
               : "The full Floor 30 final-boss run is still reserved for Milestone 3.";
             this.state.ui.overlay = {
               type: "victory",

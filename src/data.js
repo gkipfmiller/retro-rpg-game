@@ -336,7 +336,7 @@ export const ROOM_ENCOUNTERS = {
 
 export const TRAPS = {
   spikes: { id: "spikes", name: "Spike Trap", damage: [4, 6], glyph: "^" },
-  darts: { id: "darts", name: "Poison Dart Trap", damage: [3, 5], glyph: "!" },
+  darts: { id: "darts", name: "Poison Dart Trap", damage: [3, 5], glyph: "!", status: "poisoned" },
   fire: { id: "fire", name: "Fire Trap", damage: [5, 8], glyph: "*" },
   curse: { id: "curse", name: "Curse Trap", damage: [2, 4], glyph: "C", status: "hexed" },
   alarm: { id: "alarm", name: "Alarm Trap", damage: [0, 0], glyph: "A", alerts: true },
@@ -347,6 +347,7 @@ export const STATUS_DEFINITIONS = {
   sundered: { id: "sundered", name: "Sundered", icon: "S", description: "Defense is lowered, making incoming hits bite harder." },
   weakened: { id: "weakened", name: "Weakened", icon: "W", description: "Outgoing damage is reduced until the effect fades." },
   hexed: { id: "hexed", name: "Hexed", icon: "H", description: "Defense is cursed downward, leaving the target exposed." },
+  poisoned: { id: "poisoned", name: "Poisoned", icon: "P", description: "Lose 1 HP each action until the poison wears off. Waiting helps you recover faster." },
   arcane_shield: { id: "arcane_shield", name: "Arcane Shield", icon: "A", description: "A temporary magical ward grants bonus defense." },
 };
 

@@ -136,6 +136,8 @@ function getStatusColor(statusId) {
   switch (statusId) {
     case "chilled":
       return "#76c7ff";
+    case "poisoned":
+      return "#7fd36b";
     case "sundered":
       return "#f3a65a";
     case "weakened":

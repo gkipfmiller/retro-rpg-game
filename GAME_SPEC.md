@@ -21,6 +21,138 @@ Current menu structure:
 - How to Play
 - High Scores
 
+## Lore Direction
+
+The game should carry a dark, foreboding tone. The dungeon is not just a place of treasure and monsters. It is an ancient wound in the world, something sealed poorly and descended into repeatedly by fools, zealots, and the desperate.
+
+The player is not framed as a guaranteed savior. Reaching Floor 30 and defeating the Abyssal Overlord should feel significant, but not universally pure or triumphant. A clear can still imply:
+- a terrible cycle has only been delayed
+- the delver has taken the throne's burden onto themselves
+- the Grey Witness wanted this outcome all along
+- something worse was sealed beneath the Overlord, not by it
+
+Core narrative tone:
+- oppressive
+- mysterious
+- fatalistic
+- ambiguous rather than heroic
+- sparse, but memorable
+
+World assumptions:
+- the dungeon predates the current kingdoms
+- older civilizations attempted to seal, study, or worship what lies below
+- each major floor band reflects a different age of ruin, corruption, or failed containment
+- merchants, shrines, and relics imply the dungeon has been active for a very long time
+
+## Narrative Anchors
+
+### The Grey Witness
+
+The Grey Witness is the first named figure the player meets. He should feel ancient, calm, and impossible to fully place on a moral axis.
+
+Current role:
+- presents the pre-run boon choice
+- speaks in short, ominous lines
+- fades away once the delver accepts a gift and begins the descent
+
+Narrative intent:
+- not clearly good
+- not clearly evil
+- possibly a jailer, a guide, a survivor, or an accomplice
+- may want the delver to reach Floor 30 for reasons that remain uncertain
+- may be helping the delver survive while also shaping them into a viable successor
+- should always leave open the question: is the player using his help, or is he using the player?
+
+### The Thirty Floors
+
+The thirty-floor structure should feel deliberate, not arbitrary. A recommended interpretation is:
+- Floors 1-9: outer ruins and collapsed undercrypts
+- Floor 10: the first true seal, guarded by Super Skeletor and necromantic remains
+- Floors 11-19: deeper halls where prior expeditions, cults, and failed defenders left their mark
+- Floor 20: a second threshold, marked by body-horror ruin and Patches' domain
+- Floors 21-29: void-touched depths where normal dungeon logic begins to break down
+- Floor 30: the Abyssal Throne, where the dungeon's will is strongest
+
+## Lore Prompts and Expandable Ideas
+
+These are intentionally flexible prompts rather than fixed canon.
+
+### 1. The Living Seal
+
+The dungeon was built as a seal, but the seal was never stone alone. It required a conscious ruler at the bottom to contain what was beneath. The Abyssal Overlord may be a tyrant, a prisoner, or both.
+
+Useful story implication:
+- defeating the final boss may weaken the prison as much as it frees the world
+
+### 2. The Grey Witness as the Last Custodian
+
+The Grey Witness may be the final member of an order that once maintained the dungeon's wards. He now sends delvers downward not out of malice, but because the old system is failing and no clean solution remains.
+
+Useful story implication:
+- his gifts are real help, but also a form of recruitment or sacrifice
+
+### 3. The Dungeon as a Grave of Civilizations
+
+Each floor band could belong to a different fallen age:
+- crypt-builders
+- necromancer cults
+- alchemists and flesh-stitchers
+- void scholars
+
+Useful story implication:
+- enemy rosters, bosses, and floor themes each tell part of a buried history
+
+### 4. The Throne Wants a Successor
+
+The throne may not merely guard power; it may test candidates. The Overlord's death could be less a victory than a coronation the player never intended.
+
+Useful story implication:
+- a full clear ending can remain unsettling even when the boss is dead
+
+### 4A. The Grey Witness and the Empty Throne
+
+The Grey Witness may understand the true purpose of the Abyssal Throne better than anyone still living. If the throne is not only a seat of power but a binding office, then the one who reaches it is not merely a conqueror. They are a candidate.
+
+Under this interpretation:
+- the Grey Witness offers boons that are genuinely useful
+- those boons may also be marks of selection, preparing the delver for what waits below
+- he may want the Overlord destroyed, but not necessarily for the player's sake
+- he may believe that an empty throne is worse than a cruel one
+
+Useful story implication:
+- the player can never be fully certain whether the Grey Witness is aiding a rebellion, preserving a prison, or engineering a succession
+
+### 5. Merchants as Grave-Robbers of the Deep
+
+Vendors are not normal shopkeepers. They are scavengers, opportunists, cult survivors, and black-market couriers feeding off the endless descent of doomed delvers.
+
+Useful story implication:
+- their dialogue can hint that the dungeon has consumed many before the player
+
+### 6. Boons as Bargains, Not Blessings
+
+The Grey Witness should not feel like a benevolent sage. The boon choice can be framed as a bargain with cost, omen, or contamination attached.
+
+Useful story implication:
+- powerful pre-run traits feel narratively risky as well as mechanically helpful
+
+## Ending Direction
+
+The current narrative target is a morally ambiguous ending rather than a clean heroic one.
+
+Recommended ending possibilities to preserve:
+- the delver destroys the Overlord but binds themselves to the throne
+- the Overlord was a warden and not the deepest evil
+- the Grey Witness orchestrated the descent to replace a failing ruler below
+- the world above is safer for now, but something in the delver comes back changed
+
+Preferred emotional result:
+- the player should feel that victory was real, but incomplete
+- the Grey Witness should remain unsettling after the ending, not explained away by it
+- the final question should not be "Did I win?" alone, but "What did I become by reaching the throne?"
+
+This tone should keep the game closer to dark fantasy and occult descent fiction than to straightforward heroic dungeon conquest.
+
 ## Core Run Structure
 
 - One run starts on Floor 1
