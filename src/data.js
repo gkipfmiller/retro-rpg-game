@@ -149,6 +149,42 @@ export const SPELLS = {
     range: 0,
     description: "Teleport to a safe nearby tile.",
   },
+  chain_bolt: {
+    id: "chain_bolt",
+    name: "Chain Bolt",
+    type: "spell",
+    cost: 4,
+    range: 5,
+    damage: [4, 7],
+    description: "Lightning arcs to a nearby second target for reduced damage.",
+  },
+  arcane_pulse: {
+    id: "arcane_pulse",
+    name: "Arcane Pulse",
+    type: "spell",
+    cost: 5,
+    range: 0,
+    damage: [5, 8],
+    description: "A close-range burst that strikes all adjacent enemies.",
+  },
+  ice_shatter: {
+    id: "ice_shatter",
+    name: "Ice Shatter",
+    type: "spell",
+    cost: 5,
+    range: 5,
+    damage: [5, 8],
+    description: "Shatters chilled targets for heavy damage and consumes the chill.",
+  },
+  frailty_hex: {
+    id: "frailty_hex",
+    name: "Frailty Hex",
+    type: "spell",
+    cost: 4,
+    range: 5,
+    damage: [2, 4],
+    description: "A weakening curse that leaves enemies hexed and frail.",
+  },
   arcane_burst: {
     id: "arcane_burst",
     name: "Arcane Burst",
@@ -246,6 +282,10 @@ export const ITEMS = {
   arcane_shield_tome: { id: "arcane_shield_tome", name: "Tome of Arcane Shield", category: "tome", rarity: "uncommon", spellId: "arcane_shield", value: 34 },
   frost_shard_tome: { id: "frost_shard_tome", name: "Tome of Frost Shard", category: "tome", rarity: "uncommon", spellId: "frost_shard", value: 46 },
   blink_tome: { id: "blink_tome", name: "Tome of Blink", category: "tome", rarity: "uncommon", spellId: "blink", value: 44 },
+  chain_bolt_tome: { id: "chain_bolt_tome", name: "Tome of Chain Bolt", category: "tome", rarity: "uncommon", spellId: "chain_bolt", value: 50 },
+  arcane_pulse_tome: { id: "arcane_pulse_tome", name: "Tome of Arcane Pulse", category: "tome", rarity: "uncommon", spellId: "arcane_pulse", value: 52 },
+  ice_shatter_tome: { id: "ice_shatter_tome", name: "Tome of Ice Shatter", category: "tome", rarity: "uncommon", spellId: "ice_shatter", value: 54 },
+  frailty_hex_tome: { id: "frailty_hex_tome", name: "Tome of Frailty Hex", category: "tome", rarity: "uncommon", spellId: "frailty_hex", value: 52 },
   arcane_burst_tome: { id: "arcane_burst_tome", name: "Tome of Arcane Burst", category: "tome", rarity: "uncommon", spellId: "arcane_burst", value: 58 },
 };
 
@@ -431,8 +471,8 @@ export const BOONS = {
 
 export const CHEST_TABLE = {
   common: ["healing_potion", "mana_potion", "militia_sword", "woodcutter_axe", "iron_sword", "oak_staff", "hedge_wand", "ash_staff", "legion_spear", "ember_rod", "padded_jerkin", "leather_armor", "iron_cuirass", "chain_armor", "apprentice_robes", "enchanted_robe", "scout_leathers", "dusk_robe"],
-  rare: ["ring_of_precision", "ring_of_resolve", "amulet_of_vitality", "seal_of_clarity", "charm_of_focus", "wardens_loop", "spark_charm", "gauntlets_of_rime", "hexward_gloves", "gravedust_mitts", "runed_handwraps", "greater_healing_potion", "greater_mana_potion", "scroll_of_escape", "arcane_shield_tome", "frost_shard_tome", "butcher_cleaver", "moon_staff", "bastion_mail", "runespun_robe"],
-  deep: ["steel_greatsword", "war_hammer", "flame_touched_sword", "vampire_axe", "sundering_hammer", "elder_staff", "runic_staff", "sage_wand", "storm_wand", "guardian_plate", "archmage_robe", "emberguard_cuirass", "vanguard_warplate", "spellweave_mantle", "hexwoven_robe", "sundergrip_gauntlets", "spellcatcher_gloves", "cinderwraps", "wardens_grips", "sigil_of_fortune", "talisman_of_vigor", "arcseal_pendant", "warbrand_token", "mirror_sigil", "charm_of_guarding", "chain_of_insight", "blink_tome", "arcane_burst_tome"],
+  rare: ["ring_of_precision", "ring_of_resolve", "amulet_of_vitality", "seal_of_clarity", "charm_of_focus", "wardens_loop", "spark_charm", "gauntlets_of_rime", "hexward_gloves", "gravedust_mitts", "runed_handwraps", "greater_healing_potion", "greater_mana_potion", "scroll_of_escape", "arcane_shield_tome", "frost_shard_tome", "chain_bolt_tome", "frailty_hex_tome", "butcher_cleaver", "moon_staff", "bastion_mail", "runespun_robe"],
+  deep: ["steel_greatsword", "war_hammer", "flame_touched_sword", "vampire_axe", "sundering_hammer", "elder_staff", "runic_staff", "sage_wand", "storm_wand", "guardian_plate", "archmage_robe", "emberguard_cuirass", "vanguard_warplate", "spellweave_mantle", "hexwoven_robe", "sundergrip_gauntlets", "spellcatcher_gloves", "cinderwraps", "wardens_grips", "sigil_of_fortune", "talisman_of_vigor", "arcseal_pendant", "warbrand_token", "mirror_sigil", "charm_of_guarding", "chain_of_insight", "blink_tome", "arcane_pulse_tome", "ice_shatter_tome", "arcane_burst_tome"],
   endgame: ["sunfire_blade", "soulreaver_axe", "voidglass_staff", "astral_wand", "abyssal_plate", "starweave_robe", "void_heart"],
 };
 

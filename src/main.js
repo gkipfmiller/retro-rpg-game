@@ -53,6 +53,39 @@ function refresh() {
   renderer.render();
 }
 
+function jumpToFloor(floorNumber, options = {}) {
+  const targetFloor = Math.max(1, Math.min(30, Number(floorNumber) || 1));
+  const { classId = "warrior", boonId = null } = options;
+
+  if (!game.state.run || game.state.mode !== "in_game") {
+    game.startRun(classId);
+  }
+
+  const run = game.state.run;
+  if (run.floorNumber === 0) {
+    const availableChoices = run.currentFloor.sage?.choices ?? [];
+    const selectedBoonId = (boonId && availableChoices.includes(boonId))
+      ? boonId
+      : availableChoices[0];
+    if (selectedBoonId) {
+      game.chooseBoon(selectedBoonId);
+      game.closeOverlay();
+    }
+  }
+
+  while (game.state.run.floorNumber < targetFloor) {
+    game.state.run.currentFloor.enemies = [];
+    game.descend();
+  }
+
+  refresh();
+  return {
+    floorNumber: game.state.run.floorNumber,
+    classId: game.state.run.player.classId,
+    boonId: game.state.run.player.boonId,
+  };
+}
+
 function frame() {
   if (game.state.mode === "class") {
     syncClassPortraits(Math.floor(performance.now() / 220));
@@ -180,3 +213,9 @@ loadAssets().then((assets) => {
   refresh();
   window.requestAnimationFrame(frame);
 });
+
+window.dungeon30Debug = {
+  game,
+  refresh,
+  jumpToFloor,
+};

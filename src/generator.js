@@ -481,7 +481,7 @@ function getClassLootPools(playerClass, floorNumber) {
   const warriorEndgame = ["sunfire_blade", "soulreaver_axe", "abyssal_plate", "void_heart"];
   const wizardEndgame = ["voidglass_staff", "astral_wand", "starweave_robe", "void_heart"];
   const warriorTomes = ["arcane_shield_tome"];
-  const wizardTomes = ["frost_shard_tome", "blink_tome", "arcane_burst_tome"];
+  const wizardTomes = ["frost_shard_tome", "blink_tome", "chain_bolt_tome", "arcane_pulse_tome", "ice_shatter_tome", "frailty_hex_tome", "arcane_burst_tome"];
 
   const classCore = playerClass === "warrior" ? warriorCore : wizardCore;
   const offClassCore = playerClass === "warrior" ? wizardCore : warriorCore;
@@ -578,7 +578,7 @@ function placeVendor(map, room, rng, floorNumber) {
     ? [
       "mana_potion", "greater_healing_potion", "greater_mana_potion",
       "ring_of_precision", "ring_of_resolve", "scroll_of_escape", "seal_of_clarity",
-      "wardens_loop", "spark_charm", "frost_shard_tome", "blink_tome", "arcane_burst_tome",
+      "wardens_loop", "spark_charm", "frost_shard_tome", "blink_tome", "chain_bolt_tome", "frailty_hex_tome", "arcane_burst_tome",
       "steel_greatsword", "war_hammer", "elder_staff", "storm_wand", "chain_armor",
       "scout_leathers", "bastion_mail", "enchanted_robe", "dusk_robe", "runespun_robe",
       "crystal_wand", "ember_rod", "moon_staff", "gauntlets_of_rime", "hexward_gloves",
@@ -588,7 +588,7 @@ function placeVendor(map, room, rng, floorNumber) {
       ? [
         "mana_potion", "greater_healing_potion", "greater_mana_potion",
         "ring_of_precision", "ring_of_resolve", "scroll_of_escape", "seal_of_clarity",
-        "wardens_loop", "spark_charm", "frost_shard_tome", "blink_tome", "arcane_burst_tome",
+        "wardens_loop", "spark_charm", "frost_shard_tome", "blink_tome", "chain_bolt_tome", "frailty_hex_tome", "arcane_burst_tome",
         "steel_greatsword", "war_hammer", "elder_staff", "chain_armor", "scout_leathers",
         "bastion_mail", "enchanted_robe", "dusk_robe", "runespun_robe", "crystal_wand",
         "ember_rod", "moon_staff", "gauntlets_of_rime", "hexward_gloves", "gravedust_mitts",
@@ -1029,10 +1029,10 @@ export function getDropForEnemy(enemy, rng, playerClass) {
   const drops = [];
   const deepBiasPool = playerClass === "warrior"
     ? ["steel_greatsword", "war_hammer", "butcher_cleaver", "flame_touched_sword", "vampire_axe", "sundering_hammer", "guardian_plate", "emberguard_cuirass", "vanguard_warplate", "bastion_mail", "gauntlets_of_rime", "gravedust_mitts", "sundergrip_gauntlets", "wardens_grips", "ring_of_resolve", "talisman_of_vigor", "warbrand_token", "charm_of_guarding", "greater_healing_potion"]
-    : ["elder_staff", "storm_wand", "moon_staff", "runic_staff", "sage_wand", "archmage_robe", "spellweave_mantle", "hexwoven_robe", "runespun_robe", "hexward_gloves", "runed_handwraps", "spellcatcher_gloves", "cinderwraps", "seal_of_clarity", "spark_charm", "arcseal_pendant", "mirror_sigil", "chain_of_insight", "greater_mana_potion", "frost_shard_tome", "blink_tome", "arcane_burst_tome"];
+    : ["elder_staff", "storm_wand", "moon_staff", "runic_staff", "sage_wand", "archmage_robe", "spellweave_mantle", "hexwoven_robe", "runespun_robe", "hexward_gloves", "runed_handwraps", "spellcatcher_gloves", "cinderwraps", "seal_of_clarity", "spark_charm", "arcseal_pendant", "mirror_sigil", "chain_of_insight", "greater_mana_potion", "frost_shard_tome", "blink_tome", "chain_bolt_tome", "arcane_pulse_tome", "ice_shatter_tome", "frailty_hex_tome", "arcane_burst_tome"];
   const endgameBiasPool = playerClass === "warrior"
     ? ["sunfire_blade", "soulreaver_axe", "abyssal_plate", "void_heart", "greater_healing_potion"]
-    : ["voidglass_staff", "astral_wand", "starweave_robe", "void_heart", "greater_mana_potion", "arcane_burst_tome"];
+    : ["voidglass_staff", "astral_wand", "starweave_robe", "void_heart", "greater_mana_potion", "arcane_pulse_tome", "ice_shatter_tome", "arcane_burst_tome"];
 
   if (rng.chance((enemy.floorNumber ?? 1) >= 11 ? 0.26 : 0.52)) {
     const biasPool = playerClass === "warrior"

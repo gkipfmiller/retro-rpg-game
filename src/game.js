@@ -287,6 +287,7 @@ export class Game {
     const room = { id: 0, x: 1, y: 1, width: 13, height: 9, center: { x: 7, y: 5 }, type: "sage" };
     return {
       floorNumber: 0,
+      theme: "sage",
       seed: hashSeed(runSeed, "sage-chamber"),
       width,
       height,
@@ -1369,7 +1370,8 @@ export class Game {
     return stacks;
   }
 
-  performPlayerAttack(enemy, mode) {
+  performPlayerAttack(enemy, mode, options = {}) {
+    const { endTurn = true, damageMultiplier = 1, projectileFrom = null } = options;
     const player = this.state.run.player;
     const derived = this.getPlayerCombatSnapshot();
     const weapon = ITEMS[player.equipment.weapon];
@@ -1381,13 +1383,13 @@ export class Game {
       if (mode.type === "spell") {
         this.renderer?.queueProjectile({
           kind: mode.spellId,
-          from: { x: player.x, y: player.y },
+          from: projectileFrom ?? { x: player.x, y: player.y },
           to: { x: enemy.x, y: enemy.y },
         });
       }
       this.log(`You miss ${enemy.name}.`);
-      this.endPlayerTurn();
-      return;
+      if (endTurn) this.endPlayerTurn();
+      return { hit: false, damage: 0, killed: false, targetId: enemy.id };
     }
 
     let damage = 0;
@@ -1410,7 +1412,7 @@ export class Game {
       const spell = SPELLS[mode.spellId];
       this.renderer?.queueProjectile({
         kind: mode.spellId,
-        from: { x: player.x, y: player.y },
+        from: projectileFrom ?? { x: player.x, y: player.y },
         to: { x: enemy.x, y: enemy.y },
       });
       const firstSpellBonus = !enemy.firstSpellHitTaken && derived.firstSpellPct ? derived.firstSpellPct / 100 : 0;
@@ -1421,6 +1423,9 @@ export class Game {
       }
       if (derived.frailtyCurse && (this.hasStatus(enemy, "chilled") || this.hasStatus(enemy, "weakened"))) {
         damage += Math.floor(damage * (derived.frailtyCurse / 100));
+      }
+      if (mode.spellId === "ice_shatter" && this.hasStatus(enemy, "chilled")) {
+        damage += 4 + this.getControlDurationBonus(player);
       }
       if (enchantment?.type === "spellBonusDamage") {
         damage += enchantment.value;
@@ -1433,6 +1438,7 @@ export class Game {
     if (criticalHit) {
       damage = Math.max(1, Math.floor(damage * 1.5));
     }
+    damage = Math.max(1, Math.floor(damage * damageMultiplier));
 
     enemy.hp -= damage;
     this.log(`You ${criticalHit ? "critically strike" : "hit"} ${enemy.name} for ${damage} damage.`);
@@ -1447,6 +1453,15 @@ export class Game {
     if (mode.spellId === "arcane_burst") {
       this.upsertStatus(enemy, { id: "weakened", turns: 2 + this.getControlDurationBonus(player), value: 1 });
       this.log(`${enemy.name} is weakened by the burst.`);
+    }
+    if (mode.spellId === "ice_shatter" && this.hasStatus(enemy, "chilled")) {
+      enemy.statuses = enemy.statuses.filter((status) => status.id !== "chilled");
+      this.log(`${enemy.name}'s chill shatters violently.`);
+    }
+    if (mode.spellId === "frailty_hex") {
+      this.upsertStatus(enemy, { id: "hexed", turns: 2 + this.getControlDurationBonus(player), value: 1 });
+      this.upsertStatus(enemy, { id: "weakened", turns: 2, value: 1 });
+      this.log(`${enemy.name} is hexed and weakened.`);
     }
     this.maybeApplyHandsEffect(enemy, mode, rng);
     if (derived.weakenOnHit && mode.type !== "spell") {
@@ -1478,8 +1493,10 @@ export class Game {
       }
     }
     this.state.run.currentTargetId = enemy.id;
-    if (enemy.hp <= 0) this.killEnemy(enemy);
-    this.endPlayerTurn();
+    const killed = enemy.hp <= 0;
+    if (killed) this.killEnemy(enemy);
+    if (endTurn) this.endPlayerTurn();
+    return { hit: true, damage, killed, targetId: enemy.id };
   }
 
   killEnemy(enemy) {
@@ -1608,6 +1625,23 @@ export class Game {
       return;
     }
 
+    if (spellId === "arcane_pulse") {
+      const targets = this.findAdjacentEnemies(player, 1);
+      if (!targets.length) {
+        this.log("No adjacent enemies to strike.");
+        return;
+      }
+      player.lastAction = "spell";
+      player.mana -= cost;
+      if (spell.type === "spell" && player.boonId === "sages_echo") player.boonState.sageEchoCount = sageEchoCount + 1;
+      this.log("Arcane force erupts around you.");
+      for (const target of [...targets]) {
+        this.performPlayerAttack(target, { type: "spell", spellId }, { endTurn: false });
+      }
+      this.endPlayerTurn();
+      return;
+    }
+
     const target = this.findNearestVisibleEnemy(spell.range);
     if (!target) {
       this.log("No visible target in range.");
@@ -1620,6 +1654,22 @@ export class Game {
     }
     player.lastAction = "spell";
     if (spell.type === "spell" && player.boonId === "sages_echo") player.boonState.sageEchoCount = sageEchoCount + 1;
+    if (spellId === "chain_bolt") {
+      const firstTargetPoint = { x: target.x, y: target.y };
+      const firstResult = this.performPlayerAttack(target, { type: "spell", spellId }, { endTurn: false });
+      const remainingEnemies = this.state.run.currentFloor.enemies.filter((enemy) => enemy.id !== target.id);
+      const chainedTarget = remainingEnemies
+        .filter((enemy) => manhattan(enemy, firstTargetPoint) <= 2)
+        .sort((a, b) => manhattan(a, firstTargetPoint) - manhattan(b, firstTargetPoint))[0];
+      if (firstResult?.hit && chainedTarget) {
+        const chainResult = this.performPlayerAttack(chainedTarget, { type: "spell", spellId }, { endTurn: false, damageMultiplier: 0.6, projectileFrom: firstTargetPoint });
+        if (chainResult?.hit) {
+          this.log(`Chain Bolt arcs into ${chainedTarget.name}.`);
+        }
+      }
+      this.endPlayerTurn();
+      return;
+    }
     this.performPlayerAttack(target, { type: "spell", spellId });
   }
 
@@ -1652,6 +1702,16 @@ export class Game {
       .filter((enemy) => manhattan(player, enemy) <= range && hasLineOfSight(this.state.run.currentFloor.map, player, enemy))
       .sort((a, b) => manhattan(player, a) - manhattan(player, b));
     return visibleEnemies[0] ?? null;
+  }
+
+  findVisibleEnemies(range) {
+    const { player } = this.state.run;
+    return this.state.run.currentFloor.enemies
+      .filter((enemy) => manhattan(player, enemy) <= range && hasLineOfSight(this.state.run.currentFloor.map, player, enemy));
+  }
+
+  findAdjacentEnemies(point, distance = 1) {
+    return this.state.run.currentFloor.enemies.filter((enemy) => manhattan(point, enemy) <= distance);
   }
 
   useItemById(itemId, options = {}) {

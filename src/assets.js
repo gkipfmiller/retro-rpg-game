@@ -2,6 +2,7 @@ import { ENEMIES, ITEMS, TRAPS } from "./data.js";
 
 const BASE = "./RPG Art Assets/frames";
 const EXTRACTED = "./RPG Art Assets/extracted";
+const SEWER = "./RPG Art Assets/0x72_DungeonTilesetII_sewers_v0.3";
 
 const FLOOR_FRAMES = [
   "floor_1.png",
@@ -20,6 +21,10 @@ function frameSet(prefix, count = 4) {
 
 const assetManifest = {
   floorTiles: FLOOR_FRAMES.map((file) => `${BASE}/${file}`),
+  themeAtlases: {
+    sunkenVaultFloor: `${SEWER}/floor.png`,
+    sunkenVaultWalls: `${SEWER}/atlas_walls_low-16x16.png`,
+  },
   walls: {
     center: `${BASE}/wall_mid.png`,
     top: `${BASE}/wall_top_mid.png`,
@@ -56,6 +61,26 @@ const assetManifest = {
     alarm: `${BASE}/lever_right.png`,
   },
   shrine: `${BASE}/wall_fountain_basin_blue_anim_f1.png`,
+  props: {
+    wallGoo: `${BASE}/wall_goo.png`,
+    floorGoo: `${BASE}/wall_goo_base.png`,
+    floorHole: `${BASE}/hole.png`,
+    floorColumn: `${BASE}/column.png`,
+    wallHoles: [`${BASE}/wall_hole_1.png`, `${BASE}/wall_hole_2.png`],
+    columnWall: `${BASE}/column_wall.png`,
+    banners: {
+      blue: `${BASE}/wall_banner_blue.png`,
+      green: `${BASE}/wall_banner_green.png`,
+      red: `${BASE}/wall_banner_red.png`,
+      yellow: `${BASE}/wall_banner_yellow.png`,
+    },
+    shrineBlueTop: `${BASE}/wall_fountain_top_2.png`,
+    shrineBlueMid: `${BASE}/wall_fountain_mid_blue_anim_f1.png`,
+    shrineBlueBasin: `${BASE}/wall_fountain_basin_blue_anim_f1.png`,
+    shrineRedTop: `${BASE}/wall_fountain_top_1.png`,
+    shrineRedMid: `${BASE}/wall_fountain_mid_red_anim_f1.png`,
+    shrineRedBasin: `${BASE}/wall_fountain_basin_red_anim_f1.png`,
+  },
   actors: {
     warrior: frameSet("knight_m_idle_anim_f"),
     wizard: frameSet("wizzard_m_idle_anim_f"),
@@ -164,6 +189,10 @@ const assetManifest = {
     arcane_shield_tome: `${EXTRACTED}/tome_grey.png`,
     frost_shard_tome: `${EXTRACTED}/tome_grey.png`,
     blink_tome: `${EXTRACTED}/tome_red.png`,
+    chain_bolt_tome: `${EXTRACTED}/tome_gold.png`,
+    arcane_pulse_tome: `${EXTRACTED}/tome_grey.png`,
+    ice_shatter_tome: `${EXTRACTED}/tome_white.png`,
+    frailty_hex_tome: `${EXTRACTED}/tome_dark.png`,
     arcane_burst_tome: `${EXTRACTED}/tome_gold.png`,
   },
 };
@@ -197,6 +226,7 @@ export async function loadAssets() {
   };
 
   collectPaths(assetManifest.floorTiles);
+  collectPaths(assetManifest.themeAtlases);
   collectPaths(assetManifest.walls);
   collectPaths(assetManifest.stairs);
   collectPaths(assetManifest.ladder);
@@ -205,6 +235,7 @@ export async function loadAssets() {
   collectPaths(assetManifest.coin);
   collectPaths(assetManifest.hearts);
   collectPaths(assetManifest.traps);
+  collectPaths(assetManifest.props);
   collectPaths(assetManifest.actors);
   collectPaths(assetManifest.items);
 
@@ -243,7 +274,12 @@ export function getWallSprite(manifest, map, x, y, options = {}) {
     if (!useExploredMask) return true;
     return tile.explored || tile.visible;
   };
-  const isFloor = (tx, ty) => getTile(tx, ty)?.type === "floor";
+  const isFloor = (tx, ty) => {
+    const tile = getTile(tx, ty);
+    if (!tile || tile.type !== "floor") return false;
+    if (!useExploredMask) return true;
+    return tile.explored || tile.visible;
+  };
 
   const northWall = isVisibleWall(x, y - 1);
   const southWall = isVisibleWall(x, y + 1);
@@ -255,12 +291,12 @@ export function getWallSprite(manifest, map, x, y, options = {}) {
   const eastFloor = isFloor(x + 1, y);
 
   if (southFloor) {
-    if (westFloor && !eastFloor) return manifest.walls.topRight;
-    if (eastFloor && !westFloor) return manifest.walls.topLeft;
-    if (westFloor && eastFloor) return manifest.walls.top;
-    if (!westWall && eastWall) return manifest.walls.topLeft;
-    if (!eastWall && westWall) return manifest.walls.topRight;
-    return manifest.walls.top;
+    if (westFloor && !eastFloor) return manifest.walls.right;
+    if (eastFloor && !westFloor) return manifest.walls.left;
+    if (westFloor && eastFloor) return manifest.walls.center;
+    if (!westWall && eastWall) return manifest.walls.left;
+    if (!eastWall && westWall) return manifest.walls.right;
+    return manifest.walls.center;
   }
 
   if (eastFloor && !westFloor) {
@@ -272,9 +308,9 @@ export function getWallSprite(manifest, map, x, y, options = {}) {
 
   if (!southWall && westWall && !eastWall) return manifest.walls.edgeBottomRight;
   if (!southWall && eastWall && !westWall) return manifest.walls.edgeBottomLeft;
-  if (!northWall && !westWall && eastWall) return manifest.walls.edgeTopLeft;
-  if (!northWall && !eastWall && westWall) return manifest.walls.edgeTopRight;
-  if (!northWall && !westWall && !eastWall) return manifest.walls.top;
+  if (!northWall && !westWall && eastWall) return manifest.walls.left;
+  if (!northWall && !eastWall && westWall) return manifest.walls.right;
+  if (!northWall && !westWall && !eastWall) return manifest.walls.center;
   return manifest.walls.center;
 }
 

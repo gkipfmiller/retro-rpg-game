@@ -74,10 +74,10 @@ const FLOOR_THEMES = {
     floorFog: "#10151a",
     wallVisible: "#20313a",
     wallFog: "#18242c",
-    floorOverlayVisible: "rgba(72, 138, 154, 0.14)",
-    floorOverlayFog: "rgba(50, 96, 110, 0.14)",
-    wallOverlayVisible: "rgba(96, 152, 168, 0.1)",
-    wallOverlayFog: "rgba(62, 102, 116, 0.12)",
+    floorOverlayVisible: "rgba(58, 116, 128, 0.08)",
+    floorOverlayFog: "rgba(42, 82, 92, 0.1)",
+    wallOverlayVisible: "rgba(82, 132, 146, 0.06)",
+    wallOverlayFog: "rgba(52, 84, 96, 0.08)",
   },
   necropolis: {
     floorVisible: "#1f151d",
@@ -168,6 +168,168 @@ function getTrapColor(trapId) {
   }
 }
 
+function hashPoint(x, y, seed = 0) {
+  return Math.abs(((x + 11) * 92821) ^ ((y + 17) * 68917) ^ seed) >>> 0;
+}
+
+function getThemeFloorAtlasCoord(theme, x, y) {
+  if (theme !== "sunken_vault") return null;
+  const sewerFloorTiles = [
+    [0, 2],
+    [1, 2],
+    [2, 2],
+    [3, 2],
+  ];
+  return sewerFloorTiles[(x * 5 + y * 7) % sewerFloorTiles.length];
+}
+
+function getThemeWallAtlasCoord(theme, map, x, y, options = {}) {
+  if (theme !== "sunken_vault") return null;
+  const { useExploredMask = false } = options;
+  const getTile = (tx, ty) => map[ty]?.[tx] ?? null;
+  const isVisibleWall = (tx, ty) => {
+    const tile = getTile(tx, ty);
+    if (!tile || tile.type !== "wall") return false;
+    if (!useExploredMask) return true;
+    return tile.explored || tile.visible;
+  };
+  const isFloor = (tx, ty) => {
+    const tile = getTile(tx, ty);
+    if (!tile || tile.type !== "floor") return false;
+    if (!useExploredMask) return true;
+    return tile.explored || tile.visible;
+  };
+
+  const northWall = isVisibleWall(x, y - 1);
+  const southWall = isVisibleWall(x, y + 1);
+  const westWall = isVisibleWall(x - 1, y);
+  const eastWall = isVisibleWall(x + 1, y);
+  const northFloor = isFloor(x, y - 1);
+  const southFloor = isFloor(x, y + 1);
+  const westFloor = isFloor(x - 1, y);
+  const eastFloor = isFloor(x + 1, y);
+
+  if (southFloor) {
+    if (westFloor && !eastFloor) return eastWall ? [1, 2] : [11, 0];
+    if (eastFloor && !westFloor) return westWall ? [3, 2] : [1, 0];
+    if (!westWall && eastWall) return southWall ? [5, 0] : [1, 0];
+    if (!eastWall && westWall) return southWall ? [6, 0] : [11, 0];
+    return [2, 2];
+  }
+
+  if (northFloor) {
+    if (westFloor && !eastFloor) {
+      return eastWall ? (southWall ? [6, 3] : [1, 3]) : (southWall ? [7, 3] : [11, 3]);
+    }
+    if (eastFloor && !westFloor) {
+      return westWall ? (southWall ? [5, 3] : [3, 3]) : (southWall ? [4, 3] : [1, 3]);
+    }
+    if (!westWall && eastWall) return southWall ? [5, 3] : [1, 3];
+    if (!eastWall && westWall) return southWall ? [6, 3] : [11, 3];
+    return [2, 3];
+  }
+
+  if (westFloor && eastFloor) {
+    if (!northWall && southWall) return [8, 0];
+    if (northWall && southWall) return [8, 1];
+    if (northWall && !southWall) return [8, 2];
+    return [8, 1];
+  }
+
+  if (eastFloor && !westFloor) {
+    return southWall ? (northWall ? [8, 1] : [5, 0]) : [1, 0];
+  }
+  if (westFloor && !eastFloor) {
+    return southWall ? (northWall ? [8, 1] : [6, 0]) : [11, 0];
+  }
+
+  if (!northWall && !westWall && eastWall) return [1, 2];
+  if (!northWall && !eastWall && westWall) return [3, 2];
+  if (!northWall && !westWall && !eastWall) return [2, 2];
+  return [2, 0];
+}
+
+function getSewerDecorAtlasCoord(kind, x, y) {
+  const variants = {
+    drain: [[0, 4], [1, 4], [2, 4]],
+    puddle: [[3, 4], [4, 4], [5, 4]],
+    rubble: [[6, 4], [7, 4], [8, 4]],
+  };
+  const pool = variants[kind];
+  if (!pool?.length) return null;
+  return pool[(x * 5 + y * 3) % pool.length];
+}
+
+function getWallPropPath(manifest, theme, map, x, y) {
+  const tile = map[y]?.[x];
+  const below = map[y + 1]?.[x];
+  if (!tile || tile.type !== "wall" || !below || below.type !== "floor") return null;
+  const roll = hashPoint(x, y, theme.length) % 100;
+  switch (theme) {
+    case "crypt":
+      return null;
+    case "ember_halls":
+      return null;
+    case "fungal_depths":
+      if (roll < 8) return manifest.props.wallGoo;
+      if (roll < 13) return manifest.props.wallHoles[roll % manifest.props.wallHoles.length];
+      return null;
+    case "sunken_vault":
+      return null;
+    case "necropolis":
+      if (roll < 6) return manifest.props.columnWall;
+      if (roll < 13) return manifest.props.wallHoles[roll % manifest.props.wallHoles.length];
+      return null;
+    case "stitchworks":
+      if (roll < 6) return manifest.props.shrineRedMid;
+      if (roll < 14) return manifest.props.wallHoles[roll % manifest.props.wallHoles.length];
+      return null;
+    case "void_deep":
+      if (roll < 5) return manifest.props.wallHoles[roll % manifest.props.wallHoles.length];
+      return null;
+    default:
+      return null;
+  }
+}
+
+function getFloorPropPath(manifest, theme, map, x, y, options = {}) {
+  const { floorNumber = 0, inBossRoom = false } = options;
+  const tile = map[y]?.[x];
+  if (!tile || tile.type !== "floor" || tile.stairs || tile.vendor || tile.shrineId || tile.chestId || tile.itemIds?.length || tile.occupant) {
+    return null;
+  }
+  const roll = hashPoint(x, y, theme.length + floorNumber * 13) % 100;
+  if (theme === "sunken_vault") {
+    return null;
+  }
+  if (floorNumber === 20 && inBossRoom) {
+    return null;
+  }
+  if (theme === "fungal_depths") {
+    if (roll < 4) return manifest.props.floorGoo;
+    if (roll < 6) return manifest.props.floorHole;
+  }
+  return null;
+}
+
+function getFloorDecorSpec(manifest, currentFloor, x, y, options = {}) {
+  const { floorNumber = 0, inBossRoom = false, roomType = "normal" } = options;
+  const tile = currentFloor.map[y]?.[x];
+  if (!tile || tile.type !== "floor" || tile.stairs || tile.vendor || tile.shrineId || tile.chestId || tile.itemIds?.length || tile.occupant) {
+    return null;
+  }
+  const roll = hashPoint(x, y, floorNumber * 31 + roomType.length) % 100;
+  if (currentFloor.theme === "sunken_vault") {
+    if (roomType === "treasure" && roll < 10) return { atlas: manifest.themeAtlases.sunkenVaultFloor, coord: getSewerDecorAtlasCoord("drain", x, y) };
+    if (roomType === "trap" && roll < 12) return { atlas: manifest.themeAtlases.sunkenVaultFloor, coord: getSewerDecorAtlasCoord("puddle", x, y) };
+  }
+  if (floorNumber === 20 && inBossRoom) {
+    if (roll < 8) return { atlas: manifest.themeAtlases.sunkenVaultFloor, coord: getSewerDecorAtlasCoord("puddle", x, y) };
+    if (roll < 12) return { atlas: manifest.themeAtlases.sunkenVaultFloor, coord: getSewerDecorAtlasCoord("drain", x, y) };
+  }
+  return null;
+}
+
 function renderStatusBadges(statuses = []) {
   if (!statuses.length) return `<span class="status-badge muted-badge">None</span>`;
   return statuses.map((status) => {
@@ -223,6 +385,12 @@ function getProjectileAppearance(projectile) {
       return { color: "#8bc6ff", trail: "#d6eeff", radius: 0.16 };
     case "frost_shard":
       return { color: "#8ff3ff", trail: "#d7fbff", radius: 0.18 };
+    case "chain_bolt":
+      return { color: "#ffd86a", trail: "#fff2b6", radius: 0.17 };
+    case "ice_shatter":
+      return { color: "#b9ecff", trail: "#eefcff", radius: 0.18 };
+    case "frailty_hex":
+      return { color: "#c58cff", trail: "#edd6ff", radius: 0.18 };
     case "arcane_burst":
       return { color: "#c78cff", trail: "#f0d2ff", radius: 0.2 };
     case "shadow_bolt":
@@ -283,6 +451,12 @@ export class Renderer {
       && x < bossRoom.x + bossRoom.width
       && y >= bossRoom.y
       && y < bossRoom.y + bossRoom.height;
+    const getRoomTypeAt = (x, y) => currentFloor.rooms?.find((room) =>
+      x >= room.x
+      && x < room.x + room.width
+      && y >= room.y
+      && y < room.y + room.height
+    )?.type ?? "normal";
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     const animationFrame = Math.floor(performance.now() / 220);
     const tileSize = Math.floor(Math.min(this.canvas.width / currentFloor.width, this.canvas.height / currentFloor.height));
@@ -301,16 +475,54 @@ export class Renderer {
           continue;
         }
 
-        const floorSprite = this.assets?.images[getFloorSprite(this.assets.manifest, x, y)];
+        const floorAtlasCoord = getThemeFloorAtlasCoord(currentFloor.theme, x, y);
+        const floorAtlas = floorAtlasCoord ? this.assets?.images[this.assets.manifest.themeAtlases.sunkenVaultFloor] : null;
+        const floorSprite = floorAtlas ? null : this.assets?.images[getFloorSprite(this.assets.manifest, x, y)];
+        const wallAtlasCoord = getThemeWallAtlasCoord(currentFloor.theme, currentFloor.map, x, y);
+        const wallAtlas = wallAtlasCoord ? this.assets?.images[this.assets.manifest.themeAtlases.sunkenVaultWalls] : null;
         const wallSpritePath = this.assets
-          ? getWallSprite(this.assets.manifest, currentFloor.map, x, y, { useExploredMask: !tile.visible })
+          ? getWallSprite(this.assets.manifest, currentFloor.map, x, y)
           : null;
-        const wallSprite = wallSpritePath ? this.assets?.images[wallSpritePath] : null;
-        ctx.fillStyle = tile.type === "wall"
-          ? (tile.visible ? floorTheme.wallVisible : floorTheme.wallFog)
-          : (tile.visible ? floorTheme.floorVisible : floorTheme.floorFog);
-        ctx.fillRect(px, py, tileSize, tileSize);
-        if (tile.type === "floor" && floorSprite) {
+        const wallSprite = wallAtlas ? null : wallSpritePath ? this.assets?.images[wallSpritePath] : null;
+        const plainTopWallSprites = this.assets
+          ? new Set([
+            this.assets.manifest.walls.top,
+            this.assets.manifest.walls.topLeft,
+            this.assets.manifest.walls.topRight,
+            this.assets.manifest.walls.edgeTopLeft,
+            this.assets.manifest.walls.edgeTopRight,
+          ])
+          : null;
+        const skipWallBackdrop = tile.type === "wall" && !wallAtlas && wallSpritePath && plainTopWallSprites?.has(wallSpritePath);
+        const wallPropPath = this.assets ? getWallPropPath(this.assets.manifest, currentFloor.theme, currentFloor.map, x, y) : null;
+        const wallProp = wallPropPath ? this.assets?.images[wallPropPath] : null;
+        const roomType = getRoomTypeAt(x, y);
+        const floorPropPath = this.assets
+          ? getFloorPropPath(this.assets.manifest, currentFloor.theme, currentFloor.map, x, y, { floorNumber, inBossRoom: inBossRoom(x, y) })
+          : null;
+        const floorProp = floorPropPath ? this.assets?.images[floorPropPath] : null;
+        const floorDecorSpec = this.assets
+          ? getFloorDecorSpec(this.assets.manifest, currentFloor, x, y, { floorNumber, inBossRoom: inBossRoom(x, y), roomType })
+          : null;
+        const floorDecorAtlas = floorDecorSpec?.atlas ? this.assets?.images[floorDecorSpec.atlas] : null;
+        if (!skipWallBackdrop) {
+          ctx.fillStyle = tile.type === "wall"
+            ? (tile.visible ? floorTheme.wallVisible : floorTheme.wallFog)
+            : (tile.visible ? floorTheme.floorVisible : floorTheme.floorFog);
+          ctx.fillRect(px, py, tileSize, tileSize);
+        }
+        if (tile.type === "floor" && floorAtlas && floorAtlasCoord) {
+          ctx.save();
+          if (!tile.visible) {
+            ctx.globalAlpha = 0.32;
+          }
+          this.drawAtlasTile(floorAtlas, floorAtlasCoord, px, py, tileSize);
+          ctx.restore();
+          ctx.save();
+          ctx.fillStyle = tile.visible ? floorTheme.floorOverlayVisible : floorTheme.floorOverlayFog;
+          ctx.fillRect(px, py, tileSize, tileSize);
+          ctx.restore();
+        } else if (tile.type === "floor" && floorSprite) {
           ctx.save();
           if (!tile.visible) {
             ctx.globalAlpha = 0.32;
@@ -319,6 +531,17 @@ export class Renderer {
           ctx.restore();
           ctx.save();
           ctx.fillStyle = tile.visible ? floorTheme.floorOverlayVisible : floorTheme.floorOverlayFog;
+          ctx.fillRect(px, py, tileSize, tileSize);
+          ctx.restore();
+        } else if (tile.type === "wall" && wallAtlas && wallAtlasCoord) {
+          ctx.save();
+          if (!tile.visible) {
+            ctx.globalAlpha = 0.38;
+          }
+          this.drawAtlasTile(wallAtlas, wallAtlasCoord, px, py, tileSize);
+          ctx.restore();
+          ctx.save();
+          ctx.fillStyle = tile.visible ? floorTheme.wallOverlayVisible : floorTheme.wallOverlayFog;
           ctx.fillRect(px, py, tileSize, tileSize);
           ctx.restore();
         } else if (tile.type === "wall" && wallSprite) {
@@ -332,13 +555,16 @@ export class Renderer {
           ctx.fillStyle = tile.visible ? floorTheme.wallOverlayVisible : floorTheme.wallOverlayFog;
           ctx.fillRect(px, py, tileSize, tileSize);
           ctx.restore();
+          if (tile.visible && wallProp) {
+            this.drawSprite(wallProp, px, py, tileSize, tileSize, 1.15);
+          }
         }
 
         if ((floorNumber === 10 || floorNumber === 20) && tile.type === "floor" && inBossRoom(x, y)) {
           ctx.save();
           ctx.fillStyle = floorNumber === 10
             ? (tile.visible ? "rgba(88, 24, 36, 0.26)" : "rgba(52, 16, 24, 0.18)")
-            : (tile.visible ? "rgba(72, 58, 28, 0.28)" : "rgba(38, 28, 12, 0.18)");
+            : (tile.visible ? "rgba(52, 76, 64, 0.22)" : "rgba(24, 40, 32, 0.16)");
           ctx.fillRect(px, py, tileSize, tileSize);
           ctx.restore();
           if (tile.visible && tile.graveCircle) {
@@ -362,7 +588,7 @@ export class Renderer {
             const cx = px + tileSize / 2;
             const cy = py + tileSize / 2;
             ctx.save();
-            ctx.strokeStyle = "rgba(214, 162, 78, 0.92)";
+            ctx.strokeStyle = "rgba(146, 182, 132, 0.92)";
             ctx.lineWidth = Math.max(1, Math.floor(tileSize * 0.06));
             ctx.strokeRect(
               Math.floor(cx - tileSize * 0.18),
@@ -370,7 +596,7 @@ export class Renderer {
               Math.floor(tileSize * 0.36),
               Math.floor(tileSize * 0.36)
             );
-            ctx.strokeStyle = "rgba(238, 204, 132, 0.92)";
+            ctx.strokeStyle = "rgba(198, 222, 154, 0.92)";
             ctx.beginPath();
             ctx.moveTo(cx - tileSize * 0.16, cy - tileSize * 0.16);
             ctx.lineTo(cx + tileSize * 0.16, cy + tileSize * 0.16);
@@ -381,9 +607,17 @@ export class Renderer {
           }
         }
 
+        if (tile.visible && floorProp) {
+          const scale = floorPropPath === this.assets.manifest.props.floorColumn ? 1.1 : 1;
+          this.drawSprite(floorProp, px, py, tileSize, tileSize, scale);
+        }
+
+        if (tile.visible && floorDecorAtlas && floorDecorSpec?.coord) {
+          this.drawAtlasTile(floorDecorAtlas, floorDecorSpec.coord, px, py, tileSize);
+        }
+
         if (tile.visible) {
-          const stairsSprite = this.assets?.images[this.assets.manifest.stairs];
-          const shrineSprite = this.assets?.images[this.assets.manifest.shrine];
+          const stairsSprite = this.assets?.images[currentFloor.theme === "sunken_vault" ? this.assets.manifest.ladder : this.assets.manifest.stairs];
           const vendorSpritePath = this.assets ? getActorSpriteFrame(this.assets.manifest, "vendor", animationFrame) : null;
           const vendorSprite = vendorSpritePath ? this.assets?.images[vendorSpritePath] : null;
           const sage = currentFloor.sage;
@@ -394,10 +628,35 @@ export class Renderer {
           const chestSprite = this.assets?.images[tile.chestId ? this.assets.manifest.chestClosed : ""];
           const pickupSpritePath = tile.itemIds.length ? getItemSprite(this.assets?.manifest, getPickupSpriteId(tile.itemIds)) : null;
           const pickupSprite = pickupSpritePath ? this.assets?.images[pickupSpritePath] : null;
+          if (tile.stairs) {
+            ctx.save();
+            ctx.fillStyle = currentFloor.theme === "sunken_vault"
+              ? "rgba(74, 124, 102, 0.22)"
+              : floorNumber === 20
+                ? "rgba(88, 122, 96, 0.2)"
+                : "rgba(137, 209, 133, 0.16)";
+            ctx.fillRect(
+              px + Math.floor(tileSize * 0.12),
+              py + Math.floor(tileSize * 0.12),
+              Math.floor(tileSize * 0.76),
+              Math.floor(tileSize * 0.76)
+            );
+            ctx.restore();
+          }
           if (tile.stairs && stairsSprite) ctx.drawImage(stairsSprite, px, py, tileSize, tileSize);
-          if (tile.shrineId && shrineSprite) this.drawSprite(shrineSprite, px, py, tileSize, tileSize, 1.2);
+          if (tile.shrineId) this.drawShrineStructure(currentFloor.theme, tile, px, py, tileSize);
           if (tile.vendor && vendorSprite) this.drawSprite(vendorSprite, px, py, tileSize, tileSize, 1.6);
           if (sageSprite) this.drawSprite(sageSprite, px, py, tileSize, tileSize, 1.7);
+          if (tile.chestId && (currentFloor.theme === "sunken_vault" || floorNumber === 20)) {
+            ctx.save();
+            ctx.fillStyle = currentFloor.theme === "sunken_vault"
+              ? "rgba(58, 108, 98, 0.22)"
+              : "rgba(82, 118, 88, 0.2)";
+            ctx.beginPath();
+            ctx.arc(px + tileSize / 2, py + tileSize * 0.72, tileSize * 0.3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
           if (tile.chestId && chestSprite) this.drawSprite(chestSprite, px, py, tileSize, tileSize, 1.2);
           if (tile.itemIds.length && pickupSprite) this.drawSprite(pickupSprite, px, py, tileSize, tileSize, 1.1);
         }
@@ -469,6 +728,39 @@ export class Renderer {
     const offsetY = y + tileSize - height;
     this.ctx.imageSmoothingEnabled = false;
     this.ctx.drawImage(image, x, offsetY, width, height);
+  }
+
+  drawAtlasTile(image, coord, x, y, tileSize, sourceTileSize = 16) {
+    if (!image || !coord) return;
+    const [tileX, tileY] = coord;
+    this.ctx.imageSmoothingEnabled = false;
+    this.ctx.drawImage(
+      image,
+      tileX * sourceTileSize,
+      tileY * sourceTileSize,
+      sourceTileSize,
+      sourceTileSize,
+      x,
+      y,
+      tileSize,
+      tileSize
+    );
+  }
+
+  drawShrineStructure(theme, tile, x, y, tileSize) {
+    const useRed = theme === "ember_halls" || theme === "stitchworks" || theme === "necropolis";
+    const top = this.assets?.images[useRed ? this.assets.manifest.props.shrineRedTop : this.assets.manifest.props.shrineBlueTop];
+    const mid = this.assets?.images[useRed ? this.assets.manifest.props.shrineRedMid : this.assets.manifest.props.shrineBlueMid];
+    const basin = this.assets?.images[useRed ? this.assets.manifest.props.shrineRedBasin : this.assets.manifest.props.shrineBlueBasin];
+    this.ctx.save();
+    this.ctx.fillStyle = useRed ? "rgba(184, 88, 68, 0.22)" : "rgba(88, 154, 196, 0.2)";
+    this.ctx.beginPath();
+    this.ctx.arc(x + tileSize / 2, y + tileSize * 0.68, tileSize * 0.32, 0, Math.PI * 2);
+    this.ctx.fill();
+    this.ctx.restore();
+    if (basin) this.drawSprite(basin, x, y, tileSize, tileSize, 1.2);
+    if (mid) this.drawSprite(mid, x, y - Math.floor(tileSize * 0.35), tileSize, tileSize, 1.25);
+    if (top) this.drawSprite(top, x, y - tileSize, tileSize, tileSize, 1.2);
   }
 
   drawStatusPips(x, y, tileSize, statuses = []) {
