@@ -199,6 +199,10 @@ function getThemeWallAtlasCoord(theme, map, x, y, options = {}) {
     if (!useExploredMask) return true;
     return tile.explored || tile.visible;
   };
+  const isVoid = (tx, ty) => {
+    const tile = getTile(tx, ty);
+    return !tile || (!tile.explored && !tile.visible);
+  };
 
   const northWall = isVisibleWall(x, y - 1);
   const southWall = isVisibleWall(x, y + 1);
@@ -208,10 +212,23 @@ function getThemeWallAtlasCoord(theme, map, x, y, options = {}) {
   const southFloor = isFloor(x, y + 1);
   const westFloor = isFloor(x - 1, y);
   const eastFloor = isFloor(x + 1, y);
+  const northVoid = isVoid(x, y - 1);
+  const southVoid = isVoid(x, y + 1);
+  const westVoid = isVoid(x - 1, y);
+  const eastVoid = isVoid(x + 1, y);
 
   if (southFloor) {
-    if (westFloor && !eastFloor) return eastWall ? [1, 2] : [11, 0];
-    if (eastFloor && !westFloor) return westWall ? [3, 2] : [1, 0];
+    if (westFloor && !eastFloor) {
+      if (eastVoid) return [11, 0];
+      return eastWall ? [1, 2] : [11, 0];
+    }
+    if (eastFloor && !westFloor) {
+      if (westVoid) return [1, 0];
+      return westWall ? [3, 2] : [1, 0];
+    }
+    if (westVoid && eastVoid) return [9, 0];
+    if (westVoid) return [11, 0];
+    if (eastVoid) return [1, 0];
     if (!westWall && eastWall) return southWall ? [5, 0] : [1, 0];
     if (!eastWall && westWall) return southWall ? [6, 0] : [11, 0];
     return [2, 2];
@@ -219,11 +236,16 @@ function getThemeWallAtlasCoord(theme, map, x, y, options = {}) {
 
   if (northFloor) {
     if (westFloor && !eastFloor) {
+      if (eastVoid) return [11, 3];
       return eastWall ? (southWall ? [6, 3] : [1, 3]) : (southWall ? [7, 3] : [11, 3]);
     }
     if (eastFloor && !westFloor) {
+      if (westVoid) return [8, 3];
       return westWall ? (southWall ? [5, 3] : [3, 3]) : (southWall ? [4, 3] : [1, 3]);
     }
+    if (westVoid && eastVoid) return [9, 3];
+    if (westVoid) return [8, 3];
+    if (eastVoid) return [11, 3];
     if (!westWall && eastWall) return southWall ? [5, 3] : [1, 3];
     if (!eastWall && westWall) return southWall ? [6, 3] : [11, 3];
     return [2, 3];
@@ -237,26 +259,36 @@ function getThemeWallAtlasCoord(theme, map, x, y, options = {}) {
   }
 
   if (eastFloor && !westFloor) {
+    if (northVoid && southVoid) return [8, 1];
+    if (northVoid) return [8, 0];
+    if (southVoid) return [8, 3];
     return southWall ? (northWall ? [8, 1] : [5, 0]) : [1, 0];
   }
   if (westFloor && !eastFloor) {
+    if (northVoid && southVoid) return [8, 1];
+    if (northVoid) return [11, 0];
+    if (southVoid) return [11, 3];
     return southWall ? (northWall ? [8, 1] : [6, 0]) : [11, 0];
+  }
+
+  if (northVoid || southVoid || westVoid || eastVoid) {
+    if (northVoid && westVoid) return [8, 0];
+    if (northVoid && eastVoid) return [11, 0];
+    if (southVoid && westVoid) return [8, 3];
+    if (southVoid && eastVoid) return [11, 3];
+    if (northVoid) return [9, 0];
+    if (southVoid) return [9, 3];
+    if (westVoid) return [8, 1];
+    if (eastVoid) return [11, 1];
   }
 
   const seFloor = isFloor(x + 1, y + 1);
   const swFloor = isFloor(x - 1, y + 1);
   const neFloor = isFloor(x + 1, y - 1);
   const nwFloor = isFloor(x - 1, y - 1);
-  const diagCount = (seFloor ? 1 : 0) + (swFloor ? 1 : 0) + (neFloor ? 1 : 0) + (nwFloor ? 1 : 0);
+  if (!(seFloor || swFloor || neFloor || nwFloor)) return null;
 
-  if (diagCount === 1) {
-    if (seFloor) return [9, 0];
-    if (swFloor) return [10, 0];
-    if (neFloor) return [6, 1];
-    if (nwFloor) return [5, 1];
-  }
-  if (diagCount > 1) return [2, 0];
-  return null;
+  return [2, 0];
 }
 
 function getSewerDecorAtlasCoord(kind, x, y) {
@@ -498,7 +530,7 @@ export class Renderer {
             this.assets.manifest.walls.edgeTopRight,
           ])
           : null;
-        const skipWallBackdrop = tile.type === "wall" && !wallAtlas && wallSpritePath && plainTopWallSprites?.has(wallSpritePath);
+        const skipWallBackdrop = (tile.type === "wall" && wallAtlas) || (tile.type === "wall" && !wallAtlas && wallSpritePath && plainTopWallSprites?.has(wallSpritePath));
         const wallPropPath = this.assets ? getWallPropPath(this.assets.manifest, currentFloor.theme, currentFloor.map, x, y) : null;
         const wallProp = wallPropPath ? this.assets?.images[wallPropPath] : null;
         const roomType = getRoomTypeAt(x, y);
