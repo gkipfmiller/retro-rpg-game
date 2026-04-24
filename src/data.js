@@ -303,7 +303,7 @@ export const ENEMIES = {
   infernal_imp: { id: "infernal_imp", name: "Infernal Imp", behavior: "caster", hp: 18, damage: [4, 7], accuracy: 79, defense: 1, xp: 38, gold: [12, 18], glyph: "I", range: 6 },
   void_stalker: { id: "void_stalker", name: "Void Stalker", behavior: "skirmisher", hp: 24, damage: [6, 9], accuracy: 89, defense: 2, evasion: 5, xp: 42, gold: [13, 20], glyph: "V" },
   doom_ogre: { id: "doom_ogre", name: "Doom Ogre", behavior: "blocker", hp: 33, damage: [7, 10], accuracy: 81, defense: 4, xp: 46, gold: [16, 24], glyph: "O" },
-  abyssal_overlord: { id: "abyssal_overlord", name: "Abyssal Overlord", behavior: "boss", hp: 104, damage: [8, 13], accuracy: 88, defense: 5, xp: 160, gold: [60, 96], glyph: "M", range: 6 },
+  abyssal_overlord: { id: "abyssal_overlord", name: "Abyssal Overlord", behavior: "boss", hp: 118, damage: [9, 14], accuracy: 90, defense: 6, xp: 160, gold: [60, 96], glyph: "M", range: 6 },
   bone_captain: { id: "bone_captain", name: "Super Skeletor", behavior: "boss", hp: 54, damage: [5, 8], accuracy: 85, defense: 3, xp: 60, gold: [25, 40], glyph: "S", range: 5 },
   patches: { id: "patches", name: "Patches", behavior: "boss", hp: 78, damage: [7, 11], accuracy: 84, defense: 4, xp: 96, gold: [40, 60], glyph: "P", range: 1 },
 };

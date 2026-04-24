@@ -262,6 +262,35 @@ Implemented Wizard build traits:
 - mana-based defensive scaling
 - bonus spell damage against controlled or high/low-health targets
 
+## Pre-Run Boon System
+
+Current run start flow:
+- choose Garrick Ironhand or Malric Ashveil
+- enter a short scripted sage chamber
+- approach the Grey Witness
+- choose 1 boon from 3 random options drawn from a pool of 12
+- receive an ominous line and begin the descent
+
+Implemented boon pool:
+- Vicious Star
+- Ward of Ash
+- Iron Remnant
+- Crimson Hunger
+- Fortune's Ledger
+- Sage's Echo
+- Stoneblood
+- Deep Wells
+- Relentless Step
+- Grave Insight
+- Treasure Sense
+- Battle Trance
+
+Current boon design goals:
+- materially change a run without trivializing it
+- mix general-use and class-leaning power in one shared pool
+- make the Grey Witness feel like he is granting a bargain, not a blessing
+- keep the chosen boon visible in the main HUD during play
+
 ## Leveling and Progression
 
 - Max level: 10
@@ -334,6 +363,22 @@ Player actions:
   - heavier single-target burst
   - applies Weakened
 
+- Chain Bolt
+  - ranged lightning strike
+  - arcs to a nearby second target for reduced damage
+
+- Arcane Pulse
+  - close-range AoE panic spell
+  - damages all adjacent enemies
+
+- Ice Shatter
+  - combo finisher
+  - deals bonus damage to Chilled targets and consumes the chill
+
+- Frailty Hex
+  - light damage setup spell
+  - applies both Hexed and Weakened
+
 ## Projectile Spell Presentation
 
 Projectile-style spells now use visible travel animations instead of resolving invisibly.
@@ -364,6 +409,9 @@ Implemented statuses:
   - reduces outgoing damage
 - Hexed
   - reduces defense on the affected side
+- Poisoned
+  - deals minor HP loss over time
+  - waiting burns through the status faster than taking normal actions
 - Arcane Shield
   - temporary defensive ward
 
@@ -403,6 +451,7 @@ Recent AI tuning:
 Implemented item categories:
 - weapons
 - armor
+- hands
 - accessories
 - consumables
 - tomes
@@ -425,6 +474,21 @@ Implemented enchantment examples:
 - sunder chance
 - spell bonus damage
 - mana refund chance
+
+Current Hands slot direction:
+- uncommon and rare glove/gauntlet items only
+- focuses on status application and status protection
+- supports both melee and spell archetypes
+
+Implemented Hands examples:
+- Gauntlets of Rime
+- Hexward Gloves
+- Gravedust Mitts
+- Runed Handwraps
+- Sundergrip Gauntlets
+- Spellcatcher Gloves
+- Cinderwraps
+- Warden's Grips
 
 Enchantment UX:
 - shown in inventory detail
@@ -450,6 +514,14 @@ Current drop direction:
 - potions are intentionally easier to find than gear
 - gear is meant to feel more meaningful and less constant
 
+Implemented vault reward layer:
+- one locked treasure vault exists somewhere in Floors 1-9
+- one locked treasure vault exists somewhere in Floors 11-19
+- one locked treasure vault exists somewhere in Floors 21-29
+- each vault requires a matching hidden key found on an earlier floor in the same band
+- keys are hidden in secret rooms behind invisible walls
+- vault rewards include gold, potions, and at least one rare-or-better equipment item
+
 ## Inventory and Vendor UX
 
 Implemented UX decisions:
@@ -470,6 +542,11 @@ Current vendor presentation:
 - price badge on each vendor tile
 - detail/comparison pane on the right
 - stacked sell list for duplicate items
+
+Current vendor flavor layer:
+- vendors use named archetypes by floor band instead of a generic merchant label
+- greetings render in the on-screen NPC dialogue box rather than only in the log
+- early, mid, and late vendors use different names and tone
 
 Stacks remain UI-only:
 - underlying inventory still stores individual entries
@@ -510,6 +587,11 @@ Current trap readability rules:
 - revealed traps draw a hazard marker under the trap icon
 - trap visuals were remapped away from potion-like art where possible
 
+Current trap behavior notes:
+- alarm traps now fully alert enemies on the floor
+- dart traps now apply Poisoned
+- waiting is a valid tactical response to reduce Poisoned duration faster
+
 Trap color direction:
 - spikes: pale steel
 - darts: amber
@@ -522,10 +604,14 @@ Trap color direction:
 Purpose:
 - establish the core roguelike loop
 - teach class identity
-- end with the Bone Captain mini-boss on Floor 10
+- end with the first true boss checkpoint on Floor 10
 
 Implemented boss:
-- Bone Captain
+- Super Skeletor
+  - necromancer-style boss using animated necromancer art
+  - summons Skeletons during the fight
+  - uses ranged pressure and curse-style control
+  - has a bespoke ritual chamber presentation
 
 ## Floors 11-20
 
@@ -551,6 +637,24 @@ Milestone 2 tuning already applied:
 - elite scaling softened
 - XP progression slowed
 - economy rebalanced toward better rewards, less clutter
+
+Implemented mid-band visual identity:
+- Floors 16-19 use the sewer/sunken-vault biome
+- Floor 20 continues that visual lead-in into Patches' arena
+
+## Floor 20
+
+Purpose:
+- second major boss checkpoint
+- bridge the midgame into the final descent band
+- pay off the sewer/sunken-vault buildup with a bespoke arena fight
+
+Implemented boss:
+- Patches
+  - heavy melee boss using the animated big-zombie art
+  - has a heavier slam cadence than normal enemies
+  - uses a dedicated arena with stitched/sewer-corruption presentation
+  - serves as the Floor 20 progression gate before the abyssal depths
 
 ## Floors 21-29
 
@@ -621,11 +725,16 @@ Current moderation rule:
 Current score model:
 - based on floor progression, level, kills, gold, and victory bonus
 
+Current save-flow rule:
+- a completed run can only submit one score entry
+- after a successful save, the game-over or victory overlay closes and moves to High Scores
+
 ## UI and Feedback
 
 Implemented screens:
 - Main Menu
 - Class Selection
+- Sage Prelude / Boon Choice
 - High Scores
 - Gameplay HUD
 - Inventory
@@ -645,6 +754,8 @@ Other current UI details:
 - class select now uses animated class sprites
 - class select presents named delvers instead of generic class-only picks
 - death and victory overlays cannot be dismissed accidentally
+- NPC dialogue for the Grey Witness and vendors appears in a small on-screen dialogue box
+- the main HUD shows the currently active boon
 
 ## Art Direction
 
@@ -664,6 +775,8 @@ Current visual polish layers:
 - fog-of-war rendering for both walls and floors
 - projectile spell visuals
 - improved trap hazard treatment
+- floor-theme palette variation across dungeon bands
+- sewer wall/floor atlas support for the Floor 16-20 biome
 
 ## Milestone Status
 

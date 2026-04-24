@@ -243,10 +243,20 @@ function getThemeWallAtlasCoord(theme, map, x, y, options = {}) {
     return southWall ? (northWall ? [8, 1] : [6, 0]) : [11, 0];
   }
 
-  if (!northWall && !westWall && eastWall) return [1, 2];
-  if (!northWall && !eastWall && westWall) return [3, 2];
-  if (!northWall && !westWall && !eastWall) return [2, 2];
-  return [2, 0];
+  const seFloor = isFloor(x + 1, y + 1);
+  const swFloor = isFloor(x - 1, y + 1);
+  const neFloor = isFloor(x + 1, y - 1);
+  const nwFloor = isFloor(x - 1, y - 1);
+  const diagCount = (seFloor ? 1 : 0) + (swFloor ? 1 : 0) + (neFloor ? 1 : 0) + (nwFloor ? 1 : 0);
+
+  if (diagCount === 1) {
+    if (seFloor) return [9, 0];
+    if (swFloor) return [10, 0];
+    if (neFloor) return [6, 1];
+    if (nwFloor) return [5, 1];
+  }
+  if (diagCount > 1) return [2, 0];
+  return null;
 }
 
 function getSewerDecorAtlasCoord(kind, x, y) {
@@ -272,20 +282,16 @@ function getWallPropPath(manifest, theme, map, x, y) {
       return null;
     case "fungal_depths":
       if (roll < 8) return manifest.props.wallGoo;
-      if (roll < 13) return manifest.props.wallHoles[roll % manifest.props.wallHoles.length];
       return null;
     case "sunken_vault":
       return null;
     case "necropolis":
       if (roll < 6) return manifest.props.columnWall;
-      if (roll < 13) return manifest.props.wallHoles[roll % manifest.props.wallHoles.length];
       return null;
     case "stitchworks":
       if (roll < 6) return manifest.props.shrineRedMid;
-      if (roll < 14) return manifest.props.wallHoles[roll % manifest.props.wallHoles.length];
       return null;
     case "void_deep":
-      if (roll < 5) return manifest.props.wallHoles[roll % manifest.props.wallHoles.length];
       return null;
     default:
       return null;
@@ -306,8 +312,8 @@ function getFloorPropPath(manifest, theme, map, x, y, options = {}) {
     return null;
   }
   if (theme === "fungal_depths") {
+    if (tile.hole) return manifest.props.floorHole;
     if (roll < 4) return manifest.props.floorGoo;
-    if (roll < 6) return manifest.props.floorHole;
   }
   return null;
 }
@@ -320,12 +326,10 @@ function getFloorDecorSpec(manifest, currentFloor, x, y, options = {}) {
   }
   const roll = hashPoint(x, y, floorNumber * 31 + roomType.length) % 100;
   if (currentFloor.theme === "sunken_vault") {
-    if (roomType === "treasure" && roll < 10) return { atlas: manifest.themeAtlases.sunkenVaultFloor, coord: getSewerDecorAtlasCoord("drain", x, y) };
     if (roomType === "trap" && roll < 12) return { atlas: manifest.themeAtlases.sunkenVaultFloor, coord: getSewerDecorAtlasCoord("puddle", x, y) };
   }
   if (floorNumber === 20 && inBossRoom) {
     if (roll < 8) return { atlas: manifest.themeAtlases.sunkenVaultFloor, coord: getSewerDecorAtlasCoord("puddle", x, y) };
-    if (roll < 12) return { atlas: manifest.themeAtlases.sunkenVaultFloor, coord: getSewerDecorAtlasCoord("drain", x, y) };
   }
   return null;
 }
@@ -483,7 +487,8 @@ export class Renderer {
         const wallSpritePath = this.assets
           ? getWallSprite(this.assets.manifest, currentFloor.map, x, y)
           : null;
-        const wallSprite = wallAtlas ? null : wallSpritePath ? this.assets?.images[wallSpritePath] : null;
+        const useThemeWalls = currentFloor.theme === "sunken_vault";
+        const wallSprite = wallAtlas ? null : (!useThemeWalls && wallSpritePath) ? this.assets?.images[wallSpritePath] : null;
         const plainTopWallSprites = this.assets
           ? new Set([
             this.assets.manifest.walls.top,

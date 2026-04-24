@@ -1,6 +1,10 @@
 import { BOSS_REWARDS, CHEST_TABLE, ENEMIES, FINAL_BOSS_REWARDS, FLOOR20_BOSS_REWARDS, FLOOR_CONFIGS, FLOOR_ENCOUNTERS, ITEMS, ROOM_ENCOUNTERS, TRAPS } from "./data.js";
 import { createRng, hashSeed, toKey } from "./utils.js";
 
+function hashPoint(x, y, seed = 0) {
+  return Math.abs(((x + 11) * 92821) ^ ((y + 17) * 68917) ^ seed) >>> 0;
+}
+
 function makeTile(type = "wall") {
   return {
     type,
@@ -14,6 +18,7 @@ function makeTile(type = "wall") {
     vendor: false,
     shrineId: null,
     stairs: false,
+    hole: false,
   };
 }
 
@@ -78,7 +83,7 @@ function inBounds(map, x, y) {
 }
 
 function isWalkable(tile) {
-  return tile && tile.type === "floor";
+  return tile && tile.type === "floor" && !tile.hole && !tile.shrineId;
 }
 
 function floodFill(map, start) {
@@ -145,6 +150,58 @@ function buildRooms(map, rng, config) {
   return rooms;
 }
 
+function isAdjacentToShrine(map, x, y) {
+  for (const d of [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }]) {
+    if (map[y + d.y]?.[x + d.x]?.shrineId) return true;
+  }
+  return false;
+}
+
+function placeHoles(map, theme, floorNumber) {
+  if (theme !== "fungal_depths") return;
+  const seed = theme.length + floorNumber * 13;
+  for (let y = 0; y < map.length; y += 1) {
+    for (let x = 0; x < map[0].length; x += 1) {
+      const tile = map[y][x];
+      if (tile.type !== "floor" || tile.stairs || tile.vendor || tile.shrineId) continue;
+      if (isAdjacentToShrine(map, x, y)) continue;
+      const roll = hashPoint(x, y, seed) % 100;
+      if (roll >= 4 && roll < 6) {
+        tile.hole = true;
+      }
+    }
+  }
+}
+
+function clearHolesBlockingPath(map, spawn, exit) {
+  let reachable = floodFill(map, spawn);
+  while (!reachable.has(toKey(exit.x, exit.y))) {
+    let cleared = false;
+    for (let y = 0; y < map.length && !cleared; y += 1) {
+      for (let x = 0; x < map[0].length && !cleared; x += 1) {
+        if (!map[y][x].hole) continue;
+        const adjacent = [
+          { x: x + 1, y }, { x: x - 1, y },
+          { x, y: y + 1 }, { x, y: y - 1 },
+        ];
+        if (adjacent.some((n) => reachable.has(toKey(n.x, n.y)))) {
+          map[y][x].hole = false;
+          cleared = true;
+        }
+      }
+    }
+    if (!cleared) {
+      for (let y = 0; y < map.length; y += 1) {
+        for (let x = 0; x < map[0].length; x += 1) {
+          if (map[y][x].hole) map[y][x].hole = false;
+        }
+      }
+      break;
+    }
+    reachable = floodFill(map, spawn);
+  }
+}
+
 function chooseEncounterPool(floorNumber) {
   if (floorNumber <= 2) return FLOOR_ENCOUNTERS.early;
   if (floorNumber <= 4) return [...FLOOR_ENCOUNTERS.early, ...FLOOR_ENCOUNTERS.mid];
@@ -166,7 +223,7 @@ function findOpenTilesInRoom(room, map) {
   for (let y = room.y + 1; y < room.y + room.height - 1; y += 1) {
     for (let x = room.x + 1; x < room.x + room.width - 1; x += 1) {
       const tile = map[y][x];
-      if (tile.type === "floor" && !tile.occupant && !tile.chestId && !tile.vendor && !tile.stairs) {
+      if (tile.type === "floor" && !tile.occupant && !tile.chestId && !tile.vendor && !tile.stairs && !tile.hole) {
         positions.push({ x, y });
       }
     }
@@ -429,7 +486,7 @@ function placeTraps(map, rooms, rng, floorNumber, trapCount) {
   for (let y = 1; y < map.length - 1; y += 1) {
     for (let x = 1; x < map[0].length - 1; x += 1) {
       const tile = map[y][x];
-      if (tile.type !== "floor" || tile.occupant || tile.stairs || tile.vendor || tile.shrineId) continue;
+      if (tile.type !== "floor" || tile.occupant || tile.stairs || tile.vendor || tile.shrineId || tile.hole) continue;
       const room = rooms.find((candidate) => x >= candidate.x && x < candidate.x + candidate.width && y >= candidate.y && y < candidate.y + candidate.height);
       const roomTile = Boolean(room);
       if (!roomTile || rng.chance(0.32)) {
@@ -668,11 +725,19 @@ function placeVendor(map, room, rng, floorNumber) {
   };
 }
 
+function hasAllAdjacentFloors(map, x, y) {
+  for (const d of [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }]) {
+    const t = map[y + d.y]?.[x + d.x];
+    if (!t || t.type !== "floor" || t.hole || t.stairs || t.shrineId || t.chestId || t.vendor) return false;
+  }
+  return true;
+}
+
 function placeShrine(map, rooms, rng, floorNumber) {
   if (floorNumber < 11) return null;
   const room = rooms.find((candidate) => candidate.type === "shrine");
   if (!room) return null;
-  const openTiles = findOpenTilesInRoom(room, map);
+  const openTiles = findOpenTilesInRoom(room, map).filter((pos) => hasAllAdjacentFloors(map, pos.x, pos.y));
   if (!openTiles.length) return null;
   const tile = rng.pick(openTiles);
   const shrineId = `shrine-${floorNumber}-${room.id}`;
@@ -977,6 +1042,10 @@ export function generateFloor(runSeed, floorNumber, playerClass) {
 
     const reachable = floodFill(map, spawn);
     if (!reachable.has(toKey(exit.x, exit.y))) continue;
+
+    const theme = getFloorTheme(floorNumber);
+    placeHoles(map, theme, floorNumber);
+    clearHolesBlockingPath(map, spawn, exit);
 
     const state = { enemyId: 0 };
     const encounterCount = rng.int(config.enemies[0], config.enemies[1]);

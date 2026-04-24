@@ -84,7 +84,7 @@ function pathfind(map, start, end, blockers = new Set()) {
       const key = toKey(next.x, next.y);
       if (visited.has(key)) continue;
       const tile = map[next.y]?.[next.x];
-      if (!tile || tile.type !== "floor") continue;
+      if (!tile || tile.type !== "floor" || tile.hole || tile.shrineId) continue;
       if (blockers.has(key) && !(next.x === end.x && next.y === end.y)) continue;
       visited.add(key);
       cameFrom.set(key, current);
@@ -799,15 +799,22 @@ export class Game {
     return shrine && shrine.x === x && shrine.y === y ? shrine : null;
   }
 
+  getAdjacentShrine(x, y) {
+    const shrine = this.state.run?.currentFloor.shrine;
+    if (!shrine) return null;
+    if (Math.abs(shrine.x - x) + Math.abs(shrine.y - y) <= 1) return shrine;
+    return null;
+  }
+
   getEnemyCombatStats(enemy) {
     const template = ENEMIES[enemy.templateId];
     const sundered = this.getStatusValue(enemy, "sundered");
     const chilled = this.hasStatus(enemy, "chilled");
     const weakened = this.hasStatus(enemy, "weakened");
     const eliteDamageBonus = enemy.elite ? 1 : 0;
-    const phaseAccuracyBonus = enemy.templateId === "abyssal_overlord" && enemy.phaseTwo ? 3 : 0;
-    const phaseDefenseBonus = enemy.templateId === "abyssal_overlord" && enemy.phaseTwo ? 1 : 0;
-    const phaseDamageBonus = enemy.templateId === "abyssal_overlord" && enemy.phaseTwo ? 1 : 0;
+    const phaseAccuracyBonus = enemy.templateId === "abyssal_overlord" && enemy.phaseTwo ? 4 : 0;
+    const phaseDefenseBonus = enemy.templateId === "abyssal_overlord" && enemy.phaseTwo ? 2 : 0;
+    const phaseDamageBonus = enemy.templateId === "abyssal_overlord" && enemy.phaseTwo ? 2 : 0;
     return {
       ...template,
       accuracy: template.accuracy + (enemy.elite ? 3 : 0) + phaseAccuracyBonus - (chilled ? 6 : 0),
@@ -917,7 +924,7 @@ export class Game {
     const targetY = run.player.y + dy;
     const tile = run.currentFloor.map[targetY]?.[targetX];
     if (!tile) return;
-    if (tile.type !== "floor") {
+    if (tile.type !== "floor" || tile.hole || tile.shrineId) {
       if (tile.secretDoor) {
         tile.secretDoor = false;
         tile.type = "floor";
@@ -1823,7 +1830,7 @@ export class Game {
       return;
     }
 
-    const shrine = this.getShrineAt(player.x, player.y);
+    const shrine = this.getAdjacentShrine(player.x, player.y);
     if (shrine && !shrine.used) {
       shrine.used = true;
       if (shrine.mode === "healing") {
@@ -2314,13 +2321,25 @@ export class Game {
         while (summons < 2) {
           const summonTile = this.findAdjacentOpen(enemy.x, enemy.y);
           if (!summonTile) break;
-          this.summonEnemy("infernal_imp", summonTile.x, summonTile.y);
+          this.summonEnemy("infernal_imp", summonTile.x, summonTile.y, { summonedBy: enemy.id });
           summons += 1;
         }
         if (summons) {
           this.log(`The Overlord tears open the void and summons ${summons} Infernal Imp${summons === 1 ? "" : "s"}.`);
         }
         continue;
+      }
+
+      if (enemy.templateId === "abyssal_overlord" && enemy.phaseTwo) {
+        const activeImps = currentFloor.enemies.filter((candidate) => candidate.templateId === "infernal_imp" && candidate.summonedBy === enemy.id).length;
+        if (canSee && activeImps < 2 && enemy.turnCounter % 4 === 1) {
+          const summonTile = this.findAdjacentOpen(enemy.x, enemy.y);
+          if (summonTile) {
+            this.summonEnemy("infernal_imp", summonTile.x, summonTile.y, { summonedBy: enemy.id });
+            this.log(`The Overlord rends the void and calls another Infernal Imp (${activeImps + 1}/2).`);
+            continue;
+          }
+        }
       }
 
       if (enemy.templateId === "abyssal_overlord" && canSee && enemy.turnCounter % 3 === 2) {
@@ -2435,7 +2454,7 @@ export class Game {
       { x: 0, y: -1 },
     ]) {
       const tile = this.state.run.currentFloor.map[y + delta.y]?.[x + delta.x];
-      if (tile && tile.type === "floor" && !tile.occupant && !tile.vendor && !tile.stairs) {
+      if (tile && tile.type === "floor" && !tile.occupant && !tile.vendor && !tile.stairs && !tile.hole && !tile.shrineId) {
         return { x: x + delta.x, y: y + delta.y };
       }
     }
@@ -2453,7 +2472,7 @@ export class Game {
     ]
       .filter((point) => {
         const tile = currentFloor.map[point.y]?.[point.x];
-        return tile && tile.type === "floor" && !tile.occupant;
+        return tile && tile.type === "floor" && !tile.occupant && !tile.hole && !tile.shrineId;
       })
       .filter((point) => manhattan(point, player) > currentDistance)
       .sort((a, b) => manhattan(b, player) - manhattan(a, player));
