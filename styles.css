@@ -467,6 +467,9 @@ button:hover {
   align-items: center;
   justify-content: center;
   padding: 1rem;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 .npc-dialog {
@@ -503,6 +506,8 @@ button:hover {
   max-height: 85vh;
   overflow: auto;
   padding: 1rem;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 .overlay-header {

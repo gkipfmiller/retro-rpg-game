@@ -327,6 +327,7 @@ if (mobileControls) {
   }
 
   document.getElementById("game-screen").addEventListener("touchmove", (e) => {
+    if (e.target.closest(".overlay, .overlay-panel, .npc-dialog")) return;
     e.preventDefault();
   }, { passive: false });
 }
