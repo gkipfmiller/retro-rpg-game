@@ -246,14 +246,18 @@ function getThemeWallAtlasCoord(theme, map, x, y, options = {}) {
     if (westVoid && eastVoid) return [9, 3];
     if (westVoid) return [8, 3];
     if (eastVoid) return [11, 3];
-    if (!westWall && eastWall) return southWall ? [5, 3] : [1, 3];
-    if (!eastWall && westWall) return southWall ? [6, 3] : [11, 3];
+    const southVisible = southWall && !southVoid;
+    if (!westWall && eastWall) return southVisible ? [5, 3] : [1, 3];
+    if (!eastWall && westWall) return southVisible ? [6, 3] : [11, 3];
     return [2, 3];
   }
 
   if (westFloor && eastFloor) {
     if (!northWall && southWall) return [8, 0];
-    if (northWall && southWall) return [8, 1];
+    if (northWall && southWall) {
+      const northAlsoColumn = isFloor(x - 1, y - 1) && isFloor(x + 1, y - 1);
+      return northAlsoColumn ? [8, 1] : [8, 0];
+    }
     if (northWall && !southWall) return [8, 2];
     return [8, 1];
   }
@@ -718,6 +722,7 @@ export class Renderer {
     }
 
     for (const enemy of currentFloor.enemies) {
+      if (enemy.disguised) continue;
       const tile = currentFloor.map[enemy.y][enemy.x];
       if (!tile.visible) continue;
       const spritePath = this.assets ? getActorSpriteFrame(this.assets.manifest, getEntitySpriteId(enemy), animationFrame) : null;

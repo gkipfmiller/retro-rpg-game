@@ -13,7 +13,7 @@ export const CLASSES = {
   },
   wizard: {
     id: "wizard",
-    name: "Wizard",
+    name: "Sorceress",
     hpGrowth: 4,
     manaGrowth: 5,
     spellDamageBonusPct: 15,
@@ -306,6 +306,11 @@ export const ENEMIES = {
   abyssal_overlord: { id: "abyssal_overlord", name: "Abyssal Overlord", behavior: "boss", hp: 118, damage: [9, 14], accuracy: 90, defense: 6, xp: 160, gold: [60, 96], glyph: "M", range: 6 },
   bone_captain: { id: "bone_captain", name: "Super Skeletor", behavior: "boss", hp: 54, damage: [5, 8], accuracy: 85, defense: 3, xp: 60, gold: [25, 40], glyph: "S", range: 5 },
   patches: { id: "patches", name: "Patches", behavior: "boss", hp: 78, damage: [7, 11], accuracy: 84, defense: 4, xp: 96, gold: [40, 60], glyph: "P", range: 1 },
+  mimic: { id: "mimic", name: "Mimic", behavior: "melee", hp: 28, damage: [5, 9], accuracy: 86, defense: 3, xp: 35, gold: [18, 30], glyph: "M" },
+  angel: { id: "angel", name: "Celestial Guardian", behavior: "caster", hp: 30, damage: [7, 10], accuracy: 88, defense: 3, xp: 48, gold: [15, 22], glyph: "A", range: 5 },
+  ice_zombie: { id: "ice_zombie", name: "Ice Zombie", behavior: "melee", hp: 28, damage: [6, 9], accuracy: 80, defense: 4, xp: 44, gold: [13, 20], glyph: "Z" },
+  pumpkin_golem: { id: "pumpkin_golem", name: "Pumpkin Golem", behavior: "blocker", hp: 36, damage: [7, 10], accuracy: 78, defense: 5, xp: 50, gold: [14, 22], glyph: "P" },
+  cursed_pumpkin: { id: "cursed_pumpkin", name: "Cursed Pumpkin", behavior: "skirmisher", hp: 24, damage: [6, 10], accuracy: 87, defense: 2, evasion: 5, xp: 46, gold: [14, 21], glyph: "P" },
 };
 
 export const FLOOR_CONFIGS = {
@@ -344,7 +349,7 @@ export const FLOOR_ENCOUNTERS = {
   mid: [["skeleton"], ["goblin", "goblin"], ["slime", "rat"], ["skeleton", "goblin"]],
   late: [["cultist", "slime"], ["cultist", "goblin"], ["skeleton", "skeleton"], ["cultist", "skeleton", "goblin"]],
   deep: [["orc_brute"], ["gloomblade", "skeleton"], ["dread_slime", "cultist"], ["shaman", "orc_brute"], ["gloomblade", "gloomblade"], ["shaman", "skeleton", "cultist"]],
-  abyssal: [["chort"], ["shaman", "dread_slime"], ["orc_brute", "gloomblade", "shaman"], ["chort", "cultist"], ["dread_slime", "gloomblade", "gloomblade"]],
+  abyssal: [["chort"], ["shaman", "dread_slime"], ["orc_brute", "gloomblade", "shaman"], ["chort", "cultist"], ["dread_slime", "gloomblade", "gloomblade"], ["angel", "ice_zombie"], ["pumpkin_golem", "cursed_pumpkin"], ["ice_zombie", "ice_zombie"], ["angel", "chort"]],
   endgame: [
     ["doom_ogre"],
     ["infernal_imp", "void_stalker"],
@@ -353,6 +358,10 @@ export const FLOOR_ENCOUNTERS = {
     ["doom_ogre", "void_stalker"],
     ["doom_ogre", "infernal_imp", "infernal_imp"],
     ["chort", "doom_ogre"],
+    ["angel", "pumpkin_golem"],
+    ["pumpkin_golem", "cursed_pumpkin", "ice_zombie"],
+    ["angel", "doom_ogre"],
+    ["cursed_pumpkin", "void_stalker", "ice_zombie"],
   ],
 };
 
@@ -360,20 +369,20 @@ export const ROOM_ENCOUNTERS = {
   treasure: {
     late: [["cultist", "skeleton"], ["cultist", "goblin"], ["skeleton", "skeleton"]],
     deep: [["orc_brute", "cultist"], ["gloomblade", "skeleton"], ["dread_slime", "cultist"]],
-    abyssal: [["chort", "cultist"], ["orc_brute", "gloomblade"], ["dread_slime", "shaman"]],
-    endgame: [["void_stalker", "infernal_imp"], ["doom_ogre", "infernal_imp"], ["chort", "void_stalker"]],
+    abyssal: [["chort", "cultist"], ["orc_brute", "gloomblade"], ["dread_slime", "shaman"], ["angel", "ice_zombie"], ["pumpkin_golem", "cursed_pumpkin"]],
+    endgame: [["void_stalker", "infernal_imp"], ["doom_ogre", "infernal_imp"], ["chort", "void_stalker"], ["angel", "pumpkin_golem"], ["cursed_pumpkin", "ice_zombie", "angel"]],
   },
   trap: {
     late: [["slime", "cultist"], ["cultist", "goblin", "goblin"], ["skeleton", "cultist"]],
     deep: [["dread_slime", "cultist"], ["orc_brute", "shaman"], ["gloomblade", "gloomblade"]],
-    abyssal: [["dread_slime", "shaman"], ["orc_brute", "gloomblade", "shaman"], ["chort", "cultist"]],
-    endgame: [["doom_ogre", "infernal_imp"], ["void_stalker", "void_stalker", "infernal_imp"], ["doom_ogre", "chort"]],
+    abyssal: [["dread_slime", "shaman"], ["orc_brute", "gloomblade", "shaman"], ["chort", "cultist"], ["ice_zombie", "cursed_pumpkin"], ["angel", "pumpkin_golem"]],
+    endgame: [["doom_ogre", "infernal_imp"], ["void_stalker", "void_stalker", "infernal_imp"], ["doom_ogre", "chort"], ["pumpkin_golem", "ice_zombie", "cursed_pumpkin"], ["angel", "doom_ogre"]],
   },
   elite: {
     late: [["skeleton", "cultist", "goblin"], ["skeleton", "skeleton", "cultist"]],
     deep: [["orc_brute", "gloomblade"], ["dread_slime", "shaman"], ["orc_brute", "cultist", "gloomblade"]],
-    abyssal: [["chort", "shaman"], ["dread_slime", "gloomblade", "gloomblade"], ["orc_brute", "gloomblade", "shaman"]],
-    endgame: [["doom_ogre", "void_stalker"], ["infernal_imp", "infernal_imp", "doom_ogre"], ["chort", "void_stalker", "infernal_imp"]],
+    abyssal: [["chort", "shaman"], ["dread_slime", "gloomblade", "gloomblade"], ["orc_brute", "gloomblade", "shaman"], ["pumpkin_golem", "angel"], ["ice_zombie", "ice_zombie", "cursed_pumpkin"]],
+    endgame: [["doom_ogre", "void_stalker"], ["infernal_imp", "infernal_imp", "doom_ogre"], ["chort", "void_stalker", "infernal_imp"], ["angel", "pumpkin_golem", "ice_zombie"], ["doom_ogre", "cursed_pumpkin", "angel"]],
   },
 };
 

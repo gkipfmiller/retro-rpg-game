@@ -554,8 +554,9 @@ function getClassLootPools(playerClass, floorNumber) {
   };
 }
 
-function placeLoot(map, rooms, rng, floorNumber, playerClass) {
+function placeLoot(map, rooms, rng, floorNumber, playerClass, state) {
   const chests = [];
+  const mimics = [];
   const looseItems = [];
   const lootPools = getClassLootPools(playerClass, floorNumber);
   const treasureRooms = rooms.filter((room) => room.type === "treasure");
@@ -566,6 +567,33 @@ function placeLoot(map, rooms, rng, floorNumber, playerClass) {
   for (const room of selectedTreasureRooms) {
     const openTiles = findOpenTilesInRoom(room, map);
     const tile = rng.pick(openTiles);
+
+    if (floorNumber >= 3 && rng.chance(0.05)) {
+      const template = ENEMIES.mimic;
+      const scaledHp = Math.floor(template.hp * (1 + (floorNumber - 3) * 0.08));
+      const mimicEnemy = {
+        id: `enemy-${state.enemyId += 1}`,
+        templateId: "mimic",
+        name: "Mimic",
+        x: tile.x,
+        y: tile.y,
+        hp: scaledHp,
+        maxHp: scaledHp,
+        alerted: false,
+        lastKnownPlayerPosition: null,
+        statuses: [],
+        elite: false,
+        turnCounter: 0,
+        firstSpellUsed: false,
+        floorNumber,
+        disguised: true,
+      };
+      map[tile.y][tile.x].chestId = `mimic-${mimicEnemy.id}`;
+      map[tile.y][tile.x].occupant = mimicEnemy.id;
+      mimics.push(mimicEnemy);
+      continue;
+    }
+
     const chestId = `chest-${room.id}`;
     map[tile.y][tile.x].chestId = chestId;
     chests.push({
@@ -620,7 +648,7 @@ function placeLoot(map, rooms, rng, floorNumber, playerClass) {
     looseItems.push({ x: tile.x, y: tile.y, itemId });
   }
 
-  return { chests, looseItems };
+  return { chests, looseItems, mimics };
 }
 
 function placeVendor(map, room, rng, floorNumber) {
@@ -1059,7 +1087,8 @@ export function generateFloor(runSeed, floorNumber, playerClass) {
 
     const trapCount = rng.int(config.traps[0], config.traps[1]);
     const traps = placeTraps(map, rooms, rng, floorNumber, trapCount);
-    const { chests, looseItems } = placeLoot(map, rooms, rng, floorNumber, playerClass);
+    const { chests, looseItems, mimics } = placeLoot(map, rooms, rng, floorNumber, playerClass, state);
+    enemies.push(...mimics);
     const vendor = placeVendor(map, vendorRoom, rng, floorNumber);
 
     const startOpenTiles = findOpenTilesInRoom(rooms[0], map);
@@ -1095,6 +1124,9 @@ export function generateFloor(runSeed, floorNumber, playerClass) {
 
 export function getDropForEnemy(enemy, rng, playerClass) {
   const template = ENEMIES[enemy.templateId];
+  if (enemy.templateId === "mimic") {
+    return getMimicDrop(enemy, rng, playerClass);
+  }
   const drops = [];
   const deepBiasPool = playerClass === "warrior"
     ? ["steel_greatsword", "war_hammer", "butcher_cleaver", "flame_touched_sword", "vampire_axe", "sundering_hammer", "guardian_plate", "emberguard_cuirass", "vanguard_warplate", "bastion_mail", "gauntlets_of_rime", "gravedust_mitts", "sundergrip_gauntlets", "wardens_grips", "ring_of_resolve", "talisman_of_vigor", "warbrand_token", "charm_of_guarding", "greater_healing_potion"]
@@ -1121,5 +1153,29 @@ export function getDropForEnemy(enemy, rng, playerClass) {
   return {
     gold: rng.int(template.gold[0], template.gold[1]) + floorGoldBonus,
     items: drops.filter((itemId) => ITEMS[itemId]),
+  };
+}
+
+function getMimicDrop(enemy, rng, playerClass) {
+  const floorNumber = enemy.floorNumber ?? 1;
+  const template = ENEMIES.mimic;
+  const earlyPool = playerClass === "warrior"
+    ? ["iron_sword", "legion_spear", "butcher_cleaver", "chain_armor", "scout_leathers", "ring_of_precision", "ring_of_resolve"]
+    : ["crystal_wand", "ember_rod", "oak_staff", "enchanted_robe", "dusk_robe", "seal_of_clarity", "charm_of_focus"];
+  const midPool = playerClass === "warrior"
+    ? ["flame_touched_sword", "vampire_axe", "steel_greatsword", "war_hammer", "sundering_hammer", "guardian_plate", "emberguard_cuirass", "talisman_of_vigor", "warbrand_token", "sundergrip_gauntlets"]
+    : ["runic_staff", "sage_wand", "storm_wand", "moon_staff", "spellweave_mantle", "hexwoven_robe", "archmage_robe", "arcseal_pendant", "spellcatcher_gloves", "cinderwraps"];
+  const latePool = playerClass === "warrior"
+    ? ["sunfire_blade", "soulreaver_axe", "abyssal_plate", "captains_blade", "void_heart", "charm_of_guarding"]
+    : ["voidglass_staff", "astral_wand", "starweave_robe", "void_heart", "chain_of_insight", "arcane_burst_tome"];
+  const pool = floorNumber >= 21 ? [...midPool, ...latePool] : floorNumber >= 11 ? [...earlyPool, ...midPool] : earlyPool;
+  const items = [rng.pick(pool)];
+  if (rng.chance(0.35)) {
+    items.push(rng.pick(floorNumber >= 11 ? ["greater_healing_potion", "greater_mana_potion"] : ["healing_potion", "mana_potion"]));
+  }
+  const goldBonus = floorNumber >= 21 ? 20 : floorNumber >= 11 ? 12 : 6;
+  return {
+    gold: rng.int(template.gold[0], template.gold[1]) + goldBonus,
+    items: items.filter((itemId) => ITEMS[itemId]),
   };
 }

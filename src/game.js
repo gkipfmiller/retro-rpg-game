@@ -17,7 +17,7 @@ const XP_THRESHOLDS = {
 };
 
 function occupiedByEnemy(floor, x, y) {
-  return floor.enemies.find((enemy) => enemy.x === x && enemy.y === y);
+  return floor.enemies.find((enemy) => enemy.x === x && enemy.y === y && !enemy.disguised);
 }
 
 function lineBetween(a, b) {
@@ -943,6 +943,20 @@ export class Game {
     const sage = run.currentFloor.sage;
     if (sage && !sage.vanished && sage.x === targetX && sage.y === targetY) {
       this.showNpcDialog(this.sageName, "One gift. One burden. Step close and choose.", 2600);
+      return;
+    }
+
+    const mimicNearby = run.currentFloor.enemies.find((e) => e.templateId === "mimic" && e.disguised && Math.abs(e.x - targetX) <= 1 && Math.abs(e.y - targetY) <= 1 && (e.x !== targetX || e.y !== targetY));
+    if (mimicNearby) {
+      run.player.x = targetX;
+      run.player.y = targetY;
+      run.player.lastAction = "move";
+      mimicNearby.disguised = false;
+      mimicNearby.alerted = true;
+      mimicNearby.lastKnownPlayerPosition = { x: run.player.x, y: run.player.y };
+      run.currentFloor.map[mimicNearby.y][mimicNearby.x].chestId = null;
+      this.log("The chest shudders... then lunges. It was never treasure.");
+      this.endPlayerTurn();
       return;
     }
 
@@ -2292,6 +2306,7 @@ export class Game {
   takeEnemyTurns() {
     const { currentFloor, player } = this.state.run;
     for (const enemy of [...currentFloor.enemies]) {
+      if (enemy.disguised) continue;
       enemy.turnCounter += 1;
       const template = this.getEnemyCombatStats(enemy);
       const distance = manhattan(enemy, player);
