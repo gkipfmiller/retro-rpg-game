@@ -23,6 +23,18 @@ export const CLASSES = {
     quickSlots: ["magic_missile", "arcane_shield", "mana_potion"],
     abilities: ["magic_missile", "arcane_shield"],
   },
+  ranger: {
+    id: "ranger",
+    name: "Ranger",
+    hpGrowth: 5,
+    manaGrowth: 3,
+    spellDamageBonusPct: 8,
+    spellPowerBonus: 0,
+    startingStats: { strength: 3, dexterity: 7, vitality: 4, intelligence: 3 },
+    startingItems: ["short_bow", "scout_leathers", "healing_potion"],
+    quickSlots: ["aimed_shot", "evasive_step", "healing_potion"],
+    abilities: ["aimed_shot", "evasive_step"],
+  },
 };
 
 export const SKILL_TREES = {
@@ -93,6 +105,41 @@ export const SKILL_TREES = {
         { id: "wizard_control_3", name: "Blink Adept", description: "Blink gains range.", effect: { stat: "blinkRange", value: 1 } },
         { id: "wizard_control_4", name: "Frailty Curse", description: "Control spells expose enemies.", effect: { stat: "frailtyCurse", value: 15 } },
         { id: "wizard_control_5", name: "Battlefield Savant", description: "First utility spell each fight is free.", effect: { stat: "freeUtility", value: 1 } },
+      ],
+    },
+  ],
+  ranger: [
+    {
+      id: "deadshot",
+      name: "Deadshot",
+      skills: [
+        { id: "ranger_dead_1", name: "Steady Hand", description: "+10% ranged damage.", effect: { stat: "rangedDamagePct", value: 10 } },
+        { id: "ranger_dead_2", name: "Bullseye", description: "+10% crit chance.", effect: { stat: "critBonus", value: 10 } },
+        { id: "ranger_dead_3", name: "Quick Nock", description: "Gain momentum after a kill.", effect: { stat: "killMomentum", value: 2 } },
+        { id: "ranger_dead_4", name: "Piercing Shot", description: "Aimed Shot ignores 2 defense.", effect: { stat: "aimedShotArmorPen", value: 2 } },
+        { id: "ranger_dead_5", name: "Deadeye", description: "+25% damage to low-health enemies.", effect: { stat: "executioner", value: 25 } },
+      ],
+    },
+    {
+      id: "windrunner",
+      name: "Windrunner",
+      skills: [
+        { id: "ranger_wind_1", name: "Attunement", description: "+8% spell damage.", effect: { stat: "spellDamagePct", value: 8 } },
+        { id: "ranger_wind_2", name: "Nature's Gift", description: "+8 max mana.", effect: { stat: "maxManaFlat", value: 8 } },
+        { id: "ranger_wind_3", name: "Venomtip", description: "Ranged hits have 15% chance to poison.", effect: { stat: "rangedPoisonChance", value: 0.15 } },
+        { id: "ranger_wind_4", name: "Windshot", description: "Aimed Shot gains +1 range.", effect: { stat: "aimedShotRange", value: 1 } },
+        { id: "ranger_wind_5", name: "Primal Surge", description: "First spell each combat deals +20% damage.", effect: { stat: "firstSpellPct", value: 20 } },
+      ],
+    },
+    {
+      id: "pathfinder",
+      name: "Pathfinder",
+      skills: [
+        { id: "ranger_path_1", name: "Fleet Foot", description: "+3 evasion.", effect: { stat: "evasionFlat", value: 3 } },
+        { id: "ranger_path_2", name: "Trap Sense", description: "Reveal nearby traps sooner.", effect: { stat: "trapSense", value: 2 } },
+        { id: "ranger_path_3", name: "Nimble Dodge", description: "-30% trap damage.", effect: { stat: "trapReductionPct", value: 30 } },
+        { id: "ranger_path_4", name: "Shadow Step", description: "Evasive Step gains +1 range.", effect: { stat: "evasiveStepRange", value: 1 } },
+        { id: "ranger_path_5", name: "Opportunist", description: "+15% damage after moving.", effect: { stat: "advanceDamagePct", value: 15 } },
       ],
     },
   ],
@@ -194,6 +241,22 @@ export const SPELLS = {
     damage: [8, 12],
     description: "Explosive arcane blast with heavy single-target damage.",
   },
+  aimed_shot: {
+    id: "aimed_shot",
+    name: "Aimed Shot",
+    type: "ranged_ability",
+    cost: 2,
+    range: 5,
+    description: "A precise ranged shot with bonus damage.",
+  },
+  evasive_step: {
+    id: "evasive_step",
+    name: "Evasive Step",
+    type: "utility",
+    cost: 1,
+    range: 0,
+    description: "Leap 2 tiles away from the nearest threat.",
+  },
 };
 
 export const ITEMS = {
@@ -226,6 +289,16 @@ export const ITEMS = {
   voidglass_staff: { id: "voidglass_staff", name: "Voidglass Staff", category: "weapon", slot: "weapon", classBias: "wizard", damage: [4, 6], magicPower: 6, rarity: "boss", value: 96, bonus: { spellDamagePct: 12 }, enchantment: { type: "spellBonusDamage", value: 3 }, description: "Enchantment: spells strike with 3 extra void damage." },
   astral_wand: { id: "astral_wand", name: "Astral Wand", category: "weapon", slot: "weapon", classBias: "wizard", damage: [3, 5], magicPower: 6, rarity: "boss", value: 98, bonus: { spellAccuracyFlat: 6 }, enchantment: { type: "manaRefundChance", chance: 0.45, value: 3 }, description: "Enchantment: precise spell hits often refund 3 mana." },
   ember_staff: { id: "ember_staff", name: "Ember Staff", category: "weapon", slot: "weapon", classBias: "wizard", damage: [2, 4], magicPower: 3, rarity: "boss", bonus: { spellDamagePct: 10 }, value: 72 },
+  short_bow: { id: "short_bow", name: "Short Bow", category: "weapon", slot: "weapon", classBias: "ranger", damage: [2, 4], accuracy: 3, range: 4, value: 14 },
+  hunting_bow: { id: "hunting_bow", name: "Hunting Bow", category: "weapon", slot: "weapon", classBias: "ranger", damage: [3, 5], accuracy: 4, range: 4, value: 20 },
+  longbow: { id: "longbow", name: "Longbow", category: "weapon", slot: "weapon", classBias: "ranger", damage: [4, 7], accuracy: 3, range: 5, rarity: "uncommon", value: 34 },
+  composite_bow: { id: "composite_bow", name: "Composite Bow", category: "weapon", slot: "weapon", classBias: "ranger", damage: [4, 6], accuracy: 6, range: 4, rarity: "uncommon", value: 36 },
+  recurve_bow: { id: "recurve_bow", name: "Recurve Bow", category: "weapon", slot: "weapon", classBias: "ranger", damage: [5, 8], accuracy: 4, range: 5, rarity: "uncommon", value: 50 },
+  venomstrike_bow: { id: "venomstrike_bow", name: "Venomstrike Bow", category: "weapon", slot: "weapon", classBias: "ranger", damage: [5, 7], accuracy: 5, range: 5, rarity: "rare", value: 66, enchantment: { type: "rangedPoisonProc", chance: 0.15, turns: 3 }, description: "Enchantment: ranged hits have a 15% chance to poison the target." },
+  galeforce_bow: { id: "galeforce_bow", name: "Galeforce Bow", category: "weapon", slot: "weapon", classBias: "ranger", damage: [6, 9], accuracy: 3, range: 5, rarity: "rare", value: 68, enchantment: { type: "onHitBonusDamage", value: 2 }, description: "Enchantment: each ranged hit deals 2 bonus damage." },
+  voidpiercer_bow: { id: "voidpiercer_bow", name: "Voidpiercer Bow", category: "weapon", slot: "weapon", classBias: "ranger", damage: [7, 11], accuracy: 5, range: 5, rarity: "boss", value: 96, bonus: { rangedDamagePct: 8 }, enchantment: { type: "onHitBonusDamage", value: 3 }, description: "Enchantment: void-touched arrows deal 3 bonus damage and hit harder overall." },
+  stormstring_bow: { id: "stormstring_bow", name: "Stormstring Bow", category: "weapon", slot: "weapon", classBias: "ranger", damage: [6, 10], accuracy: 6, range: 6, rarity: "boss", value: 98, enchantment: { type: "manaRefundChance", chance: 0.4, value: 2 }, description: "Enchantment: hits have a 40% chance to refund 2 mana." },
+  hawk_bow: { id: "hawk_bow", name: "Hawk Bow", category: "weapon", slot: "weapon", classBias: "ranger", damage: [5, 8], accuracy: 5, range: 5, rarity: "boss", value: 70 },
   leather_armor: { id: "leather_armor", name: "Leather Armor", category: "armor", slot: "armor", defense: 2, value: 16 },
   padded_jerkin: { id: "padded_jerkin", name: "Padded Jerkin", category: "armor", slot: "armor", defense: 1, evasion: 1, value: 14 },
   scout_leathers: { id: "scout_leathers", name: "Scout Leathers", category: "armor", slot: "armor", defense: 2, evasion: 2, rarity: "uncommon", value: 24 },
@@ -247,6 +320,11 @@ export const ITEMS = {
   hexwoven_robe: { id: "hexwoven_robe", name: "Hexwoven Robe", category: "armor", slot: "armor", classBias: "wizard", defense: 2, bonus: { spellAccuracyFlat: 5, controlDuration: 1, utilityDiscount: 1 }, rarity: "rare", value: 76, description: "Enchantment: hex-stitched threads sharpen spell aim, extend control effects, and reduce utility spell costs by 1." },
   starweave_robe: { id: "starweave_robe", name: "Starweave Robe", category: "armor", slot: "armor", defense: 3, bonus: { maxManaFlat: 16, intelligenceFlat: 2 }, rarity: "boss", value: 94 },
   robe_of_the_adept: { id: "robe_of_the_adept", name: "Robe of the Adept", category: "armor", slot: "armor", defense: 1, bonus: { maxManaFlat: 10, intelligenceFlat: 1 }, rarity: "boss", value: 80 },
+  trackers_vest: { id: "trackers_vest", name: "Tracker's Vest", category: "armor", slot: "armor", classBias: "ranger", defense: 2, evasion: 2, value: 18 },
+  stalkers_hide: { id: "stalkers_hide", name: "Stalker's Hide", category: "armor", slot: "armor", classBias: "ranger", defense: 3, evasion: 2, bonus: { maxHpFlat: 6 }, rarity: "uncommon", value: 40 },
+  windrunner_coat: { id: "windrunner_coat", name: "Windrunner Coat", category: "armor", slot: "armor", classBias: "ranger", defense: 3, evasion: 3, bonus: { maxHpFlat: 8, rangedDamagePct: 5 }, rarity: "rare", value: 74, description: "Enchantment: supple weave grants +8 max HP and +5% ranged damage." },
+  shadowstep_mantle: { id: "shadowstep_mantle", name: "Shadowstep Mantle", category: "armor", slot: "armor", classBias: "ranger", defense: 3, evasion: 4, bonus: { accuracyFlat: 5, trapReductionPct: 25 }, rarity: "rare", value: 76, description: "Enchantment: warded fabric grants +5 accuracy and -25% trap damage." },
+  voidhide_armor: { id: "voidhide_armor", name: "Voidhide Armor", category: "armor", slot: "armor", classBias: "ranger", defense: 4, evasion: 4, bonus: { maxHpFlat: 12, evasionFlat: 3 }, rarity: "boss", value: 96 },
   gauntlets_of_rime: { id: "gauntlets_of_rime", name: "Gauntlets of Rime", category: "hands", slot: "hands", classBias: "warrior", rarity: "uncommon", bonus: { defenseFlat: 1 }, value: 46, handsEffect: { type: "meleeStatusProc", statusId: "chilled", chance: 0.12, turns: 2, value: 1 }, description: "Hands: melee hits have a 12% chance to inflict Chilled for 2 turns." },
   hexward_gloves: { id: "hexward_gloves", name: "Hexward Gloves", category: "hands", slot: "hands", classBias: "wizard", rarity: "uncommon", bonus: { maxHpFlat: 6 }, value: 44, handsEffect: { type: "shortenStatus", statusId: "hexed", amount: 1 }, description: "Hands: incoming Hexed effects last 1 turn less." },
   gravedust_mitts: { id: "gravedust_mitts", name: "Gravedust Mitts", category: "hands", slot: "hands", classBias: "warrior", rarity: "uncommon", bonus: { maxHpFlat: 4 }, value: 44, handsEffect: { type: "meleeStatusProc", statusId: "weakened", chance: 0.1, turns: 2, value: 1 }, description: "Hands: melee hits have a 10% chance to inflict Weakened for 2 turns." },
@@ -255,6 +333,8 @@ export const ITEMS = {
   spellcatcher_gloves: { id: "spellcatcher_gloves", name: "Spellcatcher Gloves", category: "hands", slot: "hands", classBias: "wizard", rarity: "rare", bonus: { maxManaFlat: 8 }, value: 60, handsEffect: { type: "ignoreSpellStatusChance", chance: 0.25 }, description: "Hands: 25% chance to ignore incoming spell-applied statuses." },
   cinderwraps: { id: "cinderwraps", name: "Cinderwraps", category: "hands", slot: "hands", classBias: "wizard", rarity: "rare", bonus: { magicPowerFlat: 1 }, value: 62, handsEffect: { type: "spellStatusProc", statusId: "weakened", chance: 0.15, turns: 2, value: 1 }, description: "Hands: damage spells have a 15% chance to inflict Weakened for 2 turns." },
   wardens_grips: { id: "wardens_grips", name: "Warden's Grips", category: "hands", slot: "hands", classBias: "warrior", rarity: "rare", bonus: { defenseFlat: 1, maxHpFlat: 6 }, value: 60, handsEffect: { type: "shortenNegativeStatuses", amount: 1 }, description: "Hands: incoming negative statuses last 1 turn less." },
+  marksmans_bracers: { id: "marksmans_bracers", name: "Marksman's Bracers", category: "hands", slot: "hands", classBias: "ranger", rarity: "uncommon", bonus: { defenseFlat: 1 }, value: 46, handsEffect: { type: "rangedStatusProc", statusId: "chilled", chance: 0.12, turns: 2, value: 1 }, description: "Hands: ranged hits have a 12% chance to inflict Chilled for 2 turns." },
+  windgrip_gloves: { id: "windgrip_gloves", name: "Windgrip Gloves", category: "hands", slot: "hands", classBias: "ranger", rarity: "rare", bonus: { defenseFlat: 1, maxHpFlat: 6 }, value: 60, handsEffect: { type: "shortenNegativeStatuses", amount: 1 }, description: "Hands: +1 defense, +6 HP, and incoming negative statuses last 1 turn less." },
   ring_of_precision: { id: "ring_of_precision", name: "Ring of Precision", category: "accessory", slot: "accessory", rarity: "uncommon", bonus: { accuracyFlat: 5 }, value: 40 },
   ring_of_resolve: { id: "ring_of_resolve", name: "Ring of Resolve", category: "accessory", slot: "accessory", rarity: "uncommon", bonus: { maxHpFlat: 8 }, value: 40 },
   amulet_of_vitality: { id: "amulet_of_vitality", name: "Amulet of Vitality", category: "accessory", slot: "accessory", rarity: "uncommon", bonus: { maxHpFlat: 10 }, value: 42 },
@@ -479,26 +559,29 @@ export const BOONS = {
 };
 
 export const CHEST_TABLE = {
-  common: ["healing_potion", "mana_potion", "militia_sword", "woodcutter_axe", "iron_sword", "oak_staff", "hedge_wand", "ash_staff", "legion_spear", "ember_rod", "padded_jerkin", "leather_armor", "iron_cuirass", "chain_armor", "apprentice_robes", "enchanted_robe", "scout_leathers", "dusk_robe"],
-  rare: ["ring_of_precision", "ring_of_resolve", "amulet_of_vitality", "seal_of_clarity", "charm_of_focus", "wardens_loop", "spark_charm", "gauntlets_of_rime", "hexward_gloves", "gravedust_mitts", "runed_handwraps", "greater_healing_potion", "greater_mana_potion", "scroll_of_escape", "arcane_shield_tome", "frost_shard_tome", "chain_bolt_tome", "frailty_hex_tome", "butcher_cleaver", "moon_staff", "bastion_mail", "runespun_robe"],
-  deep: ["steel_greatsword", "war_hammer", "flame_touched_sword", "vampire_axe", "sundering_hammer", "elder_staff", "runic_staff", "sage_wand", "storm_wand", "guardian_plate", "archmage_robe", "emberguard_cuirass", "vanguard_warplate", "spellweave_mantle", "hexwoven_robe", "sundergrip_gauntlets", "spellcatcher_gloves", "cinderwraps", "wardens_grips", "sigil_of_fortune", "talisman_of_vigor", "arcseal_pendant", "warbrand_token", "mirror_sigil", "charm_of_guarding", "chain_of_insight", "blink_tome", "arcane_pulse_tome", "ice_shatter_tome", "arcane_burst_tome"],
-  endgame: ["sunfire_blade", "soulreaver_axe", "voidglass_staff", "astral_wand", "abyssal_plate", "starweave_robe", "void_heart"],
+  common: ["healing_potion", "mana_potion", "militia_sword", "woodcutter_axe", "iron_sword", "oak_staff", "hedge_wand", "ash_staff", "legion_spear", "ember_rod", "padded_jerkin", "leather_armor", "iron_cuirass", "chain_armor", "apprentice_robes", "enchanted_robe", "scout_leathers", "dusk_robe", "hunting_bow", "trackers_vest"],
+  rare: ["ring_of_precision", "ring_of_resolve", "amulet_of_vitality", "seal_of_clarity", "charm_of_focus", "wardens_loop", "spark_charm", "gauntlets_of_rime", "hexward_gloves", "gravedust_mitts", "runed_handwraps", "marksmans_bracers", "greater_healing_potion", "greater_mana_potion", "scroll_of_escape", "arcane_shield_tome", "frost_shard_tome", "chain_bolt_tome", "frailty_hex_tome", "butcher_cleaver", "moon_staff", "bastion_mail", "runespun_robe", "longbow", "composite_bow", "stalkers_hide"],
+  deep: ["steel_greatsword", "war_hammer", "flame_touched_sword", "vampire_axe", "sundering_hammer", "elder_staff", "runic_staff", "sage_wand", "storm_wand", "guardian_plate", "archmage_robe", "emberguard_cuirass", "vanguard_warplate", "spellweave_mantle", "hexwoven_robe", "sundergrip_gauntlets", "spellcatcher_gloves", "cinderwraps", "wardens_grips", "sigil_of_fortune", "talisman_of_vigor", "arcseal_pendant", "warbrand_token", "mirror_sigil", "charm_of_guarding", "chain_of_insight", "blink_tome", "arcane_pulse_tome", "ice_shatter_tome", "arcane_burst_tome", "recurve_bow", "venomstrike_bow", "galeforce_bow", "windrunner_coat", "shadowstep_mantle", "windgrip_gloves"],
+  endgame: ["sunfire_blade", "soulreaver_axe", "voidglass_staff", "astral_wand", "abyssal_plate", "starweave_robe", "void_heart", "voidpiercer_bow", "stormstring_bow", "voidhide_armor"],
 };
 
 export const BOSS_REWARDS = {
   warrior: ["captains_blade", "bulwark_armor"],
   wizard: ["ember_staff", "robe_of_the_adept"],
+  ranger: ["hawk_bow", "stalkers_hide"],
   neutral: ["ring_of_precision", "amulet_of_vitality", "charm_of_focus"],
 };
 
 export const FINAL_BOSS_REWARDS = {
   warrior: ["sunfire_blade", "soulreaver_axe", "abyssal_plate"],
   wizard: ["voidglass_staff", "astral_wand", "starweave_robe"],
+  ranger: ["voidpiercer_bow", "stormstring_bow", "voidhide_armor"],
   neutral: ["void_heart", "sigil_of_fortune"],
 };
 
 export const FLOOR20_BOSS_REWARDS = {
   warrior: ["flame_touched_sword", "vampire_axe", "sundering_hammer", "emberguard_cuirass", "vanguard_warplate", "sundergrip_gauntlets"],
   wizard: ["runic_staff", "sage_wand", "spellweave_mantle", "hexwoven_robe", "spellcatcher_gloves", "cinderwraps"],
+  ranger: ["venomstrike_bow", "galeforce_bow", "windrunner_coat", "shadowstep_mantle", "marksmans_bracers", "windgrip_gloves"],
   neutral: ["sigil_of_fortune", "talisman_of_vigor", "arcseal_pendant", "mirror_sigil", "charm_of_guarding", "chain_of_insight"],
 };

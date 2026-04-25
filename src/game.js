@@ -704,6 +704,7 @@ export class Game {
       evasionFlat: 0,
       magicPowerFlat: 0,
       meleeDamagePct: 0,
+      rangedDamagePct: 0,
       spellDamagePct: classDef.spellDamageBonusPct ?? 0,
       critBonus: 0,
       utilityDiscount: 0,
@@ -760,7 +761,8 @@ export class Game {
       defense: stats.defenseFlat,
       accuracy: 85 + stats.dexterity + stats.accuracyFlat,
       evasion: Math.floor(stats.dexterity / 2) + stats.evasionFlat,
-      meleeBonus: Math.floor(stats.strength / 2),
+      meleeBonus: Math.floor(stats.strength / 3),
+      rangedBonus: Math.floor(stats.dexterity / 3),
       spellBonus: Math.floor(stats.intelligence / 2) + stats.magicPowerFlat + (classDef.spellPowerBonus ?? 0),
     };
   }
@@ -1027,6 +1029,7 @@ export class Game {
     if (!item) return "";
     const parts = [];
     if (item.damage) parts.push(`DMG ${item.damage[0]}-${item.damage[1]}`);
+    if (item.range) parts.push(`RNG ${item.range}`);
     if (typeof item.defense === "number") parts.push(`DEF ${item.defense}`);
     if (item.magicPower) parts.push(`MAG ${item.magicPower}`);
     if (item.accuracy) parts.push(`ACC ${item.accuracy > 0 ? `+${item.accuracy}` : item.accuracy}`);
@@ -1042,6 +1045,8 @@ export class Game {
         if (key === "controlDuration") parts.push(`Control +${value}`);
         if (key === "meleeDamagePct") parts.push(`Melee +${value}%`);
         if (key === "spellDamagePct") parts.push(`Spell +${value}%`);
+        if (key === "rangedDamagePct") parts.push(`Ranged +${value}%`);
+        if (key === "evasionFlat") parts.push(`EVA +${value}`);
       }
     }
     if (item.effect?.type === "heal") parts.push(`Heal ${item.effect.value}`);
@@ -1053,8 +1058,10 @@ export class Game {
     if (item.enchantment?.type === "sunderChance") parts.push(`Enchant ${Math.round(item.enchantment.chance * 100)}% sunder`);
     if (item.enchantment?.type === "spellBonusDamage") parts.push(`Enchant +${item.enchantment.value} spell`);
     if (item.enchantment?.type === "manaRefundChance") parts.push(`Enchant ${Math.round(item.enchantment.chance * 100)}% refund`);
+    if (item.enchantment?.type === "rangedPoisonProc") parts.push(`Enchant ${Math.round(item.enchantment.chance * 100)}% poison`);
     if (item.handsEffect?.type === "meleeStatusProc") parts.push(`${Math.round(item.handsEffect.chance * 100)}% ${item.handsEffect.statusId}`);
     if (item.handsEffect?.type === "spellStatusProc") parts.push(`${Math.round(item.handsEffect.chance * 100)}% ${item.handsEffect.statusId}`);
+    if (item.handsEffect?.type === "rangedStatusProc") parts.push(`${Math.round(item.handsEffect.chance * 100)}% ${item.handsEffect.statusId}`);
     if (item.handsEffect?.type === "ignoreSpellStatusChance") parts.push(`${Math.round(item.handsEffect.chance * 100)}% ward`);
     return parts.join(" | ");
   }
@@ -1116,6 +1123,9 @@ export class Game {
     pushRow("Melee %", item.bonus?.meleeDamagePct ?? 0, equipped.bonus?.meleeDamagePct ?? 0);
     pushRow("Spell %", item.bonus?.spellDamagePct ?? 0, equipped.bonus?.spellDamagePct ?? 0);
     pushRow("Spell Acc", item.bonus?.spellAccuracyFlat ?? 0, equipped.bonus?.spellAccuracyFlat ?? 0);
+    pushRow("Range", item.range ?? 0, equipped.range ?? 0);
+    pushRow("Ranged %", item.bonus?.rangedDamagePct ?? 0, equipped.bonus?.rangedDamagePct ?? 0);
+    pushRow("EVA+", item.bonus?.evasionFlat ?? 0, equipped.bonus?.evasionFlat ?? 0);
     return rows;
   }
 
@@ -1333,6 +1343,10 @@ export class Game {
       this.upsertStatus(enemy, { id: effect.statusId, turns: effect.turns, value: effect.value });
       this.log(`${hands.name} inflicts ${STATUS_DEFINITIONS[effect.statusId]?.name ?? effect.statusId}.`);
     }
+    if (effect.type === "rangedStatusProc" && (mode.type === "ranged" || mode.type === "ranged_ability") && rng.chance(effect.chance)) {
+      this.upsertStatus(enemy, { id: effect.statusId, turns: effect.turns, value: effect.value });
+      this.log(`${hands.name} inflicts ${STATUS_DEFINITIONS[effect.statusId]?.name ?? effect.statusId}.`);
+    }
   }
 
   getInventoryStacks() {
@@ -1392,6 +1406,23 @@ export class Game {
     return stacks;
   }
 
+  fireRangedWeapon() {
+    if (this.state.ui.overlay) return;
+    const player = this.state.run.player;
+    const weapon = ITEMS[player.equipment.weapon];
+    if (!weapon?.range) {
+      this.log("You need a ranged weapon to fire.");
+      return;
+    }
+    const target = this.findNearestVisibleEnemy(weapon.range);
+    if (!target) {
+      this.log("No target in range.");
+      return;
+    }
+    player.lastAction = "attack";
+    this.performPlayerAttack(target, { type: "ranged" });
+  }
+
   performPlayerAttack(enemy, mode, options = {}) {
     const { endTurn = true, damageMultiplier = 1, projectileFrom = null } = options;
     const player = this.state.run.player;
@@ -1429,6 +1460,35 @@ export class Game {
       if (player.hp / derived.maxHp <= 0.3 && derived.lowHpDamagePct) damage += Math.floor(damage * (derived.lowHpDamagePct / 100));
       if (momentumBonus) {
         player.turnFlags.killMomentum = 0;
+      }
+    } else if (mode.type === "ranged" || mode.type === "ranged_ability") {
+      this.renderer?.queueProjectile({
+        kind: "arrow",
+        from: projectileFrom ?? { x: player.x, y: player.y },
+        to: { x: enemy.x, y: enemy.y },
+      });
+      const momentumBonus = player.turnFlags.killMomentum ?? 0;
+      const boonBattleTrance = player.turnFlags.boonBattleTrance ?? 0;
+      const movedIntoPressureBonus = player.lastAction === "move" && derived.advanceDamagePct ? derived.advanceDamagePct / 100 : 0;
+      const base = rng.int(weapon?.damage?.[0] ?? 1, weapon?.damage?.[1] ?? 2) + derived.rangedBonus + momentumBonus + boonBattleTrance;
+      damage = Math.max(1, Math.floor(base * (1 + (derived.rangedDamagePct ?? 0) / 100)) - enemyStats.defense);
+      damage = Math.max(1, Math.floor(damage * (1 + movedIntoPressureBonus)));
+      if (mode.abilityId === "aimed_shot") {
+        damage += 3;
+        const armorPen = derived.aimedShotArmorPen ?? 0;
+        if (armorPen) damage += Math.min(armorPen, enemyStats.defense);
+      }
+      if (enchantment?.type === "onHitBonusDamage") damage += enchantment.value;
+      if (enemy.hp / enemy.maxHp <= 0.35 && derived.executioner) damage += Math.floor(damage * (derived.executioner / 100));
+      if (player.hp / derived.maxHp <= 0.3 && derived.lowHpDamagePct) damage += Math.floor(damage * (derived.lowHpDamagePct / 100));
+      if (momentumBonus) player.turnFlags.killMomentum = 0;
+      if (derived.rangedPoisonChance || enchantment?.type === "rangedPoisonProc") {
+        const poisonChance = (derived.rangedPoisonChance ?? 0) + (enchantment?.type === "rangedPoisonProc" ? enchantment.chance : 0);
+        if (rng.chance(Math.min(poisonChance, 0.5))) {
+          const turns = enchantment?.type === "rangedPoisonProc" ? enchantment.turns : 3;
+          this.upsertStatus(enemy, { id: "poisoned", turns, value: 1 });
+          this.log(`${enemy.name} is poisoned.`);
+        }
       }
     } else if (mode.type === "spell") {
       const spell = SPELLS[mode.spellId];
@@ -1569,7 +1629,7 @@ export class Game {
       player.skillPoints += 1;
       player.baseStats.strength += player.classId === "warrior" ? 1 : 0;
       player.baseStats.vitality += player.classId === "warrior" ? 1 : player.level % 3 === 0 ? 1 : 0;
-      player.baseStats.dexterity += player.level % 2 === 0 ? 1 : 0;
+      player.baseStats.dexterity += player.classId === "ranger" ? 1 : player.level % 2 === 0 ? 1 : 0;
       player.baseStats.intelligence += player.classId === "wizard" ? 1 : 0;
       const derived = this.getDerivedStats(player);
       player.hp = derived.maxHp;
@@ -1649,6 +1709,41 @@ export class Game {
       return;
     }
 
+    if (spellId === "aimed_shot") {
+      const weapon = ITEMS[player.equipment.weapon];
+      const range = (spell.range ?? 5) + (derived.aimedShotRange ?? 0);
+      const target = this.findNearestVisibleEnemy(range);
+      if (!target) {
+        this.log("No target in range.");
+        return;
+      }
+      if (!weapon?.range) {
+        this.log("You need a ranged weapon.");
+        return;
+      }
+      player.mana -= cost;
+      player.lastAction = "attack";
+      this.performPlayerAttack(target, { type: "ranged_ability", abilityId: "aimed_shot" });
+      return;
+    }
+
+    if (spellId === "evasive_step") {
+      const destination = this.findEvasiveStepDestination();
+      if (!destination) {
+        this.log("No safe escape route.");
+        return;
+      }
+      player.mana -= cost;
+      player.lastAction = "move";
+      player.x = destination.x;
+      player.y = destination.y;
+      this.log("You leap away from danger.");
+      this.pickUpItems();
+      this.checkTrap();
+      this.endPlayerTurn();
+      return;
+    }
+
     if (spellId === "arcane_pulse") {
       const targets = this.findAdjacentEnemies(player, 1);
       if (!targets.length) {
@@ -1718,6 +1813,26 @@ export class Game {
       const dangerB = currentFloor.enemies.reduce((sum, enemy) => sum + Math.max(0, 7 - manhattan(b, enemy)), 0);
       return dangerA - dangerB;
     })[0];
+  }
+
+  findEvasiveStepDestination() {
+    const { player, currentFloor } = this.state.run;
+    const range = 2 + (this.getDerivedStats(player).evasiveStepRange ?? 0);
+    const nearestEnemy = currentFloor.enemies
+      .filter((e) => !e.disguised)
+      .sort((a, b) => manhattan(player, a) - manhattan(player, b))[0];
+    const candidates = [];
+    for (let y = Math.max(0, player.y - range); y <= Math.min(currentFloor.height - 1, player.y + range); y += 1) {
+      for (let x = Math.max(0, player.x - range); x <= Math.min(currentFloor.width - 1, player.x + range); x += 1) {
+        const tile = currentFloor.map[y]?.[x];
+        if (!tile || tile.type !== "floor" || tile.occupant || tile.vendor) continue;
+        const dist = manhattan(player, { x, y });
+        if (dist >= 2 && dist <= range) candidates.push({ x, y });
+      }
+    }
+    if (!candidates.length) return null;
+    if (!nearestEnemy) return candidates[0];
+    return candidates.sort((a, b) => manhattan(b, nearestEnemy) - manhattan(a, nearestEnemy))[0];
   }
 
   findNearestVisibleEnemy(range) {

@@ -533,18 +533,28 @@ function getClassLootPools(playerClass, floorNumber) {
   const sharedMid = ["greater_healing_potion", "greater_mana_potion", "ring_of_precision", "ring_of_resolve", "amulet_of_vitality", "seal_of_clarity", "charm_of_focus", "wardens_loop", "spark_charm", "gauntlets_of_rime", "hexward_gloves", "gravedust_mitts", "runed_handwraps"];
   const warriorCore = ["militia_sword", "woodcutter_axe", "iron_sword", "raider_axe", "legion_spear", "padded_jerkin", "leather_armor", "iron_cuirass", "chain_armor", "scout_leathers"];
   const wizardCore = ["hedge_wand", "ash_staff", "oak_staff", "crystal_wand", "ember_rod", "apprentice_robes", "cloth_robe", "enchanted_robe", "dusk_robe"];
+  const rangerCore = ["hunting_bow", "longbow", "composite_bow", "trackers_vest", "scout_leathers", "padded_jerkin", "leather_armor"];
   const warriorDeep = ["steel_greatsword", "war_hammer", "flame_touched_sword", "vampire_axe", "sundering_hammer", "guardian_plate", "emberguard_cuirass", "vanguard_warplate", "sundergrip_gauntlets", "wardens_grips", "sigil_of_fortune", "talisman_of_vigor", "warbrand_token", "charm_of_guarding"];
   const wizardDeep = ["elder_staff", "storm_wand", "runic_staff", "sage_wand", "archmage_robe", "spellweave_mantle", "hexwoven_robe", "spellcatcher_gloves", "cinderwraps", "sigil_of_fortune", "arcseal_pendant", "mirror_sigil", "chain_of_insight"];
+  const rangerDeep = ["recurve_bow", "venomstrike_bow", "galeforce_bow", "stalkers_hide", "windrunner_coat", "shadowstep_mantle", "marksmans_bracers", "windgrip_gloves", "sigil_of_fortune", "talisman_of_vigor", "mirror_sigil", "charm_of_guarding"];
   const warriorEndgame = ["sunfire_blade", "soulreaver_axe", "abyssal_plate", "void_heart"];
   const wizardEndgame = ["voidglass_staff", "astral_wand", "starweave_robe", "void_heart"];
+  const rangerEndgame = ["voidpiercer_bow", "stormstring_bow", "voidhide_armor", "void_heart"];
   const warriorTomes = ["arcane_shield_tome"];
   const wizardTomes = ["frost_shard_tome", "blink_tome", "chain_bolt_tome", "arcane_pulse_tome", "ice_shatter_tome", "frailty_hex_tome", "arcane_burst_tome"];
+  const rangerTomes = ["arcane_shield_tome", "frost_shard_tome"];
 
-  const classCore = playerClass === "warrior" ? warriorCore : wizardCore;
+  const classPools = {
+    warrior: { core: warriorCore, deep: warriorDeep, endgame: warriorEndgame, tomes: warriorTomes },
+    wizard: { core: wizardCore, deep: wizardDeep, endgame: wizardEndgame, tomes: wizardTomes },
+    ranger: { core: rangerCore, deep: rangerDeep, endgame: rangerEndgame, tomes: rangerTomes },
+  };
+  const pool = classPools[playerClass] ?? classPools.warrior;
+  const classCore = pool.core;
   const offClassCore = playerClass === "warrior" ? wizardCore : warriorCore;
-  const classDeep = playerClass === "warrior" ? warriorDeep : wizardDeep;
-  const classEndgame = playerClass === "warrior" ? warriorEndgame : wizardEndgame;
-  const classTomes = playerClass === "warrior" ? warriorTomes : wizardTomes;
+  const classDeep = pool.deep;
+  const classEndgame = pool.endgame;
+  const classTomes = pool.tomes;
 
   return {
     common: [...sharedCommon, ...classCore, ...classTomes],

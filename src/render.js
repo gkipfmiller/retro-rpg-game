@@ -440,6 +440,8 @@ function getProjectileAppearance(projectile) {
       return { color: "#ff9b54", trail: "#ffe1b8", radius: 0.17 };
     case "abyssal_bolt":
       return { color: "#ff5f86", trail: "#ffd1dc", radius: 0.2 };
+    case "arrow":
+      return { color: "#d4a853", trail: "#8b6914", radius: 0.1 };
     default:
       return { color: "#d7a54d", trail: "#fff1c2", radius: 0.16 };
   }

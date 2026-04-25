@@ -18,6 +18,7 @@ let loadedAssets = null;
 const classSpriteTargets = [
   { id: "class-sprite-warrior", actorId: "warrior" },
   { id: "class-sprite-wizard", actorId: "wizard" },
+  { id: "class-sprite-ranger", actorId: "ranger" },
 ];
 
 function syncClassPortraits(frameIndex = 0) {
@@ -196,6 +197,8 @@ window.addEventListener("keydown", (event) => {
     game.openCharacter();
   } else if (key === "k") {
     game.openSkills();
+  } else if (key === "f") {
+    game.fireRangedWeapon();
   } else if (key === "1") {
     game.useQuickSlot(0);
   } else if (key === "2") {
