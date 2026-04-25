@@ -196,7 +196,6 @@ function getThemeWallAtlasCoord(theme, map, x, y, options = {}) {
   const isFloor = (tx, ty) => {
     const tile = getTile(tx, ty);
     if (!tile || tile.type !== "floor") return false;
-    if (!useExploredMask) return true;
     return tile.explored || tile.visible;
   };
   const isVoid = (tx, ty) => {
@@ -464,6 +463,7 @@ export class Renderer {
     this.lastOverlaySignature = null;
     this.wasCriticalHp = false;
     this.projectiles = [];
+    this.damagePopups = [];
   }
 
   setAssets(assets) {
@@ -762,6 +762,7 @@ export class Renderer {
     }
 
     this.renderProjectiles(tileSize, offsetX, offsetY);
+    this.renderDamagePopups(tileSize, offsetX, offsetY);
   }
 
   drawSprite(image, x, y, tileSize, baseTileSize, heightMultiplier = 1) {
@@ -860,6 +861,46 @@ export class Renderer {
       this.ctx.beginPath();
       this.ctx.arc(x, y, Math.max(2, radius * 0.45), 0, Math.PI * 2);
       this.ctx.fill();
+      this.ctx.restore();
+    }
+  }
+
+  queueDamagePopup({ x, y, damage, type = "enemy", critical = false }) {
+    this.damagePopups.push({
+      x, y, damage, type, critical,
+      createdAt: performance.now(),
+      duration: 800,
+      offsetX: (Math.random() - 0.5) * 0.4,
+    });
+  }
+
+  renderDamagePopups(tileSize, offsetX, offsetY) {
+    if (!this.damagePopups.length) return;
+    const now = performance.now();
+    this.damagePopups = this.damagePopups.filter((p) => now - p.createdAt < p.duration);
+    for (const popup of this.damagePopups) {
+      const progress = (now - popup.createdAt) / popup.duration;
+      const alpha = progress < 0.7 ? 1 : 1 - (progress - 0.7) / 0.3;
+      const rise = progress * tileSize * 1.2;
+      const px = offsetX + (popup.x + 0.5 + popup.offsetX) * tileSize;
+      const py = offsetY + (popup.y + 0.2) * tileSize - rise;
+      const fontSize = popup.critical ? Math.max(13, tileSize * 0.7) : Math.max(11, tileSize * 0.55);
+      const text = `${popup.damage}`;
+      this.ctx.save();
+      this.ctx.globalAlpha = alpha;
+      this.ctx.font = `bold ${Math.floor(fontSize)}px monospace`;
+      this.ctx.textAlign = "center";
+      this.ctx.lineWidth = 3;
+      this.ctx.strokeStyle = "rgba(0,0,0,0.7)";
+      this.ctx.strokeText(text, px, py);
+      if (popup.type === "player") {
+        this.ctx.fillStyle = popup.critical ? "#ff4444" : "#ff8844";
+      } else if (popup.type === "heal") {
+        this.ctx.fillStyle = "#44ff66";
+      } else {
+        this.ctx.fillStyle = popup.critical ? "#ffff44" : "#ffffff";
+      }
+      this.ctx.fillText(text, px, py);
       this.ctx.restore();
     }
   }

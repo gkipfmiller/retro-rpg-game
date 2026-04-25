@@ -994,6 +994,7 @@ export class Game {
     const damage = template.damage[1] === 0 ? 0 : Math.max(1, rawDamage);
     if (damage > 0) {
       this.state.run.player.hp = Math.max(0, this.state.run.player.hp - damage);
+      this.renderer?.queueDamagePopup({ x: this.state.run.player.x, y: this.state.run.player.y, damage, type: "player" });
       this.log(`${template.name} hits you for ${damage} damage.`);
     } else {
       this.log(`${template.name} is triggered.`);
@@ -1462,6 +1463,7 @@ export class Game {
     damage = Math.max(1, Math.floor(damage * damageMultiplier));
 
     enemy.hp -= damage;
+    this.renderer?.queueDamagePopup({ x: enemy.x, y: enemy.y, damage, type: "enemy", critical: criticalHit });
     this.log(`You ${criticalHit ? "critically strike" : "hit"} ${enemy.name} for ${damage} damage.`);
     if (mode.abilityId === "guard_break") {
       this.upsertStatus(enemy, { id: "sundered", turns: 3, value: 2 });
@@ -1509,6 +1511,7 @@ export class Game {
       const adjacentEnemies = this.state.run.currentFloor.enemies.filter((candidate) => candidate.id !== enemy.id && manhattan(candidate, enemy) === 1);
       for (const adjacent of adjacentEnemies.slice(0, 2)) {
         adjacent.hp -= splashDamage;
+        this.renderer?.queueDamagePopup({ x: adjacent.x, y: adjacent.y, damage: splashDamage, type: "enemy" });
         this.log(`${adjacent.name} takes ${splashDamage} cleave damage.`);
         if (adjacent.hp <= 0) this.killEnemy(adjacent);
       }
@@ -2272,6 +2275,7 @@ export class Game {
         if (status.fresh) return { ...status, fresh: false };
         if (status.id === "poisoned") {
           player.hp = Math.max(0, player.hp - 1);
+          this.renderer?.queueDamagePopup({ x: player.x, y: player.y, damage: 1, type: "player" });
           this.log("Poisoned deals 1 damage.");
           const turnLoss = player.lastAction === "wait" ? 2 : 1;
           return { ...status, turns: status.turns - turnLoss };
@@ -2557,6 +2561,7 @@ export class Game {
     }
 
     player.hp -= damage;
+    this.renderer?.queueDamagePopup({ x: player.x, y: player.y, damage, type: "player" });
     this.triggerRelentlessStep();
     if (mode === "spell" || mode === "abyssal_bolt") {
       const spellName = mode === "abyssal_bolt"

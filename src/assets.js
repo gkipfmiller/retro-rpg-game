@@ -282,7 +282,6 @@ export function getWallSprite(manifest, map, x, y, options = {}) {
   const isFloor = (tx, ty) => {
     const tile = getTile(tx, ty);
     if (!tile || tile.type !== "floor") return false;
-    if (!useExploredMask) return true;
     return tile.explored || tile.visible;
   };
 
