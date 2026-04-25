@@ -53,11 +53,14 @@ function syncMobileControls() {
   const mobileHud = document.getElementById("mobile-hud");
   const inGame = game.state.mode === "in_game";
 
-  mobileControls.classList.toggle("hidden", !inGame);
-  mobileControls.classList.toggle("visible", inGame);
+  const overlayOpen = inGame && !!game.state.ui?.overlay;
+  const showControls = inGame && !overlayOpen;
+
+  mobileControls.classList.toggle("hidden", !showControls);
+  mobileControls.classList.toggle("visible", showControls);
   if (mobileHud) {
-    mobileHud.classList.toggle("hidden", !inGame);
-    mobileHud.classList.toggle("visible", inGame);
+    mobileHud.classList.toggle("hidden", !showControls);
+    mobileHud.classList.toggle("visible", showControls);
   }
 
   if (!inGame) return;

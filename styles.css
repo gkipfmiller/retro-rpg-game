@@ -462,6 +462,7 @@ button:hover {
 .overlay {
   position: fixed;
   inset: 0;
+  z-index: 55;
   background: rgba(7, 9, 12, 0.72);
   display: flex;
   align-items: center;
@@ -1207,5 +1208,16 @@ button:hover {
 
   .control-strip {
     display: none;
+  }
+
+  .overlay {
+    padding: 0.5rem;
+    align-items: flex-start;
+  }
+
+  .overlay-panel {
+    max-height: 100vh;
+    max-height: 100dvh;
+    border-radius: 10px;
   }
 }
