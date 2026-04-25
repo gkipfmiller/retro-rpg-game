@@ -556,6 +556,12 @@ export const BOONS = {
     description: "Each kill leaves a pulse of violence in your hands.",
     summary: "After a kill, your next attack or spell gains +2 damage.",
   },
+  phantom_quiver: {
+    id: "phantom_quiver",
+    name: "Phantom Quiver",
+    description: "A spectral bowstring hums at your side, loosing echoes of every fourth arrow.",
+    summary: "Every 4th ranged attack fires a phantom arrow at a nearby enemy for 50% damage.",
+  },
 };
 
 export const CHEST_TABLE = {

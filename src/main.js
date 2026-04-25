@@ -1,6 +1,7 @@
 import { Game } from "./game.js";
 import { Renderer } from "./render.js";
 import { getActorSpriteFrame, loadAssets } from "./assets.js";
+import { SPELLS, ITEMS, CLASSES, BOONS } from "./data.js";
 
 const game = new Game();
 const renderer = new Renderer(game);
@@ -13,6 +14,7 @@ const screens = {
   game: document.getElementById("game-screen"),
 };
 const tooltip = document.getElementById("ui-tooltip");
+const mobileControls = document.getElementById("mobile-controls");
 let loadedAssets = null;
 
 const classSpriteTargets = [
@@ -46,12 +48,72 @@ function syncScreens() {
   renderer.render();
 }
 
+function syncMobileControls() {
+  if (!mobileControls) return;
+  const mobileHud = document.getElementById("mobile-hud");
+  const inGame = game.state.mode === "in_game";
+
+  mobileControls.classList.toggle("hidden", !inGame);
+  mobileControls.classList.toggle("visible", inGame);
+  if (mobileHud) {
+    mobileHud.classList.toggle("hidden", !inGame);
+    mobileHud.classList.toggle("visible", inGame);
+  }
+
+  if (!inGame) return;
+
+  const run = game.state.run;
+  const player = run?.player;
+  if (!player) return;
+
+  const derived = game.getDerivedStats(player);
+
+  // Mobile HUD
+  if (mobileHud) {
+    document.getElementById("mobile-hud-class").textContent = CLASSES[player.classId]?.name ?? "";
+    document.getElementById("mobile-hud-floor").textContent = run.floorNumber === 0 ? "Prelude" : `Fl ${run.floorNumber}`;
+    document.getElementById("mobile-hud-level").textContent = `Lv ${player.level}`;
+    document.getElementById("mobile-hud-gold").textContent = `${player.gold}g`;
+
+    document.getElementById("mobile-hp-bar").style.width = `${(player.hp / derived.maxHp) * 100}%`;
+    document.getElementById("mobile-hp-text").textContent = `${player.hp}/${derived.maxHp}`;
+    document.getElementById("mobile-mana-bar").style.width = `${(player.mana / derived.maxMana) * 100}%`;
+    document.getElementById("mobile-mana-text").textContent = `${player.mana}/${derived.maxMana}`;
+
+    const weapon = player.equipment.weapon ? ITEMS[player.equipment.weapon] : null;
+    const armor = player.equipment.armor ? ITEMS[player.equipment.armor] : null;
+    const boon = BOONS[player.boonId];
+    document.getElementById("mobile-hud-weapon").textContent = weapon ? weapon.name : "No weapon";
+    document.getElementById("mobile-hud-armor").textContent = armor ? armor.name : "No armor";
+    document.getElementById("mobile-hud-boon").textContent = boon ? boon.name : "";
+  }
+
+  // Mobile log
+  const mobileLog = document.getElementById("mobile-log");
+  if (mobileLog) {
+    const recent = game.state.logs.slice(-3);
+    mobileLog.innerHTML = recent.map((entry) => `<div>${entry}</div>`).join("");
+  }
+
+  // Quick slot labels
+  const slots = player.quickSlots;
+  if (slots) {
+    const qsBtns = mobileControls.querySelectorAll(".mobile-menu-qs");
+    qsBtns.forEach((btn, i) => {
+      const entry = slots[i];
+      const label = entry ? (SPELLS[entry]?.name ?? ITEMS[entry]?.name ?? entry) : "Empty";
+      btn.textContent = label;
+    });
+  }
+}
+
 function refresh() {
   if (game.state.mode === "scores") {
     document.getElementById("high-scores-content").innerHTML = game.renderHighScoreList(12);
   }
   syncScreens();
   renderer.render();
+  syncMobileControls();
 }
 
 function jumpToFloor(floorNumber, options = {}) {
@@ -208,6 +270,66 @@ window.addEventListener("keydown", (event) => {
   }
   refresh();
 });
+
+// ── Mobile Touch Controls ──
+
+if (mobileControls) {
+  for (const btn of mobileControls.querySelectorAll(".dpad-btn")) {
+    btn.addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      if (game.state.mode !== "in_game" || game.state.ui.overlay) return;
+      const dir = btn.dataset.dir;
+      if (dir === "up") game.movePlayer(0, -1);
+      else if (dir === "down") game.movePlayer(0, 1);
+      else if (dir === "left") game.movePlayer(-1, 0);
+      else if (dir === "right") game.movePlayer(1, 0);
+      else if (dir === "wait") {
+        game.state.run.player.lastAction = "wait";
+        game.log("You wait and listen.");
+        game.endPlayerTurn();
+      }
+      refresh();
+    }, { passive: false });
+  }
+
+  for (const btn of mobileControls.querySelectorAll(".action-btn")) {
+    btn.addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      if (game.state.mode !== "in_game") return;
+      const action = btn.dataset.action;
+      if (action === "fire") {
+        if (!game.state.ui.overlay) game.fireRangedWeapon();
+      } else if (action === "interact") {
+        if (!game.state.ui.overlay) game.interact();
+      } else if (action === "close") {
+        if (game.state.ui.overlay) game.closeOverlay();
+      }
+      refresh();
+    }, { passive: false });
+  }
+
+  for (const btn of mobileControls.querySelectorAll(".mobile-menu-btn")) {
+    btn.addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      if (game.state.mode !== "in_game") return;
+      const action = btn.dataset.action;
+      if (game.state.ui.overlay && action !== "close") {
+        game.closeOverlay();
+      }
+      if (action === "inventory") game.openInventory();
+      else if (action === "character") game.openCharacter();
+      else if (action === "skills") game.openSkills();
+      else if (action === "quick1") game.useQuickSlot(0);
+      else if (action === "quick2") game.useQuickSlot(1);
+      else if (action === "quick3") game.useQuickSlot(2);
+      refresh();
+    }, { passive: false });
+  }
+
+  document.getElementById("game-screen").addEventListener("touchmove", (e) => {
+    e.preventDefault();
+  }, { passive: false });
+}
 
 loadAssets().then((assets) => {
   loadedAssets = assets;

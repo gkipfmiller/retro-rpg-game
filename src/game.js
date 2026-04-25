@@ -1576,6 +1576,24 @@ export class Game {
         if (adjacent.hp <= 0) this.killEnemy(adjacent);
       }
     }
+    if ((mode.type === "ranged" || mode.type === "ranged_ability") && player.boonId === "phantom_quiver") {
+      if (!player.boonState.phantomCount) player.boonState.phantomCount = 0;
+      player.boonState.phantomCount += 1;
+      if (player.boonState.phantomCount >= 4) {
+        player.boonState.phantomCount = 0;
+        const phantomTarget = this.state.run.currentFloor.enemies.find(
+          (e) => e.id !== enemy.id && e.hp > 0 && manhattan(e, player) <= (weapon?.range ?? 4) && hasLineOfSight(this.state.run.currentFloor.map, player, e)
+        );
+        if (phantomTarget) {
+          const phantomDamage = Math.max(1, Math.floor(damage * 0.5));
+          phantomTarget.hp -= phantomDamage;
+          this.renderer?.queueProjectile({ kind: "arrow", from: { x: player.x, y: player.y }, to: { x: phantomTarget.x, y: phantomTarget.y } });
+          this.renderer?.queueDamagePopup({ x: phantomTarget.x, y: phantomTarget.y, damage: phantomDamage, type: "enemy" });
+          this.log(`A phantom arrow strikes ${phantomTarget.name} for ${phantomDamage} damage.`);
+          if (phantomTarget.hp <= 0) this.killEnemy(phantomTarget);
+        }
+      }
+    }
     this.state.run.currentTargetId = enemy.id;
     const killed = enemy.hp <= 0;
     if (killed) this.killEnemy(enemy);
