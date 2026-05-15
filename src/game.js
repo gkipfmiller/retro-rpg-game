@@ -106,6 +106,7 @@ export class Game {
     };
     this.renderer = null;
     this.highScoreStorageKey = "dungeon30_high_scores";
+    this.saveStorageKey = "dungeon30_save";
     this.blockedNameTerms = [
       "fuck", "shit", "bitch", "cunt", "nigger", "nigga", "fag", "faggot", "slut",
       "whore", "asshole", "motherfucker", "dick", "cock", "pussy", "penis", "vagina",
@@ -421,6 +422,7 @@ export class Game {
         <button class="primary" data-action="close-sage-message">Continue</button>
       `,
     };
+    this.saveRun();
   }
 
   triggerRelentlessStep() {
@@ -473,6 +475,48 @@ export class Game {
     } catch {
       // Ignore storage failures and keep the run playable.
     }
+  }
+
+  hasSave() {
+    return !!window.localStorage.getItem(this.saveStorageKey);
+  }
+
+  saveRun() {
+    if (!this.state.run || this.state.mode !== "in_game") return;
+    const run = deepClone(this.state.run);
+    run.player.turnFlags = {};
+    run.currentTargetId = null;
+    try {
+      window.localStorage.setItem(this.saveStorageKey, JSON.stringify({
+        version: 1,
+        run,
+        logs: this.state.logs.slice(-30),
+      }));
+    } catch {
+      // Storage full or unavailable — run continues unaffected.
+    }
+  }
+
+  loadSavedRun() {
+    try {
+      const raw = window.localStorage.getItem(this.saveStorageKey);
+      if (!raw) return false;
+      const payload = JSON.parse(raw);
+      if (payload.version !== 1 || !payload.run) return false;
+      this.state.run = payload.run;
+      this.state.logs = payload.logs ?? [];
+      this.state.mode = "in_game";
+      this.state.ui = { overlay: null, selectedId: null, npcDialog: null };
+      this.updateVisibility();
+      this.renderer?.showTransition(this.getFloorTransitionBanner(this.state.run.floorNumber));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  clearSave() {
+    window.localStorage.removeItem(this.saveStorageKey);
   }
 
   getStackIndexByItemId(stacks, itemId, fallbackIndex = 0) {
@@ -2025,6 +2069,7 @@ export class Game {
       this.showNpcDialog(this.sageName, bossEntryLine, 3400);
       this.log(bossEntryLine);
     }
+    this.saveRun();
   }
 
   openInventory(selectedIndex = 0) {
@@ -2751,6 +2796,7 @@ export class Game {
   }
 
   handleDeath(message) {
+    this.clearSave();
     this.log(message);
     const summary = this.buildRunSummary(this.state.run, message.replace(/^Slain by /, "").replace(/^Killed by /, ""), "death");
     const deathFlavor = this.state.run.floorNumber >= 30
@@ -2776,6 +2822,7 @@ export class Game {
   }
 
   handleVictory() {
+    this.clearSave();
     const { player, floorNumber, runStats, turn } = this.state.run;
     const unlockedSkills = player.unlockedSkills.length;
     const learnedSpells = player.learnedSpells.filter((spellId) => SPELLS[spellId]).length;

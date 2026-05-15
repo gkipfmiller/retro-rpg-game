@@ -45,6 +45,8 @@ function syncScreens() {
   else if (game.state.mode === "class") screens.class.classList.add("visible");
   else if (game.state.mode === "scores") screens.scores.classList.add("visible");
   else screens.game.classList.add("visible");
+  const continueBtn = document.getElementById("continue-run-button");
+  if (continueBtn) continueBtn.classList.toggle("hidden", !game.hasSave());
   renderer.render();
 }
 
@@ -159,6 +161,10 @@ function frame() {
   renderer.render();
   window.requestAnimationFrame(frame);
 }
+
+document.getElementById("continue-run-button").addEventListener("click", () => {
+  if (game.loadSavedRun()) refresh();
+});
 
 document.getElementById("new-run-button").addEventListener("click", () => {
   game.setMode("class");
