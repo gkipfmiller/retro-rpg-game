@@ -520,10 +520,10 @@ export class Renderer {
         const floorAtlasCoord = getThemeFloorAtlasCoord(currentFloor.theme, x, y);
         const floorAtlas = floorAtlasCoord ? this.assets?.images[this.assets.manifest.themeAtlases.sunkenVaultFloor] : null;
         const floorSprite = floorAtlas ? null : this.assets?.images[getFloorSprite(this.assets.manifest, x, y)];
-        const wallAtlasCoord = getThemeWallAtlasCoord(currentFloor.theme, currentFloor.map, x, y);
+        const wallAtlasCoord = getThemeWallAtlasCoord(currentFloor.theme, currentFloor.map, x, y, { useExploredMask: true });
         const wallAtlas = wallAtlasCoord ? this.assets?.images[this.assets.manifest.themeAtlases.sunkenVaultWalls] : null;
         const wallSpritePath = this.assets
-          ? getWallSprite(this.assets.manifest, currentFloor.map, x, y)
+          ? getWallSprite(this.assets.manifest, currentFloor.map, x, y, { useExploredMask: true })
           : null;
         const useThemeWalls = currentFloor.theme === "sunken_vault";
         const wallSprite = wallAtlas ? null : (!useThemeWalls && wallSpritePath) ? this.assets?.images[wallSpritePath] : null;
