@@ -118,6 +118,10 @@ export class Game {
     this.renderer = renderer;
   }
 
+  attachSoundPlayer(soundPlayer) {
+    this.soundPlayer = soundPlayer;
+  }
+
   setMode(mode) {
     this.state.mode = mode;
   }
@@ -1416,7 +1420,7 @@ export class Game {
   getInventoryStacksWithSellValue() {
     return this.getInventoryStacks().map((stack) => ({
       ...stack,
-      sellValue: Math.max(1, Math.floor((ITEMS[stack.itemId]?.value ?? 0) * 0.25)),
+      sellValue: Math.max(1, Math.floor((ITEMS[stack.itemId]?.value ?? 0) * 0.15)),
     }));
   }
 
@@ -1424,7 +1428,7 @@ export class Game {
     const item = ITEMS[itemId];
     if (!item) return 0;
     const rarity = this.getItemRarity(itemId);
-    const multiplier = rarity === "boss" ? 1.4 : rarity === "rare" ? 1.25 : 1;
+    const multiplier = rarity === "boss" ? 1.75 : rarity === "rare" ? 1.4 : rarity === "uncommon" ? 1.15 : 1;
     return Math.max(1, Math.floor(item.value * multiplier));
   }
 
@@ -1484,6 +1488,7 @@ export class Game {
           to: { x: enemy.x, y: enemy.y },
         });
       }
+      this.soundPlayer?.play('miss');
       this.log(`You miss ${enemy.name}.`);
       if (endTurn) this.endPlayerTurn();
       return { hit: false, damage: 0, killed: false, targetId: enemy.id };
@@ -1491,6 +1496,7 @@ export class Game {
 
     let damage = 0;
     if (mode.type === "melee" || mode.type === "ability") {
+      this.soundPlayer?.play('melee_swing');
       const momentumBonus = player.turnFlags.killMomentum ?? 0;
       const boonBattleTrance = player.turnFlags.boonBattleTrance ?? 0;
       const movedIntoPressureBonus = player.lastAction === "move" && derived.advanceDamagePct ? derived.advanceDamagePct / 100 : 0;
@@ -1567,6 +1573,7 @@ export class Game {
     damage = Math.max(1, Math.floor(damage * damageMultiplier));
 
     enemy.hp -= damage;
+    this.soundPlayer?.play('player_hit_enemy');
     this.renderer?.queueDamagePopup({ x: enemy.x, y: enemy.y, damage, type: "enemy", critical: criticalHit });
     this.log(`You ${criticalHit ? "critically strike" : "hit"} ${enemy.name} for ${damage} damage.`);
     if (mode.abilityId === "guard_break") {
@@ -2003,6 +2010,7 @@ export class Game {
         this.log(`The ${ITEMS[chest.keyItemId]?.name ?? "key"} unlocks ${chest.label?.toLowerCase() ?? "the vault"}.`);
       }
       chest.opened = true;
+      this.soundPlayer?.play('chest_open');
       if (chest.vaultId) {
         const vault = this.state.run.vaultPlan.find((entry) => entry.id === chest.vaultId);
         if (vault) vault.opened = true;
@@ -2377,10 +2385,14 @@ export class Game {
     if (!itemId) return;
     const item = ITEMS[itemId];
     const price = this.getVendorBuyPrice(itemId);
-    if (this.state.run.player.gold < price) return;
+    if (this.state.run.player.gold < price) {
+      this.soundPlayer?.play('ui_denied');
+      return;
+    }
     this.state.run.player.gold -= price;
     this.state.run.player.inventory.push({ id: `inv-${Date.now()}-${itemId}`, itemId });
     vendor.stock.splice(stockIndex, 1);
+    this.soundPlayer?.play('ui_confirm');
     this.log(`Bought ${item.name}.`);
     const nextStacks = this.getVendorStacks();
     const nextIndex = this.getStackIndexByItemId(nextStacks, itemId, index);
@@ -2393,9 +2405,10 @@ export class Game {
     const entry = entryIndex !== undefined ? this.state.run.player.inventory[entryIndex] : null;
     if (!entry) return;
     const item = ITEMS[entry.itemId];
-    const value = Math.max(1, Math.floor(item.value * 0.25));
+    const value = Math.max(1, Math.floor(item.value * 0.15));
     this.state.run.player.gold += value;
     this.state.run.player.inventory.splice(entryIndex, 1);
+    this.soundPlayer?.play('ui_confirm');
     this.log(`Sold ${item.name} for ${value} gold.`);
     this.openVendor(this.state.ui.overlay?.selectedIndex ?? 0);
   }
@@ -2739,6 +2752,7 @@ export class Game {
     }
 
     player.hp -= damage;
+    this.soundPlayer?.play('enemy_hit_player');
     this.renderer?.queueDamagePopup({ x: player.x, y: player.y, damage, type: "player" });
     this.triggerRelentlessStep();
     if (mode === "spell" || mode === "abyssal_bolt") {
@@ -2859,6 +2873,7 @@ export class Game {
 
   closeOverlay() {
     if (this.state.ui.overlay && this.state.ui.overlay.dismissible === false) return;
+    this.soundPlayer?.play('ui_cancel');
     this.state.ui.overlay = null;
   }
 
@@ -2871,6 +2886,7 @@ export class Game {
         this.state.ui.overlay = null;
         break;
       case "inventory-use":
+        this.soundPlayer?.play('ui_confirm');
         this.equipInventoryIndex(Number(payload.index));
         break;
       case "inventory-select":

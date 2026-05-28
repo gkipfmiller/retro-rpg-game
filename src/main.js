@@ -1,11 +1,14 @@
 import { Game } from "./game.js";
 import { Renderer } from "./render.js";
+import { SoundPlayer } from "./sound.js";
 import { getActorSpriteFrame, loadAssets } from "./assets.js";
 import { SPELLS, ITEMS, CLASSES, BOONS } from "./data.js";
 
 const game = new Game();
 const renderer = new Renderer(game);
+const soundPlayer = new SoundPlayer();
 game.attachRenderer(renderer);
+game.attachSoundPlayer(soundPlayer);
 
 const screens = {
   menu: document.getElementById("menu-screen"),

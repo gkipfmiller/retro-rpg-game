@@ -286,6 +286,17 @@ function placeSecretKeyRoom(map, rooms, rng, keyItemId) {
     if (!placement) continue;
     carveRoom(map, placement.room);
     map[placement.door.y][placement.door.x].secretDoor = true;
+    const doorNeighbors = [
+      { x: placement.door.x + 1, y: placement.door.y },
+      { x: placement.door.x - 1, y: placement.door.y },
+      { x: placement.door.x, y: placement.door.y + 1 },
+      { x: placement.door.x, y: placement.door.y - 1 },
+    ];
+    for (const n of doorNeighbors) {
+      if (inBounds(map, n.x, n.y) && map[n.y][n.x].type === "floor" && map[n.y][n.x].hole) {
+        map[n.y][n.x].hole = false;
+      }
+    }
     const keyTile = {
       x: Math.floor(placement.room.x + placement.room.width / 2),
       y: Math.floor(placement.room.y + placement.room.height / 2),
@@ -354,7 +365,7 @@ function placeTreasureVault(map, rooms, rng, floorNumber, playerClass, vault) {
     keyItemId: vault.keyItemId,
     label: vault.label,
     loot,
-    gold: rng.int(floorNumber >= 21 ? 90 : floorNumber >= 11 ? 55 : 36, floorNumber >= 21 ? 130 : floorNumber >= 11 ? 80 : 52),
+    gold: rng.int(floorNumber >= 21 ? 56 : floorNumber >= 11 ? 34 : 22, floorNumber >= 21 ? 82 : floorNumber >= 11 ? 50 : 34),
   };
 }
 
@@ -618,12 +629,10 @@ function placeLoot(map, rooms, rng, floorNumber, playerClass, state) {
         ...(floorNumber >= 21 && rng.chance(0.6) ? [rng.pick([...CHEST_TABLE.endgame, ...lootPools.endgame])] : []),
       ],
       gold: rng.int(
-        10 + floorNumber,
+        6 + floorNumber,
         floorNumber >= 21
-          ? 34 + floorNumber * 2
-          : floorNumber >= 11
-            ? 18 + floorNumber
-            : 24 + floorNumber * 2
+          ? 20 + floorNumber
+          : 12 + floorNumber
       ),
     });
   }
@@ -847,7 +856,7 @@ export function generateBossFloor(runSeed, floorNumber, playerClass) {
       y: 11,
       opened: false,
       loot: [rewardItem],
-      gold: rng.int(20, 35),
+      gold: rng.int(12, 22),
     },
   ];
   map[11][28].chestId = "boss-reward";
@@ -925,7 +934,7 @@ export function generateFloor20BossFloor(runSeed, floorNumber, playerClass) {
       y: 12,
       opened: false,
       loot: [rewardItem],
-      gold: rng.int(32, 48),
+      gold: rng.int(20, 32),
     },
   ];
   map[12][30].chestId = "floor20-boss-reward";
@@ -1030,7 +1039,7 @@ export function generateFinalBossFloor(runSeed, floorNumber, playerClass) {
     y: 12,
     opened: false,
     loot: [rewardItem, rng.pick(bonusRewardPool.length ? bonusRewardPool : CHEST_TABLE.endgame)],
-    gold: rng.int(80, 120),
+    gold: rng.int(50, 80),
   };
   map[rewardChest.y][rewardChest.x].chestId = rewardChest.id;
 
@@ -1159,7 +1168,7 @@ export function getDropForEnemy(enemy, rng, playerClass) {
   }
 
   const floorNumber = enemy.floorNumber ?? 1;
-  const floorGoldBonus = floorNumber >= 21 ? 4 : floorNumber >= 11 ? Math.max(0, floorNumber - 6) : Math.max(0, floorNumber - 1);
+  const floorGoldBonus = floorNumber >= 21 ? 2 : floorNumber >= 11 ? Math.max(0, Math.floor((floorNumber - 8) / 2)) : Math.max(0, Math.floor((floorNumber - 2) / 2));
   return {
     gold: rng.int(template.gold[0], template.gold[1]) + floorGoldBonus,
     items: drops.filter((itemId) => ITEMS[itemId]),
@@ -1183,7 +1192,7 @@ function getMimicDrop(enemy, rng, playerClass) {
   if (rng.chance(0.35)) {
     items.push(rng.pick(floorNumber >= 11 ? ["greater_healing_potion", "greater_mana_potion"] : ["healing_potion", "mana_potion"]));
   }
-  const goldBonus = floorNumber >= 21 ? 20 : floorNumber >= 11 ? 12 : 6;
+  const goldBonus = floorNumber >= 21 ? 10 : floorNumber >= 11 ? 6 : 3;
   return {
     gold: rng.int(template.gold[0], template.gold[1]) + goldBonus,
     items: items.filter((itemId) => ITEMS[itemId]),
