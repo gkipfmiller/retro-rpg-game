@@ -1512,6 +1512,7 @@ export class Game {
         player.turnFlags.killMomentum = 0;
       }
     } else if (mode.type === "ranged" || mode.type === "ranged_ability") {
+      this.soundPlayer?.play('ranged_attack');
       this.renderer?.queueProjectile({
         kind: "arrow",
         from: projectileFrom ?? { x: player.x, y: player.y },
@@ -1656,6 +1657,7 @@ export class Game {
     const floor = this.state.run.currentFloor;
     floor.map[enemy.y][enemy.x].occupant = null;
     floor.enemies = floor.enemies.filter((entry) => entry.id !== enemy.id);
+    this.soundPlayer?.play('enemy_death');
     const enemyStats = this.getEnemyCombatStats(enemy);
     this.log(`${enemy.name} falls.`);
     this.state.run.runStats.kills += 1;
@@ -1695,6 +1697,7 @@ export class Game {
     player.xp += amount + bonusXp;
     while (player.level < 10 && player.xp >= this.getXpForLevel(player.level + 1)) {
       player.level += 1;
+      this.soundPlayer?.play('level_up');
       player.skillPoints += 1;
       player.baseStats.strength += player.classId === "warrior" ? 1 : 0;
       player.baseStats.vitality += player.classId === "warrior" ? 1 : player.level % 3 === 0 ? 1 : 0;
@@ -1935,14 +1938,17 @@ export class Game {
     if (item.category === "consumable") {
       player.lastAction = "item";
       if (item.effect.type === "heal") {
+        this.soundPlayer?.play('heal');
         const derived = this.getDerivedStats(player);
         player.hp = Math.min(derived.maxHp, player.hp + item.effect.value);
         this.log(`You recover ${item.effect.value} HP.`);
       } else if (item.effect.type === "mana") {
+        this.soundPlayer?.play('use_item');
         const derived = this.getDerivedStats(player);
         player.mana = Math.min(derived.maxMana, player.mana + item.effect.value);
         this.log(`You recover ${item.effect.value} mana.`);
       } else if (item.effect.type === "escape") {
+        this.soundPlayer?.play('use_item');
         const room = this.state.run.currentFloor.rooms[0];
         player.x = room.center.x;
         player.y = room.center.y;
@@ -1959,6 +1965,7 @@ export class Game {
     }
 
     if (item.category === "tome") {
+      this.soundPlayer?.play('use_item');
       player.lastAction = "item";
       if (!player.learnedSpells.includes(item.spellId)) {
         player.learnedSpells.push(item.spellId);
@@ -2070,6 +2077,7 @@ export class Game {
     this.state.run.player.x = this.state.run.currentFloor.spawn.x;
     this.state.run.player.y = this.state.run.currentFloor.spawn.y;
     this.updateVisibility();
+    this.soundPlayer?.play('stairs');
     this.log(`You descend to Floor ${nextFloor}.`);
     this.renderer?.showTransition(this.getFloorTransitionBanner(nextFloor));
     const bossEntryLine = this.getBossFloorEntryLine(nextFloor);
@@ -2279,6 +2287,7 @@ export class Game {
     }
 
     const player = this.state.run.player;
+    this.soundPlayer?.play('equip_item');
     const previousDerived = this.getDerivedStats(player);
     const previous = player.equipment[item.slot];
     player.equipment[item.slot] = entry.itemId;
@@ -2392,7 +2401,7 @@ export class Game {
     this.state.run.player.gold -= price;
     this.state.run.player.inventory.push({ id: `inv-${Date.now()}-${itemId}`, itemId });
     vendor.stock.splice(stockIndex, 1);
-    this.soundPlayer?.play('ui_confirm');
+    this.soundPlayer?.play('buy_sell');
     this.log(`Bought ${item.name}.`);
     const nextStacks = this.getVendorStacks();
     const nextIndex = this.getStackIndexByItemId(nextStacks, itemId, index);
@@ -2408,7 +2417,7 @@ export class Game {
     const value = Math.max(1, Math.floor(item.value * 0.15));
     this.state.run.player.gold += value;
     this.state.run.player.inventory.splice(entryIndex, 1);
-    this.soundPlayer?.play('ui_confirm');
+    this.soundPlayer?.play('buy_sell');
     this.log(`Sold ${item.name} for ${value} gold.`);
     this.openVendor(this.state.ui.overlay?.selectedIndex ?? 0);
   }
@@ -2810,6 +2819,7 @@ export class Game {
   }
 
   handleDeath(message) {
+    this.soundPlayer?.play('player_death');
     this.clearSave();
     this.log(message);
     const summary = this.buildRunSummary(this.state.run, message.replace(/^Slain by /, "").replace(/^Killed by /, ""), "death");
@@ -2886,7 +2896,6 @@ export class Game {
         this.state.ui.overlay = null;
         break;
       case "inventory-use":
-        this.soundPlayer?.play('ui_confirm');
         this.equipInventoryIndex(Number(payload.index));
         break;
       case "inventory-select":
