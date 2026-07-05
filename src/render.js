@@ -185,22 +185,35 @@ function getThemeFloorAtlasCoord(theme, x, y) {
 
 function getThemeWallAtlasCoord(theme, map, x, y, options = {}) {
   if (theme !== "sunken_vault") return null;
-  const { useExploredMask = false } = options;
   const getTile = (tx, ty) => map[ty]?.[tx] ?? null;
+  // Autotiling must be fog-independent so a wall's atlas tile never changes as
+  // fog of war is revealed (the standard getWallSprite path works the same way).
+  // A wall is only ever revealed if it neighbours a floor tile (line of sight
+  // can never reach a wall walled off from every floor); walls with no floor
+  // neighbour stay unexplored forever, which is exactly what "void" represents.
+  const hasAdjacentFloor = (tx, ty) => {
+    for (let dy = -1; dy <= 1; dy += 1) {
+      for (let dx = -1; dx <= 1; dx += 1) {
+        if (dx === 0 && dy === 0) continue;
+        if (getTile(tx + dx, ty + dy)?.type === "floor") return true;
+      }
+    }
+    return false;
+  };
   const isVisibleWall = (tx, ty) => {
     const tile = getTile(tx, ty);
     if (!tile || tile.type !== "wall") return false;
-    if (!useExploredMask) return true;
-    return tile.explored || tile.visible;
+    return hasAdjacentFloor(tx, ty);
   };
   const isFloor = (tx, ty) => {
     const tile = getTile(tx, ty);
-    if (!tile || tile.type !== "floor") return false;
-    return tile.explored || tile.visible;
+    return Boolean(tile && tile.type === "floor");
   };
   const isVoid = (tx, ty) => {
     const tile = getTile(tx, ty);
-    return !tile || (!tile.explored && !tile.visible);
+    if (!tile) return true;
+    if (tile.type === "wall") return !hasAdjacentFloor(tx, ty);
+    return false;
   };
 
   const northWall = isVisibleWall(x, y - 1);
@@ -215,6 +228,11 @@ function getThemeWallAtlasCoord(theme, map, x, y, options = {}) {
   const southVoid = isVoid(x, y + 1);
   const westVoid = isVoid(x - 1, y);
   const eastVoid = isVoid(x + 1, y);
+  // A wall directly below a north-wall corner is a real vertical stub only when
+  // it keeps going down (wall/void two rows below). If floor sits two rows down,
+  // the wall below is instead the bottom of a 2-tall horizontal wall block, and
+  // the corner must stay a plain corner rather than drop a stub column.
+  const stubDropsBelow = southWall && !isFloor(x, y + 2);
 
   if (southFloor) {
     if (westFloor && !eastFloor) {
@@ -230,24 +248,40 @@ function getThemeWallAtlasCoord(theme, map, x, y, options = {}) {
     if (eastVoid) return [1, 0];
     if (!westWall && eastWall) return southWall ? [5, 0] : [1, 0];
     if (!eastWall && westWall) return southWall ? [6, 0] : [11, 0];
+    // A free-standing vertical wall (floor on both sides) that terminates here
+    // heading south needs the tapered pillar bottom [0,2], not a horizontal E/W
+    // wall tile. ([0,3] is the pillar *foot* and splays into a wide horizontal
+    // base that still reads as a sideways wall.) Guard on !northFloor so a lone
+    // tile with floor on all four sides keeps its old fallback.
+    if (westFloor && eastFloor && !northFloor) return [0, 2];
     return [2, 2];
   }
 
   if (northFloor) {
+    // Top corner where a horizontal wall runs off to one side. When a wall also
+    // sits directly below, the corner must connect down into it, so use the
+    // corner pieces that carry both the side rail and the centre column:
+    // [1,0] (connects east + south) on the left, [3,0] (west + south) on the
+    // right. This joins a 2-tall wall end to its bottom corner [1,2]/[3,2] and a
+    // dropped stub to the vertical wall below. Only a lone tile with void below
+    // (no south wall) keeps the side-only end caps [1,3]/[3,3].
     if (westFloor && !eastFloor) {
       if (eastVoid) return [11, 3];
-      return eastWall ? (southWall ? [6, 3] : [1, 3]) : (southWall ? [7, 3] : [11, 3]);
+      return eastWall ? (southWall ? [1, 0] : [1, 3]) : (southWall ? [7, 3] : [11, 3]);
     }
     if (eastFloor && !westFloor) {
       if (westVoid) return [8, 3];
-      return westWall ? (southWall ? [5, 3] : [3, 3]) : (southWall ? [4, 3] : [1, 3]);
+      return westWall ? (southWall ? [3, 0] : [3, 3]) : (stubDropsBelow ? [11, 0] : [1, 3]);
     }
     if (westVoid && eastVoid) return [9, 3];
     if (westVoid) return [8, 3];
     if (eastVoid) return [11, 3];
     const southVisible = southWall && !southVoid;
-    if (!westWall && eastWall) return southVisible ? [5, 3] : [1, 3];
-    if (!eastWall && westWall) return southVisible ? [6, 3] : [11, 3];
+    if (!westWall && eastWall) return southVisible ? [4, 3] : [1, 3];
+    if (!eastWall && westWall) return southVisible ? [4, 3] : [11, 3];
+    // A free-standing vertical wall (floor on both sides) terminating here
+    // heading north needs the pillar top cap [0,0], not a horizontal E/W wall.
+    if (westFloor && eastFloor) return [0, 0];
     return [2, 3];
   }
 
@@ -265,13 +299,18 @@ function getThemeWallAtlasCoord(theme, map, x, y, options = {}) {
     if (northVoid && southVoid) return [8, 1];
     if (northVoid) return [8, 0];
     if (southVoid) return [8, 3];
-    return southWall ? (northWall ? [8, 1] : [5, 0]) : [1, 0];
+    // Vertical wall with floor to the east. When a horizontal wall also joins
+    // from the west it must connect into it ([3,1], connects west); otherwise
+    // it is a plain floor-facing column [8,1].
+    return southWall ? (northWall ? (westWall ? [3, 1] : [8, 1]) : [5, 0]) : [1, 0];
   }
   if (westFloor && !eastFloor) {
     if (northVoid && southVoid) return [8, 1];
     if (northVoid) return [11, 0];
     if (southVoid) return [11, 3];
-    return southWall ? (northWall ? [8, 1] : [6, 0]) : [11, 0];
+    // Mirror of the eastFloor case: connect into a horizontal wall joining from
+    // the east ([1,1], connects east) when one is present.
+    return southWall ? (northWall ? (eastWall ? [1, 1] : [8, 1]) : [6, 0]) : [11, 0];
   }
 
   if (northVoid || southVoid || westVoid || eastVoid) {
@@ -281,8 +320,15 @@ function getThemeWallAtlasCoord(theme, map, x, y, options = {}) {
     if (southVoid && eastVoid) return [11, 3];
     if (northVoid) return [9, 0];
     if (southVoid) return [9, 3];
-    if (westVoid) return [8, 1];
-    if (eastVoid) return [11, 1];
+    // Void on one side only: the other three sides are walls, so this is a
+    // vertical wall with a horizontal wall branching off. Use the T-junction
+    // pieces that carry the horizontal rail into the wall ([1,1] connects east,
+    // [3,1] connects west) instead of the plain column [8,1]/[11,1], which would
+    // leave the branch disconnected. Void on both sides is a free-standing
+    // vertical wall and keeps the centred column [8,1].
+    if (westVoid && eastVoid) return [8, 1];
+    if (westVoid) return [1, 1];
+    if (eastVoid) return [3, 1];
   }
 
   const seFloor = isFloor(x + 1, y + 1);
