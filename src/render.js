@@ -2,12 +2,13 @@ import { CLASSES, ENEMIES, ITEMS, SPELLS, STATUS_DEFINITIONS, TRAPS } from "./da
 import {
   getActorSprite,
   getActorSpriteFrame,
-  getEntitySpriteId,
+  getEnemySpriteId,
   getFloorSprite,
   getItemSprite,
   getPickupSpriteId,
   getTrapPickupSpriteId,
   getTrapSprite,
+  getVendorSpriteId,
   getWallSprite,
 } from "./assets.js";
 import { clamp } from "./utils.js";
@@ -26,6 +27,14 @@ const COLORS = {
   chest: "#b47b32",
   trap: "#cf5f5f",
   health: "#cf5f5f",
+};
+
+// Actors draw at their native pixel proportions (16 source px = 1 tile), times this scale.
+const ACTOR_SCALES = {
+  bone_captain: 1.4,
+  sewer_bat: 0.7,
+  sludge_crawler: 0.7,
+  drain_tentacle: 0.6,
 };
 
 const FLOOR_THEMES = {
@@ -707,7 +716,7 @@ export class Renderer {
 
         if (tile.visible) {
           const stairsSprite = this.assets?.images[currentFloor.theme === "sunken_vault" ? this.assets.manifest.ladder : this.assets.manifest.stairs];
-          const vendorSpritePath = this.assets ? getActorSpriteFrame(this.assets.manifest, "vendor", animationFrame) : null;
+          const vendorSpritePath = this.assets ? getActorSpriteFrame(this.assets.manifest, getVendorSpriteId(this.assets.manifest, currentFloor.vendor), animationFrame) : null;
           const vendorSprite = vendorSpritePath ? this.assets?.images[vendorSpritePath] : null;
           const sage = currentFloor.sage;
           const sageSpritePath = (sage && !sage.vanished && sage.x === x && sage.y === y && this.assets)
@@ -734,8 +743,8 @@ export class Renderer {
           }
           if (tile.stairs && stairsSprite) ctx.drawImage(stairsSprite, px, py, tileSize, tileSize);
           if (tile.shrineId) this.drawShrineStructure(currentFloor.theme, tile, px, py, tileSize);
-          if (tile.vendor && vendorSprite) this.drawSprite(vendorSprite, px, py, tileSize, tileSize, 1.6);
-          if (sageSprite) this.drawSprite(sageSprite, px, py, tileSize, tileSize, 1.7);
+          if (tile.vendor && vendorSprite) this.drawActor(vendorSprite, px, py, tileSize);
+          if (sageSprite) this.drawActor(sageSprite, px, py, tileSize);
           if (tile.chestId && (currentFloor.theme === "sunken_vault" || floorNumber === 20)) {
             ctx.save();
             ctx.fillStyle = currentFloor.theme === "sunken_vault"
@@ -773,12 +782,10 @@ export class Renderer {
       if (enemy.disguised) continue;
       const tile = currentFloor.map[enemy.y][enemy.x];
       if (!tile.visible) continue;
-      const spritePath = this.assets ? getActorSpriteFrame(this.assets.manifest, getEntitySpriteId(enemy), animationFrame) : null;
+      const spritePath = this.assets ? getActorSpriteFrame(this.assets.manifest, getEnemySpriteId(this.assets.manifest, enemy), animationFrame) : null;
       const sprite = spritePath ? this.assets?.images[spritePath] : null;
       if (sprite) {
-        const isBoss = ENEMIES[enemy.templateId]?.behavior === "boss";
-        const scale = enemy.templateId === "abyssal_overlord" ? 1.45 : isBoss ? 1.55 : 1.45;
-        this.drawSprite(sprite, offsetX + enemy.x * tileSize, offsetY + enemy.y * tileSize, tileSize, tileSize, scale);
+        this.drawActor(sprite, offsetX + enemy.x * tileSize, offsetY + enemy.y * tileSize, tileSize, ACTOR_SCALES[enemy.templateId] ?? 1);
         this.drawStatusPips(offsetX + enemy.x * tileSize, offsetY + enemy.y * tileSize, tileSize, enemy.statuses);
       } else {
         const template = ENEMIES[enemy.templateId];
@@ -796,7 +803,7 @@ export class Renderer {
     const playerSpritePath = this.assets ? getActorSpriteFrame(this.assets.manifest, player.classId, animationFrame) : null;
     const playerSprite = playerSpritePath ? this.assets?.images[playerSpritePath] : null;
     if (playerSprite) {
-      this.drawSprite(playerSprite, offsetX + player.x * tileSize, offsetY + player.y * tileSize, tileSize, tileSize, 1.75);
+      this.drawActor(playerSprite, offsetX + player.x * tileSize, offsetY + player.y * tileSize, tileSize);
       this.drawStatusPips(offsetX + player.x * tileSize, offsetY + player.y * tileSize, tileSize, player.statuses);
     } else {
       drawText(
@@ -819,6 +826,14 @@ export class Renderer {
     const offsetY = y + tileSize - height;
     this.ctx.imageSmoothingEnabled = false;
     this.ctx.drawImage(image, x, offsetY, width, height);
+  }
+
+  // Draws an actor bottom-aligned and horizontally centred on its tile, keeping the sprite's aspect ratio.
+  drawActor(image, x, y, tileSize, scale = 1) {
+    const width = Math.round((image.naturalWidth || image.width) / 16 * tileSize * scale);
+    const height = Math.round((image.naturalHeight || image.height) / 16 * tileSize * scale);
+    this.ctx.imageSmoothingEnabled = false;
+    this.ctx.drawImage(image, x + Math.round((tileSize - width) / 2), y + tileSize - height, width, height);
   }
 
   drawAtlasTile(image, coord, x, y, tileSize, sourceTileSize = 16) {
@@ -1080,7 +1095,7 @@ export class Renderer {
     if (!target) {
       panel.innerHTML = "<p>No target</p>";
     } else {
-      const spritePath = this.assets ? getActorSpriteFrame(this.assets.manifest, target.templateId, animationFrame) : null;
+      const spritePath = this.assets ? getActorSpriteFrame(this.assets.manifest, getEnemySpriteId(this.assets.manifest, target), animationFrame) : null;
       const spriteMarkup = spritePath ? `<img src="${spritePath}" alt="${target.name}" class="target-sprite">` : "";
       const bossLabel = target.templateId === "abyssal_overlord"
         ? `Final Boss${target.phaseTwo ? " • Phase 2" : " • Phase 1"}`

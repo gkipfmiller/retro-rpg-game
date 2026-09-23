@@ -859,6 +859,7 @@ export class Game {
   getEnemyCombatStats(enemy) {
     const template = ENEMIES[enemy.templateId];
     const sundered = this.getStatusValue(enemy, "sundered");
+    const hexedPenalty = this.hasStatus(enemy, "hexed") ? 2 : 0;
     const chilled = this.hasStatus(enemy, "chilled");
     const weakened = this.hasStatus(enemy, "weakened");
     const eliteDamageBonus = enemy.elite ? 1 : 0;
@@ -868,7 +869,7 @@ export class Game {
     return {
       ...template,
       accuracy: template.accuracy + (enemy.elite ? 3 : 0) + phaseAccuracyBonus - (chilled ? 6 : 0),
-      defense: Math.max(0, template.defense + (enemy.elite ? 1 : 0) + phaseDefenseBonus - sundered),
+      defense: Math.max(0, template.defense + (enemy.elite ? 1 : 0) + phaseDefenseBonus - sundered - hexedPenalty),
       damage: weakened
         ? [Math.max(1, (template.damage[0] + eliteDamageBonus + phaseDamageBonus) - 2), Math.max(1, (template.damage[1] + eliteDamageBonus + phaseDamageBonus) - 2)]
         : enemy.elite || phaseDamageBonus
@@ -913,7 +914,7 @@ export class Game {
   upsertStatus(entity, status) {
     if (entity === this.state.run?.player && status.id !== "arcane_shield") {
       if (this.getNegativeStatusIds().includes(status.id) && this.state.run.player.boonId === "ward_of_ash") {
-        const boonRng = createRng(hashSeed(this.state.run.turn, status.id, "ward-of-ash"));
+        const boonRng = createRng(hashSeed(this.state.run.runSeed, this.state.run.turn, status.id, "ward-of-ash"));
         if (boonRng.chance(0.6)) {
           this.log(`Ward of Ash repels ${STATUS_DEFINITIONS[status.id]?.name ?? status.id}.`);
           return;
@@ -922,7 +923,7 @@ export class Game {
       const hands = this.getHandsItem(entity);
       const effect = hands?.handsEffect;
       if (effect?.type === "ignoreSpellStatusChance" && status.source === "enemySpell") {
-        const rng = createRng(hashSeed(this.state.run.turn, status.id, hands.id));
+        const rng = createRng(hashSeed(this.state.run.runSeed, this.state.run.turn, status.id, hands.id));
         if (rng.chance(effect.chance)) {
           this.log(`${hands.name} repels the incoming ${STATUS_DEFINITIONS[status.id]?.name ?? status.id}.`);
           return;
@@ -1039,7 +1040,7 @@ export class Game {
     trap.revealed = true;
     const derived = this.getDerivedStats(this.state.run.player);
     const reduction = derived.trapReductionPct ? 1 - derived.trapReductionPct / 100 : 1;
-    const rng = createRng(hashSeed(this.state.run.turn, trap.id, "trap"));
+    const rng = createRng(hashSeed(this.state.run.runSeed, this.state.run.turn, trap.id, "trap"));
     const rawDamage = Math.floor((rng.int(template.damage[0], template.damage[1]) - Math.floor(derived.defense / 2)) * reduction);
     const damage = template.damage[1] === 0 ? 0 : Math.max(1, rawDamage);
     if (damage > 0) {
@@ -1477,7 +1478,7 @@ export class Game {
     const derived = this.getPlayerCombatSnapshot();
     const weapon = ITEMS[player.equipment.weapon];
     const enemyStats = this.getEnemyCombatStats(enemy);
-    const rng = createRng(hashSeed(this.state.run.turn, enemy.id, mode.type));
+    const rng = createRng(hashSeed(this.state.run.runSeed, this.state.run.turn, enemy.id, mode.type));
     const enchantment = weapon?.enchantment ?? null;
     const hitChance = clamp((mode.type === "spell" ? 90 + (derived.spellAccuracyFlat ?? 0) : derived.accuracy) - (enemyStats.evasion ?? 0), 10, 95);
     if (!rng.chance(hitChance / 100)) {
@@ -1680,7 +1681,7 @@ export class Game {
       this.log(`${weapon.name} restores ${weapon.enchantment.value} HP on the kill.`);
     }
     this.gainXp(enemyStats.xp);
-    const rng = createRng(hashSeed(this.state.run.turn, enemy.id, "drop"));
+    const rng = createRng(hashSeed(this.state.run.runSeed, this.state.run.turn, enemy.id, "drop"));
     const drop = getDropForEnemy(enemy, rng, this.state.run.player.classId);
     this.state.run.player.gold += drop.gold;
     if (drop.gold) this.log(`You gather ${drop.gold} gold.`);
@@ -1839,7 +1840,7 @@ export class Game {
       return;
     }
 
-    const shouldSpendMana = !(spell.type === "spell" && derived.freeCastChance && createRng(hashSeed(this.state.run.turn, spellId)).chance(derived.freeCastChance));
+    const shouldSpendMana = !(spell.type === "spell" && derived.freeCastChance && createRng(hashSeed(this.state.run.runSeed, this.state.run.turn, spellId)).chance(derived.freeCastChance));
     if (shouldSpendMana) {
       player.mana -= cost;
     }
@@ -2292,10 +2293,7 @@ export class Game {
     const previous = player.equipment[item.slot];
     player.equipment[item.slot] = entry.itemId;
     if (previous) {
-      const previousEntry = player.inventory.find((inventoryItem) => inventoryItem.itemId === previous);
-      if (!previousEntry) {
-        player.inventory.push({ id: `inv-${Date.now()}-${previous}`, itemId: previous });
-      }
+      player.inventory.push({ id: `inv-${Date.now()}-${previous}`, itemId: previous });
     }
     player.inventory.splice(entryIndex, 1);
     const derived = this.getDerivedStats(player);
@@ -2449,8 +2447,11 @@ export class Game {
 
   endPlayerTurn() {
     if (!this.state.run || this.state.mode !== "in_game") return;
+    // The player can die during their own action (e.g. a trap); enemies must not act on a corpse.
+    if (this.state.run.player.hp <= 0) return;
     this.state.run.turn += 1;
     this.takeEnemyTurns();
+    if (this.state.run.player.hp <= 0) return;
     this.processStatuses();
     if (!this.isEncounterActive()) {
       this.state.run.player.turnFlags.freeUtilityUsed = false;
@@ -2492,11 +2493,27 @@ export class Game {
       this.handleDeath("Succumbed to poison.");
       return;
     }
-    for (const enemy of this.state.run.currentFloor.enemies) {
+    for (const enemy of [...this.state.run.currentFloor.enemies]) {
       const previousStatuses = [...enemy.statuses];
+      let poisonDamage = 0;
       enemy.statuses = enemy.statuses
-        .map((status) => status.fresh ? { ...status, fresh: false } : { ...status, turns: status.turns - 1 })
+        .map((status) => {
+          if (status.fresh) return { ...status, fresh: false };
+          if (status.id === "poisoned") poisonDamage += status.value ?? 1;
+          return { ...status, turns: status.turns - 1 };
+        })
         .filter((status) => status.turns > 0);
+      if (poisonDamage > 0) {
+        enemy.hp -= poisonDamage;
+        if (this.state.run.currentFloor.map[enemy.y]?.[enemy.x]?.visible) {
+          this.renderer?.queueDamagePopup({ x: enemy.x, y: enemy.y, damage: poisonDamage, type: "enemy" });
+          this.log(`${enemy.name} takes ${poisonDamage} poison damage.`);
+        }
+        if (enemy.hp <= 0) {
+          this.killEnemy(enemy);
+          continue;
+        }
+      }
       if (this.state.run.currentTargetId === enemy.id) {
         for (const status of previousStatuses) {
           if (!enemy.statuses.some((entry) => entry.id === status.id)) {
@@ -2612,6 +2629,15 @@ export class Game {
         continue;
       }
 
+      // Lurkers are rooted in place and lash out at anything within reach.
+      if (template.behavior === "lurker") {
+        if (canSee && distance <= (template.range ?? 1)) {
+          this.enemyAttack(enemy);
+          if (player.hp <= 0) return;
+        }
+        continue;
+      }
+
       if (template.behavior === "boss" && distance === 1 && enemy.turnCounter % 3 === 0) {
         this.enemyAttack(enemy, "cleave");
         if (player.hp <= 0) return;
@@ -2712,7 +2738,7 @@ export class Game {
     const player = this.state.run.player;
     const template = this.getEnemyCombatStats(enemy);
     const derived = this.getPlayerCombatSnapshot();
-    const rng = createRng(hashSeed(this.state.run.turn, enemy.id, mode));
+    const rng = createRng(hashSeed(this.state.run.runSeed, this.state.run.turn, enemy.id, mode));
     const hitChance = clamp(template.accuracy - derived.evasion, 10, 95);
     if (mode === "spell" || mode === "abyssal_bolt") {
       const projectileKind = mode === "abyssal_bolt"
@@ -2819,6 +2845,8 @@ export class Game {
   }
 
   handleDeath(message) {
+    if (this.state.run.deathMessage) return;
+    this.state.run.deathMessage = message;
     this.soundPlayer?.play('player_death');
     this.clearSave();
     this.log(message);
@@ -2945,7 +2973,7 @@ export class Game {
         const result = overlayType === "victory" ? "victory" : "death";
         const cause = result === "victory"
           ? (this.state.run.floorNumber >= 30 ? "Dungeon Cleared" : `Reached Floor ${this.state.run.floorNumber}`)
-          : (this.state.logs[this.state.logs.length - 1] ?? "Unknown");
+          : (this.state.run.deathMessage ?? this.state.logs[this.state.logs.length - 1] ?? "Unknown");
         const summary = this.buildRunSummary(this.state.run, cause.replace(/^Slain by /, "").replace(/^Killed by /, ""), result);
         const saveResult = this.saveHighScore(payload.playerName, summary);
         if (saveResult.ok) {
@@ -2959,7 +2987,7 @@ export class Game {
             ? (this.state.run.floorNumber >= 30
               ? "The Abyssal Overlord is slain, and the throne below no longer stands empty."
               : `You reached Floor ${this.state.run.floorNumber} and cleared the current Milestone 2 build.`)
-            : this.state.logs[this.state.logs.length - 1];
+            : (this.state.run.deathMessage ?? this.state.logs[this.state.logs.length - 1]);
           if (result === "victory") {
             const { player, floorNumber, runStats, turn } = this.state.run;
             const unlockedSkills = player.unlockedSkills.length;

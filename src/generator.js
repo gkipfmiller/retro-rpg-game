@@ -207,6 +207,7 @@ function chooseEncounterPool(floorNumber) {
   if (floorNumber <= 4) return [...FLOOR_ENCOUNTERS.early, ...FLOOR_ENCOUNTERS.mid];
   if (floorNumber <= 10) return [...FLOOR_ENCOUNTERS.mid, ...FLOOR_ENCOUNTERS.late];
   if (floorNumber <= 15) return [...FLOOR_ENCOUNTERS.late, ...FLOOR_ENCOUNTERS.deep];
+  if (floorNumber <= 19 && floorNumber >= 16) return [...FLOOR_ENCOUNTERS.deep, ...FLOOR_ENCOUNTERS.abyssal, ...FLOOR_ENCOUNTERS.sewer];
   if (floorNumber <= 20) return [...FLOOR_ENCOUNTERS.deep, ...FLOOR_ENCOUNTERS.abyssal];
   return [...FLOOR_ENCOUNTERS.abyssal, ...FLOOR_ENCOUNTERS.endgame];
 }
@@ -670,7 +671,7 @@ function placeLoot(map, rooms, rng, floorNumber, playerClass, state) {
   return { chests, looseItems, mimics };
 }
 
-function placeVendor(map, room, rng, floorNumber) {
+function placeVendor(map, room, rng, floorNumber, playerClass) {
   if (!room) return null;
   const openTiles = findOpenTilesInRoom(room, map);
   if (!openTiles.length) return null;
@@ -687,6 +688,7 @@ function placeVendor(map, room, rng, floorNumber) {
       "scout_leathers", "bastion_mail", "enchanted_robe", "dusk_robe", "runespun_robe",
       "crystal_wand", "ember_rod", "moon_staff", "gauntlets_of_rime", "hexward_gloves",
       "gravedust_mitts", "runed_handwraps", "sigil_of_fortune",
+      "longbow", "composite_bow", "recurve_bow", "stalkers_hide", "marksmans_bracers",
     ]
     : floorNumber >= 11
       ? [
@@ -696,13 +698,15 @@ function placeVendor(map, room, rng, floorNumber) {
         "steel_greatsword", "war_hammer", "elder_staff", "chain_armor", "scout_leathers",
         "bastion_mail", "enchanted_robe", "dusk_robe", "runespun_robe", "crystal_wand",
         "ember_rod", "moon_staff", "gauntlets_of_rime", "hexward_gloves", "gravedust_mitts",
-        "runed_handwraps",
+        "runed_handwraps", "longbow", "composite_bow", "recurve_bow", "trackers_vest",
+        "stalkers_hide", "marksmans_bracers",
       ]
       : [
         "mana_potion", "greater_healing_potion", "greater_mana_potion",
         "militia_sword", "woodcutter_axe", "iron_sword", "raider_axe", "legion_spear",
         "hedge_wand", "ash_staff", "oak_staff", "ember_rod", "padded_jerkin",
         "leather_armor", "iron_cuirass", "cloth_robe", "apprentice_robes",
+        "hunting_bow", "composite_bow", "trackers_vest",
       ];
   const rarePool = floorNumber >= 21
     ? [
@@ -711,6 +715,7 @@ function placeVendor(map, room, rng, floorNumber) {
       "spellweave_mantle", "hexwoven_robe", "sundergrip_gauntlets", "spellcatcher_gloves",
       "cinderwraps", "wardens_grips", "talisman_of_vigor", "arcseal_pendant",
       "warbrand_token", "mirror_sigil", "charm_of_guarding", "chain_of_insight",
+      "venomstrike_bow", "galeforce_bow", "windrunner_coat", "shadowstep_mantle", "windgrip_gloves",
     ]
     : floorNumber >= 11
       ? [
@@ -719,26 +724,32 @@ function placeVendor(map, room, rng, floorNumber) {
         "spellweave_mantle", "hexwoven_robe", "sundergrip_gauntlets", "spellcatcher_gloves",
         "cinderwraps", "wardens_grips", "talisman_of_vigor", "arcseal_pendant",
         "warbrand_token", "mirror_sigil", "charm_of_guarding", "chain_of_insight",
+        "venomstrike_bow", "galeforce_bow", "windrunner_coat", "shadowstep_mantle", "windgrip_gloves",
       ]
       : [];
   const bossPool = floorNumber >= 21
     ? [
       "sunfire_blade", "soulreaver_axe", "voidglass_staff", "astral_wand",
       "abyssal_plate", "starweave_robe", "void_heart",
+      "voidpiercer_bow", "stormstring_bow", "voidhide_armor",
     ]
     : [];
 
+  const fitsClass = (itemId) => !ITEMS[itemId]?.classBias || ITEMS[itemId].classBias === playerClass;
+  const classBasePool = basePool.filter(fitsClass);
+  const classRarePool = rarePool.filter(fitsClass);
+  const classBossPool = bossPool.filter(fitsClass);
   const stock = Array.from({ length: guaranteedHealingPotions }, () => "healing_potion");
   const seen = new Set(stock);
   while (stock.length < stockSize) {
-    let pool = basePool;
-    if (bossPool.length && rng.chance(0.08)) {
-      pool = bossPool;
-    } else if (rarePool.length && rng.chance(floorNumber >= 21 ? 0.18 : 0.12)) {
-      pool = rarePool;
+    let pool = classBasePool;
+    if (classBossPool.length && rng.chance(0.08)) {
+      pool = classBossPool;
+    } else if (classRarePool.length && rng.chance(floorNumber >= 21 ? 0.18 : 0.12)) {
+      pool = classRarePool;
     }
     const candidates = pool.filter((itemId) => !seen.has(itemId));
-    const fallback = basePool.filter((itemId) => !seen.has(itemId));
+    const fallback = classBasePool.filter((itemId) => !seen.has(itemId));
     const itemId = rng.pick(candidates.length ? candidates : fallback.length ? fallback : pool);
     stock.push(itemId);
     seen.add(itemId);
@@ -1108,7 +1119,7 @@ export function generateFloor(runSeed, floorNumber, playerClass) {
     const traps = placeTraps(map, rooms, rng, floorNumber, trapCount);
     const { chests, looseItems, mimics } = placeLoot(map, rooms, rng, floorNumber, playerClass, state);
     enemies.push(...mimics);
-    const vendor = placeVendor(map, vendorRoom, rng, floorNumber);
+    const vendor = placeVendor(map, vendorRoom, rng, floorNumber, playerClass);
 
     const startOpenTiles = findOpenTilesInRoom(rooms[0], map);
     if (startOpenTiles.length >= 2) {
@@ -1147,17 +1158,29 @@ export function getDropForEnemy(enemy, rng, playerClass) {
     return getMimicDrop(enemy, rng, playerClass);
   }
   const drops = [];
-  const deepBiasPool = playerClass === "warrior"
-    ? ["steel_greatsword", "war_hammer", "butcher_cleaver", "flame_touched_sword", "vampire_axe", "sundering_hammer", "guardian_plate", "emberguard_cuirass", "vanguard_warplate", "bastion_mail", "gauntlets_of_rime", "gravedust_mitts", "sundergrip_gauntlets", "wardens_grips", "ring_of_resolve", "talisman_of_vigor", "warbrand_token", "charm_of_guarding", "greater_healing_potion"]
-    : ["elder_staff", "storm_wand", "moon_staff", "runic_staff", "sage_wand", "archmage_robe", "spellweave_mantle", "hexwoven_robe", "runespun_robe", "hexward_gloves", "runed_handwraps", "spellcatcher_gloves", "cinderwraps", "seal_of_clarity", "spark_charm", "arcseal_pendant", "mirror_sigil", "chain_of_insight", "greater_mana_potion", "frost_shard_tome", "blink_tome", "chain_bolt_tome", "arcane_pulse_tome", "ice_shatter_tome", "frailty_hex_tome", "arcane_burst_tome"];
-  const endgameBiasPool = playerClass === "warrior"
-    ? ["sunfire_blade", "soulreaver_axe", "abyssal_plate", "void_heart", "greater_healing_potion"]
-    : ["voidglass_staff", "astral_wand", "starweave_robe", "void_heart", "greater_mana_potion", "arcane_pulse_tome", "ice_shatter_tome", "arcane_burst_tome"];
+  const dropPools = {
+    warrior: {
+      bias: ["militia_sword", "woodcutter_axe", "iron_sword", "raider_axe", "legion_spear", "padded_jerkin", "chain_armor", "scout_leathers", "healing_potion"],
+      deep: ["steel_greatsword", "war_hammer", "butcher_cleaver", "flame_touched_sword", "vampire_axe", "sundering_hammer", "guardian_plate", "emberguard_cuirass", "vanguard_warplate", "bastion_mail", "gauntlets_of_rime", "gravedust_mitts", "sundergrip_gauntlets", "wardens_grips", "ring_of_resolve", "talisman_of_vigor", "warbrand_token", "charm_of_guarding", "greater_healing_potion"],
+      endgame: ["sunfire_blade", "soulreaver_axe", "abyssal_plate", "void_heart", "greater_healing_potion"],
+    },
+    wizard: {
+      bias: ["hedge_wand", "ash_staff", "oak_staff", "crystal_wand", "ember_rod", "apprentice_robes", "enchanted_robe", "dusk_robe", "mana_potion"],
+      deep: ["elder_staff", "storm_wand", "moon_staff", "runic_staff", "sage_wand", "archmage_robe", "spellweave_mantle", "hexwoven_robe", "runespun_robe", "hexward_gloves", "runed_handwraps", "spellcatcher_gloves", "cinderwraps", "seal_of_clarity", "spark_charm", "arcseal_pendant", "mirror_sigil", "chain_of_insight", "greater_mana_potion", "frost_shard_tome", "blink_tome", "chain_bolt_tome", "arcane_pulse_tome", "ice_shatter_tome", "frailty_hex_tome", "arcane_burst_tome"],
+      endgame: ["voidglass_staff", "astral_wand", "starweave_robe", "void_heart", "greater_mana_potion", "arcane_pulse_tome", "ice_shatter_tome", "arcane_burst_tome"],
+    },
+    ranger: {
+      bias: ["hunting_bow", "longbow", "composite_bow", "trackers_vest", "scout_leathers", "padded_jerkin", "healing_potion"],
+      deep: ["recurve_bow", "venomstrike_bow", "galeforce_bow", "stalkers_hide", "windrunner_coat", "shadowstep_mantle", "marksmans_bracers", "windgrip_gloves", "ring_of_precision", "talisman_of_vigor", "mirror_sigil", "charm_of_guarding", "greater_healing_potion"],
+      endgame: ["voidpiercer_bow", "stormstring_bow", "voidhide_armor", "void_heart", "greater_healing_potion"],
+    },
+  };
+  const classDropPools = dropPools[playerClass] ?? dropPools.warrior;
+  const deepBiasPool = classDropPools.deep;
+  const endgameBiasPool = classDropPools.endgame;
 
   if (rng.chance((enemy.floorNumber ?? 1) >= 11 ? 0.26 : 0.52)) {
-    const biasPool = playerClass === "warrior"
-      ? ["militia_sword", "woodcutter_axe", "iron_sword", "raider_axe", "legion_spear", "padded_jerkin", "chain_armor", "scout_leathers", "healing_potion"]
-      : ["hedge_wand", "ash_staff", "oak_staff", "crystal_wand", "ember_rod", "apprentice_robes", "enchanted_robe", "dusk_robe", "mana_potion"];
+    const biasPool = classDropPools.bias;
     const midGame = (enemy.floorNumber ?? 1) >= 11;
     const endgame = (enemy.floorNumber ?? 1) >= 21;
     if (rng.chance(endgame ? 0.1 : midGame ? 0.05 : 0.09)) {
@@ -1178,15 +1201,24 @@ export function getDropForEnemy(enemy, rng, playerClass) {
 function getMimicDrop(enemy, rng, playerClass) {
   const floorNumber = enemy.floorNumber ?? 1;
   const template = ENEMIES.mimic;
-  const earlyPool = playerClass === "warrior"
-    ? ["iron_sword", "legion_spear", "butcher_cleaver", "chain_armor", "scout_leathers", "ring_of_precision", "ring_of_resolve"]
-    : ["crystal_wand", "ember_rod", "oak_staff", "enchanted_robe", "dusk_robe", "seal_of_clarity", "charm_of_focus"];
-  const midPool = playerClass === "warrior"
-    ? ["flame_touched_sword", "vampire_axe", "steel_greatsword", "war_hammer", "sundering_hammer", "guardian_plate", "emberguard_cuirass", "talisman_of_vigor", "warbrand_token", "sundergrip_gauntlets"]
-    : ["runic_staff", "sage_wand", "storm_wand", "moon_staff", "spellweave_mantle", "hexwoven_robe", "archmage_robe", "arcseal_pendant", "spellcatcher_gloves", "cinderwraps"];
-  const latePool = playerClass === "warrior"
-    ? ["sunfire_blade", "soulreaver_axe", "abyssal_plate", "captains_blade", "void_heart", "charm_of_guarding"]
-    : ["voidglass_staff", "astral_wand", "starweave_robe", "void_heart", "chain_of_insight", "arcane_burst_tome"];
+  const mimicPools = {
+    warrior: {
+      early: ["iron_sword", "legion_spear", "butcher_cleaver", "chain_armor", "scout_leathers", "ring_of_precision", "ring_of_resolve"],
+      mid: ["flame_touched_sword", "vampire_axe", "steel_greatsword", "war_hammer", "sundering_hammer", "guardian_plate", "emberguard_cuirass", "talisman_of_vigor", "warbrand_token", "sundergrip_gauntlets"],
+      late: ["sunfire_blade", "soulreaver_axe", "abyssal_plate", "captains_blade", "void_heart", "charm_of_guarding"],
+    },
+    wizard: {
+      early: ["crystal_wand", "ember_rod", "oak_staff", "enchanted_robe", "dusk_robe", "seal_of_clarity", "charm_of_focus"],
+      mid: ["runic_staff", "sage_wand", "storm_wand", "moon_staff", "spellweave_mantle", "hexwoven_robe", "archmage_robe", "arcseal_pendant", "spellcatcher_gloves", "cinderwraps"],
+      late: ["voidglass_staff", "astral_wand", "starweave_robe", "void_heart", "chain_of_insight", "arcane_burst_tome"],
+    },
+    ranger: {
+      early: ["hunting_bow", "longbow", "composite_bow", "scout_leathers", "trackers_vest", "ring_of_precision", "ring_of_resolve"],
+      mid: ["recurve_bow", "venomstrike_bow", "galeforce_bow", "stalkers_hide", "windrunner_coat", "shadowstep_mantle", "marksmans_bracers", "windgrip_gloves", "talisman_of_vigor", "mirror_sigil"],
+      late: ["voidpiercer_bow", "stormstring_bow", "voidhide_armor", "hawk_bow", "void_heart", "charm_of_guarding"],
+    },
+  };
+  const { early: earlyPool, mid: midPool, late: latePool } = mimicPools[playerClass] ?? mimicPools.warrior;
   const pool = floorNumber >= 21 ? [...midPool, ...latePool] : floorNumber >= 11 ? [...earlyPool, ...midPool] : earlyPool;
   const items = [rng.pick(pool)];
   if (rng.chance(0.35)) {

@@ -15,9 +15,31 @@ const FLOOR_FRAMES = [
   "floor_8.png",
 ];
 
+const UNDEADS = "./RPG Art Assets/Assets/Undeads";
+
 function frameSet(prefix, count = 4) {
   return Array.from({ length: count }, (_, index) => `${BASE}/${prefix}${index}.png`);
 }
+
+// Frame sets whose files are numbered from 1 instead of 0.
+function frameSetFrom1(prefix, count) {
+  return Array.from({ length: count }, (_, index) => `${prefix}${index + 1}.png`);
+}
+
+// Actors built by palette-swapping another actor's frames once at load time.
+// Palette fields: hue (0-1, replaces hue of saturated pixels), hueShift, satMul, valMul, minSat.
+const ACTOR_RECOLORS = {
+  bone_captain: { source: frameSet("necromancer_anim_f"), palette: { hue: 0.12, satMul: 0.35, valMul: 1.25 } },
+  vendor_void_huckster: { source: frameSet("lizard_f_idle_anim_f"), palette: { hue: 0.75, valMul: 0.85 } },
+  vendor_ember_factor: { source: frameSet("dwarf_m_idle_anim_f"), palette: { hueShift: 0.93, satMul: 1.2 } },
+};
+
+// Elites get a blood-red palette; enemies that are already red get gold instead so the swap still reads.
+const ELITE_PALETTE = { hue: 0, satMul: 1.2 };
+const ELITE_PALETTE_FOR_RED = { hue: 0.12, satMul: 1.2 };
+const NO_ELITE_VARIANT = new Set(["mimic"]);
+// Maroon sprites that miss the automatic red check but still need the gold elite palette.
+const FORCE_GOLD_ELITE = new Set(["sewer_bat"]);
 
 const assetManifest = {
   floorTiles: FLOOR_FRAMES.map((file) => `${BASE}/${file}`),
@@ -86,7 +108,7 @@ const assetManifest = {
     wizard: frameSet("wizzard_f_idle_anim_f"),
     ranger: frameSet("archer_m_idle_anim_f"),
     sage: frameSet("wizzard_m_idle_anim_f"),
-    rat: frameSet("tiny_slug_anim_f"),
+    rat: frameSet("tiny_slug_anim_f"), // displayed as "Slug"
     goblin: frameSet("goblin_run_anim_f"),
     slime: frameSet("swampy_anim_f"),
     skeleton: frameSet("skelet_run_anim_f"),
@@ -97,84 +119,94 @@ const assetManifest = {
     shaman: frameSet("orc_shaman_run_anim_f"),
     chort: frameSet("chort_run_anim_f"),
     infernal_imp: frameSet("imp_run_anim_f"),
-    void_stalker: frameSet("lizard_m_run_anim_f"),
+    void_stalker: frameSet("wogol_run_anim_f"),
     doom_ogre: frameSet("ogre_run_anim_f"),
     abyssal_overlord: frameSet("big_demon_run_anim_f"),
-    bone_captain: frameSet("necromancer_anim_f"),
+    bone_captain: frameSet("necromancer_anim_f"), // replaced by the ACTOR_RECOLORS variant at load
     patches: frameSet("big_zombie_run_anim_f"),
     vendor: frameSet("dwarf_m_idle_anim_f"),
+    vendor_wary_peddler: frameSet("dwarf_m_idle_anim_f"),
+    vendor_roadside_chapman: frameSet("dwarf_f_idle_anim_f"),
+    vendor_lantern_trader: frameSet("elf_m_idle_anim_f"),
+    vendor_ragpicker_broker: frameSet("lizard_f_idle_anim_f"),
+    vendor_tunnel_apothecary: frameSet("doc_idle_anim_f"),
+    vendor_grave_merchant: frameSet("elf_f_idle_anim_f"),
+    vendor_ash_dealer: frameSet("knight_f_idle_anim_f"),
     mimic: frameSet("chest_mimic_open_anim_f", 3),
     angel: frameSet("angel_idle_anim_f"),
     ice_zombie: frameSet("ice_zombie_anim_f"),
     pumpkin_golem: frameSet("pumpkin_dude_idle_anim_f"),
-    cursed_pumpkin: frameSet("pumpkin_dude_run_anim_f"),
+    cursed_pumpkin: frameSetFrom1(`${UNDEADS}/Zombie/zombie_run_anim/zombie_run_anim_f`, 4), // displayed as "Grave Husk"
+    sewer_bat: frameSetFrom1(`${SEWER}/frames/bat_f`, 4),
+    sludge_crawler: frameSetFrom1(`${SEWER}/frames/slugbot_walk_f`, 8),
+    drain_tentacle: frameSetFrom1(`${SEWER}/frames/tentacle-f`, 8),
   },
   items: {
     rusty_sword: `${BASE}/weapon_rusty_sword.png`,
     militia_sword: `${BASE}/weapon_katana.png`,
     woodcutter_axe: `${BASE}/weapon_axe.png`,
     iron_sword: `${BASE}/weapon_regular_sword.png`,
-    raider_axe: `${BASE}/weapon_axe.png`,
+    raider_axe: `${BASE}/weapon_throwing_axe.png`,
     legion_spear: `${BASE}/weapon_spear.png`,
     butcher_cleaver: `${BASE}/weapon_cleaver.png`,
     flame_touched_sword: `${BASE}/weapon_red_gem_sword.png`,
     vampire_axe: `${BASE}/weapon_double_axe.png`,
-    steel_greatsword: `${BASE}/weapon_lavish_sword.png`,
+    steel_greatsword: `${BASE}/weapon_knight_sword.png`,
     war_hammer: `${BASE}/weapon_big_hammer.png`,
     sundering_hammer: `${BASE}/weapon_hammer.png`,
     sunfire_blade: `${BASE}/weapon_lavish_sword.png`,
     soulreaver_axe: `${BASE}/weapon_waraxe.png`,
     captains_blade: `${BASE}/weapon_golden_sword.png`,
-    apprentice_staff: `${BASE}/weapon_green_magic_staff.png`,
-    hedge_wand: `${BASE}/weapon_red_magic_staff.png`,
-    ash_staff: `${BASE}/weapon_green_magic_staff.png`,
-    oak_staff: `${BASE}/weapon_green_magic_staff.png`,
-    crystal_wand: `${BASE}/weapon_red_magic_staff.png`,
-    ember_rod: `${BASE}/weapon_red_magic_staff.png`,
-    moon_staff: `${BASE}/weapon_green_magic_staff.png`,
-    runic_staff: `${BASE}/weapon_green_magic_staff.png`,
-    elder_staff: `${BASE}/weapon_green_magic_staff.png`,
-    sage_wand: `${BASE}/weapon_red_magic_staff.png`,
-    storm_wand: `${BASE}/weapon_red_magic_staff.png`,
-    voidglass_staff: `${BASE}/weapon_green_magic_staff.png`,
-    astral_wand: `${BASE}/weapon_red_magic_staff.png`,
-    ember_staff: `${BASE}/weapon_red_magic_staff.png`,
-    short_bow: `${BASE}/weapon_bow.png`,
-    hunting_bow: `${BASE}/weapon_bow.png`,
-    longbow: `${BASE}/weapon_bow_2.png`,
-    composite_bow: `${BASE}/weapon_bow.png`,
-    recurve_bow: `${BASE}/weapon_bow_2.png`,
-    venomstrike_bow: `${BASE}/weapon_bow_2.png`,
-    galeforce_bow: `${BASE}/weapon_bow_2.png`,
-    voidpiercer_bow: `${BASE}/weapon_bow_2.png`,
-    stormstring_bow: `${BASE}/weapon_bow_2.png`,
-    hawk_bow: `${BASE}/weapon_bow_2.png`,
-    padded_jerkin: `${EXTRACTED}/armor_leather.png`,
-    leather_armor: `${EXTRACTED}/armor_leather.png`,
-    scout_leathers: `${EXTRACTED}/armor_leather.png`,
-    iron_cuirass: `${EXTRACTED}/armor_mail.png`,
-    chain_armor: `${EXTRACTED}/armor_mail.png`,
-    bastion_mail: `${EXTRACTED}/armor_mail.png`,
-    guardian_plate: `${EXTRACTED}/armor_plate.png`,
-    emberguard_cuirass: `${EXTRACTED}/armor_plate.png`,
-    vanguard_warplate: `${EXTRACTED}/armor_plate.png`,
-    abyssal_plate: `${EXTRACTED}/armor_plate.png`,
-    bulwark_armor: `${EXTRACTED}/armor_plate.png`,
+    apprentice_staff: `${EXTRACTED}/staff_apprentice.png`,
+    hedge_wand: `${EXTRACTED}/wand_hedge.png`,
+    ash_staff: `${EXTRACTED}/staff_ash.png`,
+    oak_staff: `${EXTRACTED}/staff_oak.png`,
+    crystal_wand: `${EXTRACTED}/wand_crystal.png`,
+    ember_rod: `${EXTRACTED}/rod_ember.png`,
+    moon_staff: `${EXTRACTED}/staff_moon.png`,
+    runic_staff: `${EXTRACTED}/staff_runic.png`,
+    elder_staff: `${EXTRACTED}/staff_elder.png`,
+    sage_wand: `${EXTRACTED}/wand_sage.png`,
+    storm_wand: `${EXTRACTED}/wand_storm.png`,
+    voidglass_staff: `${EXTRACTED}/staff_voidglass.png`,
+    astral_wand: `${EXTRACTED}/wand_astral.png`,
+    ember_staff: `${EXTRACTED}/staff_ember.png`,
+    short_bow: `${EXTRACTED}/bow_short.png`,
+    hunting_bow: `${EXTRACTED}/bow_hunting.png`,
+    longbow: `${EXTRACTED}/bow_long.png`,
+    composite_bow: `${EXTRACTED}/bow_composite.png`,
+    recurve_bow: `${EXTRACTED}/bow_recurve.png`,
+    venomstrike_bow: `${EXTRACTED}/bow_venomstrike.png`,
+    galeforce_bow: `${EXTRACTED}/bow_galeforce.png`,
+    voidpiercer_bow: `${EXTRACTED}/bow_voidpiercer.png`,
+    stormstring_bow: `${EXTRACTED}/bow_stormstring.png`,
+    hawk_bow: `${EXTRACTED}/bow_hawk.png`,
+    padded_jerkin: `${EXTRACTED}/armor_padded_jerkin.png`,
+    leather_armor: `${EXTRACTED}/armor_leather_vest.png`,
+    scout_leathers: `${EXTRACTED}/armor_scout.png`,
+    iron_cuirass: `${EXTRACTED}/armor_iron_cuirass.png`,
+    chain_armor: `${EXTRACTED}/armor_chain.png`,
+    bastion_mail: `${EXTRACTED}/armor_bastion.png`,
+    guardian_plate: `${EXTRACTED}/armor_guardian.png`,
+    emberguard_cuirass: `${EXTRACTED}/armor_emberguard.png`,
+    vanguard_warplate: `${EXTRACTED}/armor_vanguard.png`,
+    abyssal_plate: `${EXTRACTED}/armor_abyssal.png`,
+    bulwark_armor: `${EXTRACTED}/armor_bulwark.png`,
     cloth_robe: `${EXTRACTED}/robe_plain.png`,
     apprentice_robes: `${EXTRACTED}/robe_apprentice.png`,
     dusk_robe: `${EXTRACTED}/robe_dusk.png`,
     enchanted_robe: `${EXTRACTED}/robe_enchanted.png`,
     runespun_robe: `${EXTRACTED}/robe_runespun.png`,
-    archmage_robe: `${EXTRACTED}/robe_spellweave.png`,
+    archmage_robe: `${EXTRACTED}/robe_archmage.png`,
     spellweave_mantle: `${EXTRACTED}/robe_spellweave.png`,
     hexwoven_robe: `${EXTRACTED}/robe_hexwoven.png`,
     starweave_robe: `${EXTRACTED}/robe_starweave.png`,
     robe_of_the_adept: `${EXTRACTED}/robe_adept.png`,
-    trackers_vest: `${EXTRACTED}/armor_leather.png`,
-    stalkers_hide: `${EXTRACTED}/armor_leather.png`,
-    windrunner_coat: `${EXTRACTED}/armor_leather.png`,
-    shadowstep_mantle: `${EXTRACTED}/armor_leather.png`,
-    voidhide_armor: `${EXTRACTED}/armor_mail.png`,
+    trackers_vest: `${EXTRACTED}/hood_tracker.png`,
+    stalkers_hide: `${EXTRACTED}/hood_stalker.png`,
+    windrunner_coat: `${EXTRACTED}/hood_windrunner.png`,
+    shadowstep_mantle: `${EXTRACTED}/hood_shadowstep.png`,
+    voidhide_armor: `${EXTRACTED}/armor_voidhide.png`,
     gauntlets_of_rime: `${EXTRACTED}/hands_rime.png`,
     hexward_gloves: `${EXTRACTED}/hands_hexward.png`,
     gravedust_mitts: `${EXTRACTED}/hands_gravedust.png`,
@@ -183,20 +215,20 @@ const assetManifest = {
     spellcatcher_gloves: `${EXTRACTED}/hands_spellcatcher.png`,
     cinderwraps: `${EXTRACTED}/hands_cinder.png`,
     wardens_grips: `${EXTRACTED}/hands_warden.png`,
-    marksmans_bracers: `${EXTRACTED}/hands_rime.png`,
-    windgrip_gloves: `${EXTRACTED}/hands_warden.png`,
+    marksmans_bracers: `${EXTRACTED}/hands_marksman.png`,
+    windgrip_gloves: `${EXTRACTED}/hands_windgrip.png`,
     ring_of_precision: `${EXTRACTED}/ring_red.png`,
     ring_of_resolve: `${EXTRACTED}/ring_green.png`,
     amulet_of_vitality: `${EXTRACTED}/amulet_green.png`,
     seal_of_clarity: `${EXTRACTED}/ring_blue.png`,
     charm_of_focus: `${EXTRACTED}/amulet_focus.png`,
-    wardens_loop: `${EXTRACTED}/ring_dark.png`,
+    wardens_loop: `${EXTRACTED}/ring_warden.png`,
     spark_charm: `${EXTRACTED}/amulet_spark.png`,
     sigil_of_fortune: `${EXTRACTED}/ring_gold.png`,
     talisman_of_vigor: `${EXTRACTED}/amulet_pink.png`,
-    arcseal_pendant: `${EXTRACTED}/amulet_dark.png`,
-    warbrand_token: `${EXTRACTED}/ring_orange.png`,
-    mirror_sigil: `${EXTRACTED}/ring_white.png`,
+    arcseal_pendant: `${EXTRACTED}/amulet_arcseal.png`,
+    warbrand_token: `${EXTRACTED}/ring_warbrand.png`,
+    mirror_sigil: `${EXTRACTED}/ring_mirror.png`,
     charm_of_guarding: `${EXTRACTED}/amulet_white.png`,
     chain_of_insight: `${EXTRACTED}/amulet_chain.png`,
     void_heart: `${EXTRACTED}/amulet_skull.png`,
@@ -204,19 +236,19 @@ const assetManifest = {
     greater_healing_potion: `${BASE}/flask_big_red.png`,
     mana_potion: `${BASE}/flask_blue.png`,
     greater_mana_potion: `${BASE}/flask_big_blue.png`,
-    scroll_of_escape: `${EXTRACTED}/scroll_escape.png`,
-    crypt_vault_key: `${EXTRACTED}/amulet_darkgem.png`,
-    sunken_vault_key: `${EXTRACTED}/amulet_white.png`,
-    void_vault_key: `${EXTRACTED}/amulet_crimson.png`,
-    magic_missile_tome: `${EXTRACTED}/tome_red.png`,
-    arcane_shield_tome: `${EXTRACTED}/tome_grey.png`,
-    frost_shard_tome: `${EXTRACTED}/tome_grey.png`,
-    blink_tome: `${EXTRACTED}/tome_red.png`,
-    chain_bolt_tome: `${EXTRACTED}/tome_gold.png`,
-    arcane_pulse_tome: `${EXTRACTED}/tome_grey.png`,
-    ice_shatter_tome: `${EXTRACTED}/tome_grey.png`,
-    frailty_hex_tome: `${EXTRACTED}/tome_red.png`,
-    arcane_burst_tome: `${EXTRACTED}/tome_gold.png`,
+    scroll_of_escape: `${EXTRACTED}/scroll_escape_real.png`,
+    crypt_vault_key: `${EXTRACTED}/key_crypt.png`,
+    sunken_vault_key: `${EXTRACTED}/key_sunken.png`,
+    void_vault_key: `${EXTRACTED}/key_void.png`,
+    magic_missile_tome: `${EXTRACTED}/tome_arcane_violet.png`,
+    arcane_shield_tome: `${EXTRACTED}/tome_ward_teal.png`,
+    frost_shard_tome: `${EXTRACTED}/tome_frost_blue.png`,
+    blink_tome: `${EXTRACTED}/tome_void_cyan.png`,
+    chain_bolt_tome: `${EXTRACTED}/tome_storm_yellow.png`,
+    arcane_pulse_tome: `${EXTRACTED}/tome_pulse_magenta.png`,
+    ice_shatter_tome: `${EXTRACTED}/tome_deep_frost.png`,
+    frailty_hex_tome: `${EXTRACTED}/tome_hex_green.png`,
+    arcane_burst_tome: `${EXTRACTED}/tome_burst_orange.png`,
   },
 };
 
@@ -261,14 +293,133 @@ export async function loadAssets() {
   collectPaths(assetManifest.props);
   collectPaths(assetManifest.actors);
   collectPaths(assetManifest.items);
+  Object.values(ACTOR_RECOLORS).forEach((entry) => collectPaths(entry.source));
 
   const loaded = await Promise.all([...paths].map(createImage));
   const images = Object.fromEntries(loaded.map(({ path, image }) => [path, image]));
+
+  await buildRecoloredActors(images);
 
   return {
     manifest: assetManifest,
     images,
   };
+}
+
+function rgbToHsv(r, g, b) {
+  const max = Math.max(r, g, b);
+  const delta = max - Math.min(r, g, b);
+  let hue = 0;
+  if (delta) {
+    if (max === r) hue = ((g - b) / delta) % 6;
+    else if (max === g) hue = (b - r) / delta + 2;
+    else hue = (r - g) / delta + 4;
+    hue /= 6;
+    if (hue < 0) hue += 1;
+  }
+  return [hue, max ? delta / max : 0, max];
+}
+
+function hsvToRgb(hue, sat, val) {
+  const sector = Math.floor(hue * 6);
+  const f = hue * 6 - sector;
+  const p = val * (1 - sat);
+  const q = val * (1 - f * sat);
+  const t = val * (1 - (1 - f) * sat);
+  switch (((sector % 6) + 6) % 6) {
+    case 0: return [val, t, p];
+    case 1: return [q, val, p];
+    case 2: return [p, val, t];
+    case 3: return [p, q, val];
+    case 4: return [t, p, val];
+    default: return [val, p, q];
+  }
+}
+
+function readPixels(image) {
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(image, 0, 0);
+  return { canvas, ctx, data: ctx.getImageData(0, 0, canvas.width, canvas.height) };
+}
+
+// Returns true when most saturated pixels are red, so a red elite palette would not stand out.
+function isMostlyRed(image) {
+  const { data } = readPixels(image);
+  let red = 0;
+  let saturated = 0;
+  for (let index = 0; index < data.data.length; index += 4) {
+    if (!data.data[index + 3]) continue;
+    const [hue, sat] = rgbToHsv(data.data[index] / 255, data.data[index + 1] / 255, data.data[index + 2] / 255);
+    if (sat < 0.25) continue;
+    saturated += 1;
+    if (hue < 0.05 || hue > 0.93) red += 1;
+  }
+  return saturated > 0 && red / saturated > 0.4;
+}
+
+function recolorImage(image, { hue = null, hueShift = null, satMul = 1, valMul = 1, minSat = 0.25 }) {
+  const { canvas, ctx, data } = readPixels(image);
+  const pixels = data.data;
+  for (let index = 0; index < pixels.length; index += 4) {
+    if (!pixels[index + 3]) continue;
+    let [h, s, v] = rgbToHsv(pixels[index] / 255, pixels[index + 1] / 255, pixels[index + 2] / 255);
+    if (s >= minSat) {
+      if (hue !== null) h = hue;
+      if (hueShift !== null) h = (h + hueShift) % 1;
+      s = Math.min(1, s * satMul);
+    }
+    v = Math.min(1, v * valMul);
+    const [r, g, b] = hsvToRgb(h, s, v);
+    pixels[index] = Math.round(r * 255);
+    pixels[index + 1] = Math.round(g * 255);
+    pixels[index + 2] = Math.round(b * 255);
+  }
+  ctx.putImageData(data, 0, 0);
+  // Data URLs double as image keys, so recolored frames also work in <img> tags (target panel, portraits).
+  return canvas.toDataURL();
+}
+
+async function recolorFrames(images, framePaths, palette) {
+  const keys = [];
+  for (const path of framePaths) {
+    const source = images[path];
+    if (!source) return null;
+    const key = recolorImage(source, palette);
+    const { image } = await createImage(key);
+    images[key] = image;
+    keys.push(key);
+  }
+  return keys;
+}
+
+async function buildRecoloredActors(images) {
+  for (const [actorId, entry] of Object.entries(ACTOR_RECOLORS)) {
+    const frames = await recolorFrames(images, entry.source, entry.palette);
+    if (frames) assetManifest.actors[actorId] = frames;
+  }
+  for (const [enemyId, template] of Object.entries(ENEMIES)) {
+    if (template.behavior === "boss" || NO_ELITE_VARIANT.has(enemyId)) continue;
+    const framePaths = assetManifest.actors[enemyId];
+    const firstFrame = framePaths && images[framePaths[0]];
+    if (!firstFrame) continue;
+    const palette = FORCE_GOLD_ELITE.has(enemyId) || isMostlyRed(firstFrame) ? ELITE_PALETTE_FOR_RED : ELITE_PALETTE;
+    const frames = await recolorFrames(images, framePaths, palette);
+    if (frames) assetManifest.actors[`${enemyId}__elite`] = frames;
+  }
+}
+
+export function getEnemySpriteId(manifest, enemy) {
+  if (!enemy?.templateId) return null;
+  const eliteId = `${enemy.templateId}__elite`;
+  return enemy.elite && manifest?.actors?.[eliteId] ? eliteId : enemy.templateId;
+}
+
+export function getVendorSpriteId(manifest, vendor) {
+  const archetypeId = vendor?.archetypeId ? `vendor_${vendor.archetypeId}` : null;
+  return archetypeId && manifest?.actors?.[archetypeId] ? archetypeId : "vendor";
 }
 
 export function getActorSprite(manifest, actorId) {

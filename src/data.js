@@ -65,7 +65,7 @@ export const SKILL_TREES = {
       id: "vanguard_tactics",
       name: "Vanguard Tactics",
       skills: [
-        { id: "warrior_tactic_1", name: "Combat Footing", description: "+5 accuracy and +10% trap avoidance.", effect: { stat: "accuracyFlat", value: 5 } },
+        { id: "warrior_tactic_1", name: "Combat Footing", description: "+5 accuracy.", effect: { stat: "accuracyFlat", value: 5 } },
         { id: "warrior_tactic_2", name: "Brace", description: "-25% trap damage.", effect: { stat: "trapReductionPct", value: 25 } },
         { id: "warrior_tactic_3", name: "Charge", description: "Power Strike reaches 2 tiles in a line.", effect: { stat: "chargeRange", value: 2 } },
         { id: "warrior_tactic_4", name: "Disrupting Strike", description: "Melee hits weaken enemies.", effect: { stat: "weakenOnHit", value: 1 } },
@@ -92,7 +92,7 @@ export const SKILL_TREES = {
         { id: "wizard_ward_1", name: "Arcane Reserves", description: "+10 max mana.", effect: { stat: "maxManaFlat", value: 10 } },
         { id: "wizard_ward_2", name: "Mana Shielding", description: "Above 50% mana, gain +1 defense.", effect: { stat: "manaShieldDefense", value: 1 } },
         { id: "wizard_ward_3", name: "Steady Mind", description: "Utility spells cost 1 less mana.", effect: { stat: "utilityDiscount", value: 1 } },
-        { id: "wizard_ward_4", name: "Reactive Ward", description: "Gain a small barrier after first damage.", effect: { stat: "reactiveWard", value: 6 } },
+        { id: "wizard_ward_4", name: "Reactive Ward", description: "The first time you are hit each floor, recover 6 HP.", effect: { stat: "reactiveWard", value: 6 } },
         { id: "wizard_ward_5", name: "Archmage's Barrier", description: "Emergency damage reduction once per floor.", effect: { stat: "archmageBarrier", value: 0.25 } },
       ],
     },
@@ -370,7 +370,7 @@ export const ITEMS = {
 };
 
 export const ENEMIES = {
-  rat: { id: "rat", name: "Rat", behavior: "melee", hp: 8, damage: [2, 3], accuracy: 75, defense: 0, xp: 5, gold: [1, 3], glyph: "R" },
+  rat: { id: "rat", name: "Slug", behavior: "melee", hp: 8, damage: [2, 3], accuracy: 75, defense: 0, xp: 5, gold: [1, 3], glyph: "R" },
   goblin: { id: "goblin", name: "Goblin", behavior: "skirmisher", hp: 12, damage: [2, 4], accuracy: 85, defense: 0, evasion: 3, xp: 8, gold: [3, 5], glyph: "G" },
   slime: { id: "slime", name: "Slime", behavior: "blocker", hp: 16, damage: [2, 3], accuracy: 70, defense: 2, xp: 9, gold: [2, 5], glyph: "S" },
   skeleton: { id: "skeleton", name: "Skeleton", behavior: "melee", hp: 14, damage: [3, 5], accuracy: 80, defense: 1, xp: 12, gold: [3, 6], glyph: "K" },
@@ -390,7 +390,11 @@ export const ENEMIES = {
   angel: { id: "angel", name: "Celestial Guardian", behavior: "caster", hp: 30, damage: [7, 10], accuracy: 88, defense: 3, xp: 48, gold: [10, 15], glyph: "A", range: 5 },
   ice_zombie: { id: "ice_zombie", name: "Ice Zombie", behavior: "melee", hp: 28, damage: [6, 9], accuracy: 80, defense: 4, xp: 44, gold: [9, 14], glyph: "Z" },
   pumpkin_golem: { id: "pumpkin_golem", name: "Pumpkin Golem", behavior: "blocker", hp: 36, damage: [7, 10], accuracy: 78, defense: 5, xp: 50, gold: [10, 15], glyph: "P" },
-  cursed_pumpkin: { id: "cursed_pumpkin", name: "Cursed Pumpkin", behavior: "skirmisher", hp: 24, damage: [6, 10], accuracy: 87, defense: 2, evasion: 5, xp: 46, gold: [9, 14], glyph: "P" },
+  cursed_pumpkin: { id: "cursed_pumpkin", name: "Grave Husk", behavior: "skirmisher", hp: 24, damage: [6, 10], accuracy: 87, defense: 2, evasion: 5, xp: 46, gold: [9, 14], glyph: "P" },
+  // Sunken-vault natives (Floors 16-19).
+  sewer_bat: { id: "sewer_bat", name: "Bilge Bat", behavior: "skirmisher", hp: 14, damage: [4, 6], accuracy: 88, defense: 0, evasion: 6, xp: 24, gold: [4, 8], glyph: "B" },
+  sludge_crawler: { id: "sludge_crawler", name: "Sludge Crawler", behavior: "blocker", hp: 30, damage: [5, 7], accuracy: 76, defense: 4, xp: 32, gold: [7, 11], glyph: "U" },
+  drain_tentacle: { id: "drain_tentacle", name: "Drain Tentacle", behavior: "lurker", hp: 22, damage: [5, 8], accuracy: 84, defense: 2, xp: 28, gold: [5, 9], glyph: "~", range: 2 },
 };
 
 export const FLOOR_CONFIGS = {
@@ -429,6 +433,7 @@ export const FLOOR_ENCOUNTERS = {
   mid: [["skeleton"], ["goblin", "goblin"], ["slime", "rat"], ["skeleton", "goblin"]],
   late: [["cultist", "slime"], ["cultist", "goblin"], ["skeleton", "skeleton"], ["cultist", "skeleton", "goblin"]],
   deep: [["orc_brute"], ["gloomblade", "skeleton"], ["dread_slime", "cultist"], ["shaman", "orc_brute"], ["gloomblade", "gloomblade"], ["shaman", "skeleton", "cultist"]],
+  sewer: [["sewer_bat", "sewer_bat"], ["sludge_crawler"], ["drain_tentacle", "sewer_bat"], ["sludge_crawler", "gloomblade"], ["drain_tentacle", "dread_slime"], ["sludge_crawler", "sewer_bat", "shaman"]],
   abyssal: [["chort"], ["shaman", "dread_slime"], ["orc_brute", "gloomblade", "shaman"], ["chort", "cultist"], ["dread_slime", "gloomblade", "gloomblade"], ["angel", "ice_zombie"], ["pumpkin_golem", "cursed_pumpkin"], ["ice_zombie", "ice_zombie"], ["angel", "chort"]],
   endgame: [
     ["doom_ogre"],
@@ -449,19 +454,19 @@ export const ROOM_ENCOUNTERS = {
   treasure: {
     late: [["cultist", "skeleton"], ["cultist", "goblin"], ["skeleton", "skeleton"]],
     deep: [["orc_brute", "cultist"], ["gloomblade", "skeleton"], ["dread_slime", "cultist"]],
-    abyssal: [["chort", "cultist"], ["orc_brute", "gloomblade"], ["dread_slime", "shaman"], ["angel", "ice_zombie"], ["pumpkin_golem", "cursed_pumpkin"]],
+    abyssal: [["chort", "cultist"], ["orc_brute", "gloomblade"], ["dread_slime", "shaman"], ["angel", "ice_zombie"], ["pumpkin_golem", "cursed_pumpkin"], ["sludge_crawler", "drain_tentacle"]],
     endgame: [["void_stalker", "infernal_imp"], ["doom_ogre", "infernal_imp"], ["chort", "void_stalker"], ["angel", "pumpkin_golem"], ["cursed_pumpkin", "ice_zombie", "angel"]],
   },
   trap: {
     late: [["slime", "cultist"], ["cultist", "goblin", "goblin"], ["skeleton", "cultist"]],
     deep: [["dread_slime", "cultist"], ["orc_brute", "shaman"], ["gloomblade", "gloomblade"]],
-    abyssal: [["dread_slime", "shaman"], ["orc_brute", "gloomblade", "shaman"], ["chort", "cultist"], ["ice_zombie", "cursed_pumpkin"], ["angel", "pumpkin_golem"]],
+    abyssal: [["dread_slime", "shaman"], ["orc_brute", "gloomblade", "shaman"], ["chort", "cultist"], ["ice_zombie", "cursed_pumpkin"], ["angel", "pumpkin_golem"], ["drain_tentacle", "drain_tentacle", "sewer_bat"]],
     endgame: [["doom_ogre", "infernal_imp"], ["void_stalker", "void_stalker", "infernal_imp"], ["doom_ogre", "chort"], ["pumpkin_golem", "ice_zombie", "cursed_pumpkin"], ["angel", "doom_ogre"]],
   },
   elite: {
     late: [["skeleton", "cultist", "goblin"], ["skeleton", "skeleton", "cultist"]],
     deep: [["orc_brute", "gloomblade"], ["dread_slime", "shaman"], ["orc_brute", "cultist", "gloomblade"]],
-    abyssal: [["chort", "shaman"], ["dread_slime", "gloomblade", "gloomblade"], ["orc_brute", "gloomblade", "shaman"], ["pumpkin_golem", "angel"], ["ice_zombie", "ice_zombie", "cursed_pumpkin"]],
+    abyssal: [["chort", "shaman"], ["dread_slime", "gloomblade", "gloomblade"], ["orc_brute", "gloomblade", "shaman"], ["pumpkin_golem", "angel"], ["ice_zombie", "ice_zombie", "cursed_pumpkin"], ["sludge_crawler", "sewer_bat", "sewer_bat"]],
     endgame: [["doom_ogre", "void_stalker"], ["infernal_imp", "infernal_imp", "doom_ogre"], ["chort", "void_stalker", "infernal_imp"], ["angel", "pumpkin_golem", "ice_zombie"], ["doom_ogre", "cursed_pumpkin", "angel"]],
   },
 };

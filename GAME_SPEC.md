@@ -4,7 +4,7 @@
 
 Dungeon 30: The Abyssal Throne is a single-player, turn-based, retro pixel-art roguelike RPG.
 
-The player chooses one of two named delvers, descends from Floor 1 to Floor 30, and attempts to defeat the Abyssal Overlord on the final floor. Death is permanent for the current run. A new run always starts over on Floor 1 with a newly generated dungeon and no persistent power carried over.
+The player chooses one of three named delvers, descends from Floor 1 to Floor 30, and attempts to defeat the Abyssal Overlord on the final floor. Death is permanent for the current run. A new run always starts over on Floor 1 with a newly generated dungeon and no persistent power carried over.
 
 Current project status:
 - Milestone 1: complete
@@ -17,6 +17,7 @@ Current title:
 - Dungeon 30: The Abyssal Throne
 
 Current menu structure:
+- Continue Run (shown only when a saved run exists)
 - New Run
 - How to Play
 - High Scores
@@ -170,7 +171,7 @@ Current run-end support:
 
 ## Playable Delvers
 
-The game still uses two classes internally, but the class-select screen now presents them as named characters.
+The game has three classes internally (`warrior`, `wizard`, `ranger`), and the class-select screen presents them as named characters.
 
 ### Garrick Ironhand
 
@@ -191,10 +192,10 @@ Weaknesses:
 - low mana growth
 - limited spell utility
 
-### Malric Ashveil
+### Selara Ashveil
 
 Role:
-- Wizard
+- Wizard (displayed as "Sorceress")
 
 Flavor:
 - An arcane scholar of the underdeep who wins with distance, control, and precise bursts of destructive magic.
@@ -209,6 +210,24 @@ Weaknesses:
 - low HP
 - weaker armor
 - punished hard when cornered
+
+### Sydor Alamasy
+
+Role:
+- Ranger
+
+Flavor:
+- A keen-eyed wanderer who picks apart foes from afar, blending bowcraft with subtle nature magic and a survivalist's instinct.
+
+Strengths:
+- ranged weapon attacks
+- high accuracy
+- good evasion
+
+Weaknesses:
+- moderate HP
+- weaker in melee
+- split stat scaling between Dexterity and Intelligence
 
 ## Class Design
 
@@ -262,13 +281,38 @@ Implemented Wizard build traits:
 - mana-based defensive scaling
 - bonus spell damage against controlled or high/low-health targets
 
+### Ranger
+
+Identity:
+- ranged physical damage dealer
+- Dexterity-driven accuracy, evasion, and ranged damage
+- light spell support (moderate mana growth, small class spell damage bonus)
+- repositioning to keep distance
+
+Starting kit:
+- Short Bow
+- Scout Leathers
+- Healing Potion
+- Aimed Shot
+- Evasive Step
+
+Skill tree branches:
+- Deadshot: ranged damage, crit chance, kill momentum, Aimed Shot armor penetration, bonus damage to low-health targets
+- Windrunner: spell damage, max mana, poison on ranged hits, Aimed Shot range, first-spell bonus
+- Pathfinder: evasion, trap sense, trap damage reduction, Evasive Step range, bonus damage after moving
+
+Ranged weapon rules:
+- bows carry a range stat
+- `F` fires the equipped ranged weapon at the nearest visible enemy in range
+- bumping into an enemy still performs a melee attack using the equipped weapon
+
 ## Pre-Run Boon System
 
 Current run start flow:
-- choose Garrick Ironhand or Malric Ashveil
+- choose Garrick Ironhand, Selara Ashveil, or Sydor Alamasy
 - enter a short scripted sage chamber
 - approach the Grey Witness
-- choose 1 boon from 3 random options drawn from a pool of 12
+- choose 1 boon from 3 random options drawn from a pool of 13
 - receive an ominous line and begin the descent
 
 Implemented boon pool:
@@ -284,6 +328,7 @@ Implemented boon pool:
 - Grave Insight
 - Treasure Sense
 - Battle Trance
+- Phantom Quiver (every 4th ranged attack fires a phantom arrow at another nearby enemy for 50% damage)
 
 Current boon design goals:
 - materially change a run without trivializing it
@@ -326,6 +371,7 @@ Player actions:
 - move
 - melee attack
 - cast spell
+- fire ranged weapon
 - use item
 - equip item
 - interact
@@ -379,6 +425,17 @@ Player actions:
   - light damage setup spell
   - applies both Hexed and Weakened
 
+### Ranger abilities
+
+- Aimed Shot
+  - precise ranged shot with bonus damage
+  - requires an equipped ranged weapon
+  - gains range and armor penetration through skill investment
+
+- Evasive Step
+  - leaps 2 tiles away from the nearest threat
+  - gains range through skill investment
+
 ## Projectile Spell Presentation
 
 Projectile-style spells now use visible travel animations instead of resolving invisibly.
@@ -391,6 +448,7 @@ Implemented projectile animation coverage:
 - Shaman Hexfire
 - Infernal Imp Cinder Hex
 - Abyssal Bolt
+- arrows (ranged weapon attacks, Aimed Shot, Phantom Quiver)
 
 Presentation rules:
 - projectiles travel across the grid
@@ -408,10 +466,11 @@ Implemented statuses:
 - Weakened
   - reduces outgoing damage
 - Hexed
-  - reduces defense on the affected side
+  - reduces defense by 2 on the affected side (player or enemy)
 - Poisoned
-  - deals minor HP loss over time
-  - waiting burns through the status faster than taking normal actions
+  - deals 1 HP loss per turn to the player or to enemies
+  - an enemy killed by poison counts as a player kill (XP, gold, drops)
+  - for the player, waiting burns through the status faster than taking normal actions
 - Arcane Shield
   - temporary defensive ward
 
@@ -429,6 +488,7 @@ Current AI roles:
 - blocker
 - ranged caster
 - boss behavior
+- lurker (stationary, attacks within reach)
 
 Detection rules:
 - enemies use sight-based aggro
@@ -474,6 +534,7 @@ Implemented enchantment examples:
 - sunder chance
 - spell bonus damage
 - mana refund chance
+- ranged poison chance
 
 Current Hands slot direction:
 - uncommon and rare glove/gauntlet items only
@@ -489,6 +550,8 @@ Implemented Hands examples:
 - Spellcatcher Gloves
 - Cinderwraps
 - Warden's Grips
+- Marksman's Bracers
+- Windgrip Gloves
 
 Enchantment UX:
 - shown in inventory detail
@@ -509,10 +572,12 @@ Current sustain rules:
 - every floor start room now contains 1 Healing Potion and 1 Mana Potion
 - every spawned vendor always carries 1-3 regular Healing Potions
 - vendors may still also carry Greater Healing Potions and other stock
+- vendor stock excludes gear biased toward other classes (class-neutral items and tomes are always eligible)
 
 Current drop direction:
 - potions are intentionally easier to find than gear
 - gear is meant to feel more meaningful and less constant
+- enemy drops, mimic drops, chests, vaults, and boss rewards all use class-specific pools for each of the three classes
 
 Implemented vault reward layer:
 - one locked treasure vault exists somewhere in Floors 1-9
@@ -640,6 +705,10 @@ Milestone 2 tuning already applied:
 
 Implemented mid-band visual identity:
 - Floors 16-19 use the sewer/sunken-vault biome
+- Floors 16-19 add sunken-vault native enemies drawn from the sewer art pack:
+  - Bilge Bat: evasive skirmisher
+  - Sludge Crawler: armored blocker
+  - Drain Tentacle: rooted lurker that never moves and lashes the player from up to 2 tiles away
 - Floor 20 continues that visual lead-in into Patches' arena
 
 ## Floor 20
@@ -698,6 +767,13 @@ Implemented final boss:
   - clearer combat log telegraphs
   - target panel phase labeling
 
+## Save and Continue
+
+- the run is saved to local browser storage after the boon choice and on every descent
+- the main menu shows Continue Run when a save exists
+- continuing restores the run at the start of the most recently entered floor
+- the save is deleted on death or victory
+
 ## Run-End and High Score System
 
 Implemented run-end support:
@@ -752,7 +828,7 @@ Implemented critical health feedback:
 
 Other current UI details:
 - class select now uses animated class sprites
-- class select presents named delvers instead of generic class-only picks
+- class select presents three named delvers instead of generic class-only picks
 - death and victory overlays cannot be dismissed accidentally
 - NPC dialogue for the Grey Witness and vendors appears in a small on-screen dialogue box
 - the main HUD shows the currently active boon
@@ -772,6 +848,10 @@ Current build uses local integrated pixel-art assets for:
 
 Current visual polish layers:
 - animated actor sprites
+- actors drawn at their native pixel proportions (16 source px per tile), with per-actor scale for bosses and large sewer creatures
+- load-time palette swaps: elite enemies use a blood-red palette (gold for already-red enemies), and Super Skeletor uses a bone-white recolor of the necromancer sprite
+- each vendor archetype has its own sprite
+- item icons are distinct per item, cropped from the Ironchests RPG Items sheet into `RPG Art Assets/extracted/`, and tomes are color-coded by spell school
 - fog-of-war rendering for both walls and floors
 - projectile spell visuals
 - improved trap hazard treatment
