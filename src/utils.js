@@ -54,3 +54,8 @@ export function manhattan(a, b) {
 export function deepClone(value) {
   return structuredClone(value);
 }
+
+// Floor tiles you can't step onto: holes, shrines, and room props (sewer pillars, crates, cauldrons).
+export function isBlockedFloor(tile) {
+  return Boolean(tile?.hole || tile?.shrineId || tile?.prop);
+}

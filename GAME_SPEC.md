@@ -915,6 +915,15 @@ Current visual polish layers:
 - improved trap hazard treatment
 - floor-theme palette variation across dungeon bands
 - sewer wall/floor atlas support for the Floor 16-20 biome
+- sewer dressing (Floors 16-19), drawn from the sewer pack's item sheet and floor atlas:
+  - animated green-flame torches on room-facing walls (spaced out, and lighting the map green), animated ooze falls, and slime drips
+  - floor decor on about 9% of tiles: drain grates, manholes, rivet plates, cracked stone, and drain "eyes" that blink and glow
+  - cobwebs in some room corners
+  - obstacle props that block movement (not sight): slime-streaked or stone pillar colonnades in larger rooms, sludge cauldrons (animated), crates, and mossy rubble; placed by tile hash (so seeded enemies and loot are unchanged), at least two tiles in from room edges, never touching each other or a shrine, skipping the arrival room, and removed if they would cut off any room; hovering names them
+  - ambience: falling water drips and a slow green mist, with a greener light tint
+- the same autotiled atlas walls and floors carry through the endgame, re-inked at load time by mapping the sewer art's brightness onto a colour ramp per band: The Void Deep (Floors 21-25, void violet), The Obsidian Reach (Floors 26-29, obsidian with ember-lit stone), and the Abyssal Throne (Floor 30, obsidian with gold-capped walls); each band has its own floor-card name and lighting tint
+- endgame floor details, pixel art on a stable hash-picked share of floor tiles (never on stairs, chests, items, vendors, or shrines): star specks and small violet-rimmed rifts in the Void Deep, molten zigzag cracks and ember vents in the Obsidian Reach, and dark gold corner filigree on Floor 30; rifts, cracks, and vents glow above the lighting, and stars occasionally glint
+- drifting motes over visible floor in each endgame band: violet specks rising slowly in the Void Deep, cinders rising in the Obsidian Reach, gold dust falling on Floor 30 (off under reduced motion)
 
 ## Milestone Status
 

@@ -52,13 +52,60 @@ const LIGHT_TINTS = {
   crypt: "6, 8, 14",
   ember_halls: "20, 6, 2",
   fungal_depths: "3, 14, 6",
-  sunken_vault: "2, 10, 18",
+  sunken_vault: "2, 14, 9",
   necropolis: "16, 3, 14",
   stitchworks: "16, 10, 3",
   void_deep: "8, 5, 22",
+  obsidian_reach: "20, 4, 6",
   abyssal_throne: "16, 3, 20",
 };
 const LIGHT_OUTER_DARKNESS = 0.38;
+
+// Endgame floor details, drawn as pixel art on a share of floor tiles (hash-picked, so each floor's
+// layout is stable). Chance is out of 1000 per tile.
+const FLOOR_DETAILS = {
+  void_deep: [{ kind: "stars", chance: 120 }, { kind: "rift", chance: 25 }],
+  obsidian_reach: [{ kind: "crack", chance: 90 }, { kind: "vent", chance: 25 }],
+  abyssal_throne: [{ kind: "gilt", chance: 70 }],
+};
+
+// Sprites cut from the sewer item sheet (x, y, width, height in source pixels); lists are animation frames.
+const SEWER_SPRITES = {
+  torch: [[144, 32, 16, 32], [160, 32, 16, 32], [176, 32, 16, 32], [192, 32, 16, 32], [208, 32, 16, 32]],
+  ooze: [[176, 96, 16, 32], [192, 96, 16, 32], [208, 96, 16, 32]],
+  drip: [[192, 64, 16, 32], [208, 64, 16, 32]],
+  web: [[144, 112, 16, 16]],
+  webCorner: [[160, 112, 16, 16]],
+  pillar: [[0, 144, 16, 48]],
+  pillar_slime: [[16, 144, 16, 48]],
+  crate_small: [[64, 144, 16, 16]],
+  crate_large: [[32, 128, 32, 32]],
+  cauldron: [[32, 160, 32, 32], [64, 160, 32, 32], [96, 160, 32, 32]],
+  rocks: [[144, 0, 32, 16]],
+};
+const SEWER_FRAME_MS = { torch: 120, ooze: 150, drip: 450, cauldron: 420 };
+
+// Sewer floor decor from the sewer floor atlas (column, row), by kind. Drain eyes blink between two frames.
+const SEWER_FLOOR_DECOR = [
+  { kind: "grate", chance: 16, coords: [[1, 4]] },
+  { kind: "manhole", chance: 10, coords: [[4, 2]] },
+  { kind: "rivets", chance: 28, coords: [[1, 0], [2, 0]] },
+  { kind: "eyes", chance: 12, coords: [[3, 0], [4, 0]] },
+  { kind: "cracks", chance: 20, coords: [[3, 4], [4, 4]] },
+  { kind: "drain", chance: 6, coords: [[5, 0]] },
+];
+
+// Drifting motes over visible floor, per band. Speeds are in tiles per second. A band can list several
+// layers (the sewer has falling drips and a slow mist).
+const MOTE_STYLES = {
+  sunken_vault: [
+    { count: 16, colors: ["#9fd6c8", "#cdeee4"], vx: [0, 0], vy: [2.4, 3.4], life: [450, 850], twinkle: false, height: 2 },
+    { count: 14, colors: ["#7fbf9a", "#9fd0b0"], vx: [-0.12, 0.12], vy: [-0.04, 0.04], life: [5000, 9000], twinkle: false, size: 3, alpha: 0.16 },
+  ],
+  void_deep: { count: 34, colors: ["#b9a8ff", "#e6ddff", "#7f6ad8"], vx: [-0.12, 0.12], vy: [-0.22, -0.04], life: [3000, 6500], twinkle: true },
+  obsidian_reach: { count: 42, colors: ["#ffb070", "#ff7a3a", "#ffd79a"], vx: [-0.18, 0.18], vy: [-0.9, -0.35], life: [1400, 3200], twinkle: false },
+  abyssal_throne: { count: 30, colors: ["#f2c46b", "#fff0c2", "#c89a3c"], vx: [-0.08, 0.08], vy: [0.04, 0.18], life: [4000, 7500], twinkle: true },
+};
 const LIGHT_RADIUS_TILES = 8.5;
 const RARITY_RANK = { common: 0, uncommon: 1, rare: 2, boss: 3 };
 // Glow under each boss's reward chest, matching its palette.
@@ -169,25 +216,36 @@ const FLOOR_THEMES = {
     wallOverlayVisible: "rgba(142, 106, 68, 0.12)",
     wallOverlayFog: "rgba(90, 68, 44, 0.12)",
   },
+  // The atlas themes below are coloured by their recoloured atlases, so their overlays stay light.
   void_deep: {
-    floorVisible: "#12131e",
-    floorFog: "#0d0e16",
-    wallVisible: "#242540",
-    wallFog: "#17192a",
-    floorOverlayVisible: "rgba(92, 78, 172, 0.16)",
-    floorOverlayFog: "rgba(64, 54, 118, 0.16)",
-    wallOverlayVisible: "rgba(88, 84, 170, 0.12)",
-    wallOverlayFog: "rgba(58, 58, 110, 0.12)",
+    floorVisible: "#0e0c18",
+    floorFog: "#0a0912",
+    wallVisible: "#1d1838",
+    wallFog: "#15122a",
+    floorOverlayVisible: "rgba(92, 78, 172, 0.06)",
+    floorOverlayFog: "rgba(64, 54, 118, 0.1)",
+    wallOverlayVisible: "rgba(88, 84, 170, 0.04)",
+    wallOverlayFog: "rgba(58, 58, 110, 0.08)",
+  },
+  obsidian_reach: {
+    floorVisible: "#120709",
+    floorFog: "#0c0506",
+    wallVisible: "#22101a",
+    wallFog: "#180b12",
+    floorOverlayVisible: "rgba(160, 50, 40, 0.05)",
+    floorOverlayFog: "rgba(90, 30, 30, 0.1)",
+    wallOverlayVisible: "rgba(200, 80, 50, 0.04)",
+    wallOverlayFog: "rgba(90, 30, 30, 0.08)",
   },
   abyssal_throne: {
-    floorVisible: "#17111d",
-    floorFog: "#110d15",
-    wallVisible: "#2a1d36",
-    wallFog: "#1c1524",
-    floorOverlayVisible: "rgba(146, 68, 118, 0.16)",
-    floorOverlayFog: "rgba(96, 46, 78, 0.16)",
-    wallOverlayVisible: "rgba(118, 72, 142, 0.12)",
-    wallOverlayFog: "rgba(76, 46, 92, 0.12)",
+    floorVisible: "#0d0a10",
+    floorFog: "#09070b",
+    wallVisible: "#1a1520",
+    wallFog: "#120e16",
+    floorOverlayVisible: "rgba(242, 196, 107, 0.03)",
+    floorOverlayFog: "rgba(60, 40, 60, 0.1)",
+    wallOverlayVisible: "rgba(242, 196, 107, 0.03)",
+    wallOverlayFog: "rgba(60, 40, 60, 0.08)",
   },
 };
 
@@ -243,8 +301,12 @@ function hashPoint(x, y, seed = 0) {
   return Math.abs(((x + 11) * 92821) ^ ((y + 17) * 68917) ^ seed) >>> 0;
 }
 
+// Themes whose walls and floors come from an autotiled atlas (the sewer set, recoloured per band;
+// see THEME_ATLAS_RAMPS in assets.js). Everything else uses the standard wall sprites.
+const ATLAS_THEMES = new Set(["sunken_vault", "void_deep", "obsidian_reach", "abyssal_throne"]);
+
 function getThemeFloorAtlasCoord(theme, x, y) {
-  if (theme !== "sunken_vault") return null;
+  if (!ATLAS_THEMES.has(theme)) return null;
   const sewerFloorTiles = [
     [0, 2],
     [1, 2],
@@ -255,7 +317,7 @@ function getThemeFloorAtlasCoord(theme, x, y) {
 }
 
 function getThemeWallAtlasCoord(theme, map, x, y, options = {}) {
-  if (theme !== "sunken_vault") return null;
+  if (!ATLAS_THEMES.has(theme)) return null;
   const getTile = (tx, ty) => map[ty]?.[tx] ?? null;
   // Autotiling must be fog-independent so a wall's atlas tile never changes as
   // fog of war is revealed (the standard getWallSprite path works the same way).
@@ -411,11 +473,58 @@ function getThemeWallAtlasCoord(theme, map, x, y, options = {}) {
   return [2, 0];
 }
 
+// A sewer wall feature on a south-facing wall (a wall with floor below it): a green-flame torch, an ooze
+// fall, or a slime drip. Torches are spaced along a diagonal pattern so they never bunch up.
+function getSewerWallFeature(map, x, y, seed) {
+  const tile = map[y]?.[x];
+  const below = map[y + 1]?.[x];
+  if (!tile || tile.type !== "wall" || !below || below.type !== "floor" || below.stairs) return null;
+  const roll = hashPoint(x, y, seed ^ 0x3c71) % 100;
+  if ((x + y * 3) % 5 === 0 && roll < 55) return "torch";
+  if (roll < 6) return "ooze";
+  if (roll < 14) return "drip";
+  return null;
+}
+
+// A cobweb in a room corner: a floor tile with walls to its north and to one side.
+function getSewerCobweb(map, x, y, seed) {
+  const isWall = (tx, ty) => map[ty]?.[tx]?.type === "wall";
+  if (!isWall(x, y - 1)) return null;
+  if (hashPoint(x, y, seed ^ 0x77e1) % 100 >= 35) return null;
+  if (isWall(x - 1, y)) return "left";
+  if (isWall(x + 1, y)) return "right";
+  return null;
+}
+
+function getSewerFloorDecor(x, y, seed) {
+  const roll = hashPoint(x, y, seed ^ 0x2d45) % 1000;
+  let threshold = 0;
+  for (const decor of SEWER_FLOOR_DECOR) {
+    threshold += decor.chance;
+    if (roll < threshold) return { kind: decor.kind, coords: decor.coords, hash: hashPoint(x, y, seed) };
+  }
+  return null;
+}
+
+// Which endgame floor detail (if any) sits on this tile. Tiles holding stairs, chests, items, vendors
+// or shrines stay clear so the detail never competes with something you can interact with.
+function getFloorDetail(theme, tile, x, y, seed) {
+  const styles = FLOOR_DETAILS[theme];
+  if (!styles || tile.stairs || tile.chestId || tile.vendor || tile.shrineId || tile.itemIds?.length) return null;
+  const roll = hashPoint(x, y, seed ^ 0x5bd1) % 1000;
+  let threshold = 0;
+  for (const style of styles) {
+    threshold += style.chance;
+    if (roll < threshold) return { kind: style.kind, hash: hashPoint(x, y, seed ^ 0x1f3a) };
+  }
+  return null;
+}
+
 function getSewerDecorAtlasCoord(kind, x, y) {
   const variants = {
     drain: [[0, 4], [1, 4], [2, 4]],
-    puddle: [[3, 4], [4, 4], [5, 4]],
-    rubble: [[6, 4], [7, 4], [8, 4]],
+    // These cells are cracked stone; the neighbouring cells in that row are empty.
+    puddle: [[3, 4], [4, 4]],
   };
   const pool = variants[kind];
   if (!pool?.length) return null;
@@ -477,9 +586,6 @@ function getFloorDecorSpec(manifest, currentFloor, x, y, options = {}) {
     return null;
   }
   const roll = hashPoint(x, y, floorNumber * 31 + roomType.length) % 100;
-  if (currentFloor.theme === "sunken_vault") {
-    if (roomType === "trap" && roll < 12) return { atlas: manifest.themeAtlases.sunkenVaultFloor, coord: getSewerDecorAtlasCoord("puddle", x, y) };
-  }
   if (floorNumber === 20 && inBossRoom) {
     if (roll < 8) return { atlas: manifest.themeAtlases.sunkenVaultFloor, coord: getSewerDecorAtlasCoord("puddle", x, y) };
   }
@@ -600,6 +706,8 @@ export class Renderer {
     // Map tile under the mouse (set by main.js) and the geometry of the last drawn frame.
     this.hoverTile = null;
     this.mapView = null;
+    // Drifting motes for the current floor's band (see MOTE_STYLES).
+    this.motes = [];
   }
 
   // Keeps the canvas backing store equal to its displayed size (in device pixels) so every
@@ -704,6 +812,14 @@ export class Renderer {
 
     // Rare floor loot gets sparkles drawn after the lighting, so they stay bright.
     const sparkleTiles = [];
+    // Floor details that glow (void rifts, ember cracks, gilt glints) get a second pass after the lighting.
+    const glowingDetails = [];
+    // Sewer props and wall features, drawn after all tiles (top row first) so ooze and drips that hang
+    // onto the floor below aren't painted over; torches also light the map.
+    const sewerSheet = currentFloor.theme === "sunken_vault" ? this.assets?.images[this.assets.manifest.themeAtlases.sewerItems] : null;
+    const sewerFloorAtlas = sewerSheet ? this.assets.images[this.assets.manifest.themeAtlases.sunkenVaultFloor] : null;
+    const sewerStanding = [];
+    const torchLights = [];
     const chestsById = new Map((currentFloor.chests ?? []).map((chest) => [chest.id, chest]));
     const bossAlive = currentFloor.enemies.some((enemy) => ENEMIES[enemy.templateId]?.behavior === "boss");
     for (let y = firstY; y <= lastY; y += 1) {
@@ -719,14 +835,15 @@ export class Renderer {
         }
 
         const floorAtlasCoord = getThemeFloorAtlasCoord(currentFloor.theme, x, y);
-        const floorAtlas = floorAtlasCoord ? this.assets?.images[this.assets.manifest.themeAtlases.sunkenVaultFloor] : null;
+        const atlasSet = this.assets?.manifest.themeAtlasSets?.[currentFloor.theme];
+        const floorAtlas = floorAtlasCoord && atlasSet ? this.assets.images[atlasSet.floor] : null;
         const floorSprite = floorAtlas ? null : this.assets?.images[getFloorSprite(this.assets.manifest, x, y, floorTileSeed)];
         const wallAtlasCoord = getThemeWallAtlasCoord(currentFloor.theme, currentFloor.map, x, y, { useExploredMask: true });
-        const wallAtlas = wallAtlasCoord ? this.assets?.images[this.assets.manifest.themeAtlases.sunkenVaultWalls] : null;
+        const wallAtlas = wallAtlasCoord && atlasSet ? this.assets.images[atlasSet.walls] : null;
         const wallSpritePath = this.assets
           ? getWallSprite(this.assets.manifest, currentFloor.map, x, y, { useExploredMask: true })
           : null;
-        const useThemeWalls = currentFloor.theme === "sunken_vault";
+        const useThemeWalls = ATLAS_THEMES.has(currentFloor.theme);
         const wallSprite = wallAtlas ? null : (!useThemeWalls && wallSpritePath) ? this.assets?.images[wallSpritePath] : null;
         const plainTopWallSprites = this.assets
           ? new Set([
@@ -851,6 +968,14 @@ export class Renderer {
           }
         }
 
+        if (sewerSheet) this.collectSewerDecor(currentFloor, tile, x, y, px, py, tileSize, floorTileSeed, sewerFloorAtlas, sewerStanding, torchLights, glowingDetails);
+
+        const floorDetail = tile.type === "floor" ? getFloorDetail(currentFloor.theme, tile, x, y, floorTileSeed) : null;
+        if (floorDetail) {
+          this.drawFloorDetail(floorDetail, px, py, tileSize, tile.visible);
+          if (tile.visible) glowingDetails.push({ detail: floorDetail, px, py });
+        }
+
         if (tile.visible && floorProp) {
           const scale = floorPropPath === this.assets.manifest.props.floorColumn ? 1.1 : 1;
           this.drawSprite(floorProp, px, py, tileSize, tileSize, scale);
@@ -933,6 +1058,10 @@ export class Renderer {
       }
     }
 
+    for (const standing of sewerStanding.sort((a, b) => a.y - b.y)) {
+      this.drawSewerSprite(sewerSheet, standing, tileSize);
+    }
+
     for (const enemy of currentFloor.enemies) {
       if (enemy.disguised) continue;
       const tile = currentFloor.map[enemy.y][enemy.x];
@@ -971,8 +1100,10 @@ export class Renderer {
       );
     }
 
-    if (this.lighting) this.drawLighting(currentFloor, player, offsetX, offsetY, tileSize);
+    if (this.lighting) this.drawLighting(currentFloor, player, offsetX, offsetY, tileSize, torchLights);
     for (const sparkle of sparkleTiles) this.drawLootSparkles(sparkle.px, sparkle.py, tileSize, sparkle.rarity);
+    for (const glowing of glowingDetails) this.drawFloorDetailGlow(glowing.detail, glowing.px, glowing.py, tileSize);
+    this.updateAndDrawMotes(currentFloor, offsetX, offsetY, tileSize);
     this.drawTelegraphs(currentFloor, player, offsetX, offsetY, tileSize);
 
     // Health bars go on top of every actor so a taller sprite standing below can't hide them.
@@ -1167,7 +1298,7 @@ export class Renderer {
 
   // Cosmetic torchlight: a band-tinted shadow that deepens toward the screen edges, a warm flickering
   // glow around the player, and small glows at shrines and stairs. Fully visible tiles stay readable.
-  drawLighting(currentFloor, player, offsetX, offsetY, tileSize) {
+  drawLighting(currentFloor, player, offsetX, offsetY, tileSize, extraLights = []) {
     const width = this.canvas.width;
     const height = this.canvas.height;
     if (!this.lightCanvas) this.lightCanvas = document.createElement("canvas");
@@ -1197,7 +1328,7 @@ export class Renderer {
     const radius = tileSize * LIGHT_RADIUS_TILES * flicker;
     cut(playerPoint, radius, [[0, 1], [0.5, 0.9], [0.8, 0.55], [1, 0]]);
 
-    const glows = [];
+    const glows = extraLights.map((light) => ({ point: centre(light.x, light.y), radius: tileSize * light.radius, color: light.color, strength: light.strength }));
     const shrine = currentFloor.shrine;
     if (shrine && currentFloor.map[shrine.y]?.[shrine.x]?.explored) {
       glows.push({ point: centre(shrine.x, shrine.y), radius: tileSize * 2.6, color: shrine.mode === "healing" ? "255, 90, 70" : "90, 150, 255", strength: shrine.used ? 0.06 : 0.16 });
@@ -1357,6 +1488,222 @@ export class Renderer {
         mote,
       );
     }
+    ctx.restore();
+  }
+
+  // Sewer tile dressing: floor decor and corner cobwebs are drawn now; props and wall features are queued
+  // for the standing pass; torches register a light and a flame glow.
+  collectSewerDecor(currentFloor, tile, x, y, px, py, tileSize, seed, floorAtlas, standing, torchLights, glowing) {
+    if (!tile.explored && !tile.visible) return;
+    const { map } = currentFloor;
+    const { ctx } = this;
+    if (tile.type === "floor") {
+      const busy = tile.stairs || tile.chestId || tile.vendor || tile.shrineId || tile.itemIds?.length || tile.prop;
+      const decor = busy ? null : getSewerFloorDecor(x, y, seed);
+      if (decor && floorAtlas) {
+        const frame = decor.kind === "eyes" && !reduceMotion() ? Math.floor(performance.now() / 700 + (decor.hash % 7)) : decor.hash;
+        ctx.save();
+        if (!tile.visible) ctx.globalAlpha = 0.32;
+        this.drawAtlasTile(floorAtlas, decor.coords[frame % decor.coords.length], px, py, tileSize);
+        ctx.restore();
+        if (decor.kind === "eyes" && tile.visible) glowing.push({ detail: { kind: "eyes", hash: decor.hash }, px, py });
+      }
+      const web = getSewerCobweb(map, x, y, seed);
+      if (web) standing.push({ kind: "webCorner", flip: web === "left", x, y, px, py, visible: tile.visible, layer: "floor" });
+      if (tile.prop && tile.prop !== "extends") standing.push({ kind: tile.prop, x, y, px, py, visible: tile.visible });
+      return;
+    }
+    const feature = getSewerWallFeature(map, x, y, seed);
+    if (!feature) return;
+    standing.push({ kind: feature, x, y, px, py, visible: tile.visible, wall: true });
+    if (feature === "torch") {
+      torchLights.push({ x, y: y + 0.5, radius: 3.2, color: "110, 235, 110", strength: 0.18 });
+      if (tile.visible) glowing.push({ detail: { kind: "torch", hash: hashPoint(x, y) }, px, py: py - tileSize * 0.9 });
+    }
+  }
+
+  // One sewer sprite at native pixel scale. Props stand on their tile; torches rise above the wall;
+  // ooze falls and drips start on the wall face and spill onto the floor below.
+  drawSewerSprite(sheet, entry, tileSize) {
+    const frames = SEWER_SPRITES[entry.kind];
+    if (!sheet || !frames) return;
+    const frameMs = SEWER_FRAME_MS[entry.kind];
+    const frameIndex = frameMs && !reduceMotion() ? Math.floor(performance.now() / frameMs + (entry.x * 3 + entry.y)) % frames.length : 0;
+    const [sx, sy, sw, sh] = frames[frameIndex];
+    const scale = tileSize / 16;
+    const width = sw * scale;
+    const height = sh * scale;
+    let dx = entry.px;
+    let dy = entry.py + tileSize - height;
+    if (entry.kind === "ooze") dy = entry.py;
+    if (entry.kind === "drip") dy = entry.py + tileSize * 0.7;
+    if (entry.kind === "webCorner") dy = entry.py;
+    const { ctx } = this;
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    if (!entry.visible) ctx.globalAlpha = 0.38;
+    if (entry.flip) {
+      ctx.translate(dx + width, dy);
+      ctx.scale(-1, 1);
+      ctx.drawImage(sheet, sx, sy, sw, sh, 0, 0, width, height);
+    } else {
+      ctx.drawImage(sheet, sx, sy, sw, sh, Math.round(dx), Math.round(dy), width, height);
+    }
+    ctx.restore();
+  }
+
+  // Pixel-art floor details on the 16px source grid (scaled to the tile). Fogged tiles draw dimmed.
+  drawFloorDetail(detail, px, py, tileSize, visible) {
+    const { ctx } = this;
+    const pixel = tileSize / 16;
+    const dot = (gx, gy, color, w = 1, h = 1) => {
+      ctx.fillStyle = color;
+      ctx.fillRect(Math.round(px + gx * pixel), Math.round(py + gy * pixel), Math.ceil(w * pixel), Math.ceil(h * pixel));
+    };
+    const h = detail.hash;
+    ctx.save();
+    if (!visible) ctx.globalAlpha = 0.35;
+    if (detail.kind === "stars") {
+      // Two or three pale specks scattered across the stone.
+      const count = 2 + (h % 2);
+      for (let index = 0; index < count; index += 1) {
+        const gx = 2 + ((h >>> (index * 4)) % 12);
+        const gy = 2 + ((h >>> (index * 4 + 2)) % 12);
+        dot(gx, gy, index === 0 ? "#e6ddff" : "#9d8be0");
+      }
+    } else if (detail.kind === "rift") {
+      // A small tear in the floor: a dark oval with a violet rim.
+      dot(5, 6, "#6a4fc0", 6, 1);
+      dot(4, 7, "#6a4fc0", 1, 3);
+      dot(11, 7, "#6a4fc0", 1, 3);
+      dot(5, 10, "#6a4fc0", 6, 1);
+      dot(5, 7, "#05030a", 6, 3);
+    } else if (detail.kind === "crack") {
+      // A zigzag crack with a molten seam.
+      let gx = 2 + (h % 3);
+      let gy = 3 + ((h >>> 3) % 9);
+      for (let step = 0; step < 7; step += 1) {
+        dot(gx, gy, "#1a0806", 2, 2);
+        dot(gx, gy, "#ff7a3a");
+        gx += 2;
+        gy += ((h >>> (step + 5)) & 1) ? 1 : -1;
+        gy = Math.max(2, Math.min(13, gy));
+      }
+    } else if (detail.kind === "vent") {
+      // A glowing fissure: a small dark pit with an ember core.
+      dot(6, 6, "#1a0806", 4, 4);
+      dot(7, 7, "#b0402c", 2, 2);
+      dot(7, 7, "#ffb070");
+    } else if (detail.kind === "gilt") {
+      // Flat gold filigree set into the stone: corner brackets and a small diamond, kept dark and
+      // angular so it reads as floor inlay rather than a coin to pick up.
+      const inlay = "#7a5a2a";
+      const shine = "#b08a45";
+      dot(2, 2, inlay, 4, 1);
+      dot(2, 3, inlay, 1, 3);
+      dot(10, 13, inlay, 4, 1);
+      dot(13, 10, inlay, 1, 3);
+      dot(7, 6, inlay, 2, 1);
+      dot(6, 7, inlay, 1, 2);
+      dot(9, 7, inlay, 1, 2);
+      dot(7, 9, inlay, 2, 1);
+      dot(7, 7, shine, 2, 2);
+    }
+    ctx.restore();
+  }
+
+  // The emissive part of a detail, drawn over the lighting so it reads as light, not paint.
+  drawFloorDetailGlow(detail, px, py, tileSize) {
+    const { ctx } = this;
+    const now = reduceMotion() ? 0 : performance.now();
+    const phase = (detail.hash % 1000) / 1000;
+    const cx = px + tileSize / 2;
+    const cy = py + tileSize / 2;
+    const glow = (color, radius, alpha) => {
+      const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+      gradient.addColorStop(0, `rgba(${color}, ${alpha.toFixed(3)})`);
+      gradient.addColorStop(1, `rgba(${color}, 0)`);
+      ctx.fillStyle = gradient;
+      ctx.fillRect(cx - radius, cy - radius, radius * 2, radius * 2);
+    };
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    if (detail.kind === "rift") glow("120, 80, 230", tileSize * 0.7, 0.16 + Math.sin(now / 700 + phase * 6) * 0.05);
+    if (detail.kind === "crack") glow("255, 110, 50", tileSize * 0.6, 0.12 + Math.sin(now / 380 + phase * 6) * 0.05);
+    if (detail.kind === "vent") glow("255, 130, 60", tileSize * 0.8, 0.22 + Math.sin(now / 260 + phase * 6) * 0.08);
+    if (detail.kind === "gilt") glow("242, 196, 107", tileSize * 0.35, 0.05);
+    if (detail.kind === "torch") glow("120, 240, 110", tileSize * 0.75, 0.2 + Math.sin(now / 90 + phase * 6) * 0.04);
+    if (detail.kind === "eyes") glow("120, 240, 110", tileSize * 0.45, 0.1 + Math.sin(now / 700 + phase * 6) * 0.05);
+    if (detail.kind === "stars" && !reduceMotion()) {
+      // Now and then one speck glints.
+      const cycle = ((now / 2400) + phase) % 1;
+      if (cycle < 0.12) glow("220, 210, 255", tileSize * 0.3, 0.25 * (1 - cycle / 0.12));
+    }
+    ctx.restore();
+  }
+
+  // Motes drift over visible floor in the band's style; they're spawned in view and fade in and out.
+  // A band's style may be one layer or a list of layers (e.g. sewer drips plus mist).
+  updateAndDrawMotes(currentFloor, offsetX, offsetY, tileSize) {
+    const style = MOTE_STYLES[currentFloor.theme];
+    const now = performance.now();
+    const dt = Math.min(60, now - (this.moteTime ?? now));
+    this.moteTime = now;
+    if (!style || reduceMotion()) {
+      this.motes = [];
+      return;
+    }
+    if (this.motesFloor !== currentFloor) {
+      this.motes = [];
+      this.motesFloor = currentFloor;
+    }
+    const layers = Array.isArray(style) ? style : [style];
+    const random = (range) => range[0] + Math.random() * (range[1] - range[0]);
+    const viewLeft = -offsetX / tileSize;
+    const viewTop = -offsetY / tileSize;
+    const viewWidth = this.canvas.width / tileSize;
+    const viewHeight = this.canvas.height / tileSize;
+    layers.forEach((layer, layerIndex) => {
+      const current = this.motes.filter((mote) => mote.layer === layerIndex).length;
+      // Top up gradually so motes don't all appear at once.
+      for (let attempt = 0, added = 0; attempt < 3 && current + added < layer.count; attempt += 1) {
+        const x = viewLeft + Math.random() * viewWidth;
+        const y = viewTop + Math.random() * viewHeight;
+        const tile = currentFloor.map[Math.floor(y)]?.[Math.floor(x)];
+        if (!tile?.visible || tile.type !== "floor") continue;
+        added += 1;
+        this.motes.push({
+          layer: layerIndex,
+          x, y,
+          vx: random(layer.vx),
+          vy: random(layer.vy),
+          age: 0,
+          life: random(layer.life),
+          color: layer.colors[Math.floor(Math.random() * layer.colors.length)],
+          phase: Math.random() * Math.PI * 2,
+        });
+      }
+    });
+    const { ctx } = this;
+    const pixel = Math.max(1, Math.round(tileSize / 16));
+    ctx.save();
+    this.motes = this.motes.filter((mote) => {
+      const layer = layers[mote.layer];
+      if (!layer) return false;
+      mote.age += dt;
+      mote.x += (mote.vx * dt) / 1000;
+      mote.y += (mote.vy * dt) / 1000;
+      if (mote.age >= mote.life) return false;
+      const progress = mote.age / mote.life;
+      let alpha = Math.sin(Math.PI * progress) * (layer.alpha ?? 0.85);
+      if (layer.twinkle) alpha *= 0.6 + Math.sin(now / 240 + mote.phase) * 0.4;
+      ctx.globalAlpha = Math.max(0, alpha);
+      ctx.fillStyle = mote.color;
+      const width = pixel * (layer.size ?? 1);
+      const height = pixel * (layer.height ?? layer.size ?? 1);
+      ctx.fillRect(Math.round(offsetX + mote.x * tileSize), Math.round(offsetY + mote.y * tileSize), width, height);
+      return true;
+    });
     ctx.restore();
   }
 

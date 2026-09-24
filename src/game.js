@@ -2,7 +2,7 @@ import { BAND_NAMES, BOONS, BOSS_REWARDS, BOSS_TITLES, CHEST_TABLE, CLASSES, ENE
 import { attachVaultFeaturesToFloor, generateFloor, getDropForEnemy } from "./generator.js";
 import { getActorSpriteFrame, getEnemySpriteId, getItemSprite } from "./assets.js";
 import { getBranchIconUrl, getSpellIconUrl, getStatusIconUrl } from "./pixelIcons.js";
-import { clamp, createRng, deepClone, hashSeed, manhattan, toKey } from "./utils.js";
+import { clamp, createRng, deepClone, hashSeed, isBlockedFloor, manhattan, toKey } from "./utils.js";
 import { MAX_LOG_ENTRIES, logText, normalizeLogs } from "./log.js";
 
 const XP_THRESHOLDS = {
@@ -86,7 +86,7 @@ function pathfind(map, start, end, blockers = new Set()) {
       const key = toKey(next.x, next.y);
       if (visited.has(key)) continue;
       const tile = map[next.y]?.[next.x];
-      if (!tile || tile.type !== "floor" || tile.hole || tile.shrineId) continue;
+      if (!tile || tile.type !== "floor" || isBlockedFloor(tile)) continue;
       if (blockers.has(key) && !(next.x === end.x && next.y === end.y)) continue;
       visited.add(key);
       cameFrom.set(key, current);
@@ -1071,6 +1071,18 @@ export class Game {
       sections.push(`Shrine of ${shrine.mode === "healing" ? "Healing" : "Clarity"}\n${shrine.used ? "Spent." : `Restores 45% of your ${restores}. Stand beside it and press Enter.`}`);
     }
 
+    const propNames = {
+      pillar: "Stone pillar",
+      pillar_slime: "Slime-streaked pillar",
+      crate_small: "Crate",
+      crate_large: "Heavy crate",
+      cauldron: "Sludge cauldron",
+      rocks: "Mossy rubble",
+    };
+    // The right half of a two-tile prop describes the prop to its left.
+    const propKind = tile.prop === "extends" ? currentFloor.map[y]?.[x - 1]?.prop : tile.prop;
+    if (propNames[propKind]) sections.push(`${propNames[propKind]}\nBlocks the way.`);
+
     const trap = tile.visible ? this.getTrapAt(x, y) : null;
     if (trap?.revealed) {
       const template = TRAPS[trap.templateId];
@@ -1301,7 +1313,7 @@ export class Game {
     const targetY = run.player.y + dy;
     const tile = run.currentFloor.map[targetY]?.[targetX];
     if (!tile) return;
-    if (tile.type !== "floor" || tile.hole || tile.shrineId) {
+    if (tile.type !== "floor" || isBlockedFloor(tile)) {
       if (tile.secretDoor) {
         tile.secretDoor = false;
         tile.type = "floor";
@@ -2320,7 +2332,8 @@ export class Game {
     for (let y = Math.max(0, player.y - range); y <= Math.min(currentFloor.height - 1, player.y + range); y += 1) {
       for (let x = Math.max(0, player.x - range); x <= Math.min(currentFloor.width - 1, player.x + range); x += 1) {
         const tile = currentFloor.map[y]?.[x];
-        if (!tile || tile.type !== "floor" || tile.occupant || tile.vendor) continue;
+        // Never land on a shrine, hole, or prop.
+        if (!tile || tile.type !== "floor" || tile.occupant || tile.vendor || isBlockedFloor(tile)) continue;
         if (manhattan(player, { x, y }) >= 2 && manhattan(player, { x, y }) <= range) {
           candidates.push({ x, y });
         }
@@ -2346,7 +2359,8 @@ export class Game {
     for (let y = Math.max(0, player.y - range); y <= Math.min(currentFloor.height - 1, player.y + range); y += 1) {
       for (let x = Math.max(0, player.x - range); x <= Math.min(currentFloor.width - 1, player.x + range); x += 1) {
         const tile = currentFloor.map[y]?.[x];
-        if (!tile || tile.type !== "floor" || tile.occupant || tile.vendor) continue;
+        // Never land on a shrine, hole, or prop.
+        if (!tile || tile.type !== "floor" || tile.occupant || tile.vendor || isBlockedFloor(tile)) continue;
         const dist = manhattan(player, { x, y });
         if (dist >= 2 && dist <= range) candidates.push({ x, y });
       }
@@ -3572,7 +3586,7 @@ export class Game {
       { x: 0, y: -1 },
     ]) {
       const tile = this.state.run.currentFloor.map[y + delta.y]?.[x + delta.x];
-      if (tile && tile.type === "floor" && !tile.occupant && !tile.vendor && !tile.stairs && !tile.hole && !tile.shrineId) {
+      if (tile && tile.type === "floor" && !tile.occupant && !tile.vendor && !tile.stairs && !isBlockedFloor(tile)) {
         return { x: x + delta.x, y: y + delta.y };
       }
     }
@@ -3590,7 +3604,7 @@ export class Game {
     ]
       .filter((point) => {
         const tile = currentFloor.map[point.y]?.[point.x];
-        return tile && tile.type === "floor" && !tile.occupant && !tile.hole && !tile.shrineId;
+        return tile && tile.type === "floor" && !tile.occupant && !isBlockedFloor(tile);
       })
       .filter((point) => manhattan(point, player) > currentDistance)
       .sort((a, b) => manhattan(b, player) - manhattan(a, player));

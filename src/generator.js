@@ -1,5 +1,5 @@
 import { BOSS_REWARDS, CHEST_TABLE, ENEMIES, FINAL_BOSS_REWARDS, FLOOR20_BOSS_REWARDS, FLOOR_CONFIGS, FLOOR_ENCOUNTERS, ITEMS, ROOM_ENCOUNTERS, TRAPS } from "./data.js";
-import { createRng, hashSeed, toKey } from "./utils.js";
+import { createRng, hashSeed, isBlockedFloor, toKey } from "./utils.js";
 
 function hashPoint(x, y, seed = 0) {
   return Math.abs(((x + 11) * 92821) ^ ((y + 17) * 68917) ^ seed) >>> 0;
@@ -35,7 +35,8 @@ function getFloorTheme(floorNumber) {
   if (floorNumber <= 9) return "ember_halls";
   if (floorNumber <= 15) return "fungal_depths";
   if (floorNumber <= 19) return "sunken_vault";
-  if (floorNumber <= 29) return "void_deep";
+  if (floorNumber <= 25) return "void_deep";
+  if (floorNumber <= 29) return "obsidian_reach";
   return "crypt";
 }
 
@@ -83,7 +84,7 @@ function inBounds(map, x, y) {
 }
 
 function isWalkable(tile) {
-  return tile && tile.type === "floor" && !tile.hole && !tile.shrineId;
+  return tile && tile.type === "floor" && !isBlockedFloor(tile);
 }
 
 function floodFill(map, start) {
@@ -202,6 +203,98 @@ function clearHolesBlockingPath(map, spawn, exit) {
   }
 }
 
+// Sewer rooms (Floors 16-19) get obstacle props from the sewer item sheet. Placement uses the tile hash,
+// not the floor's RNG, so enemies and loot keep their seeded layout. Props sit at least two tiles in from
+// the room edge (clear of doorways), never touch each other or a shrine, avoid room centres (where
+// corridors meet), skip the arrival room, and are removed again if they would cut off any room.
+const SEWER_PROP_WIDTHS = { pillar: 1, pillar_slime: 1, crate_small: 1, crate_large: 2, cauldron: 2, rocks: 2 };
+
+function placeSewerProps(map, rooms, theme, floorNumber) {
+  if (theme !== "sunken_vault") return;
+  const seed = floorNumber * 101 + 7;
+  const open = (x, y) => {
+    const tile = map[y]?.[x];
+    return tile && tile.type === "floor" && !tile.stairs && !tile.vendor && !tile.chestId && !isBlockedFloor(tile);
+  };
+  const clearRing = (x, y, width) => {
+    for (let dy = -1; dy <= 1; dy += 1) {
+      for (let dx = -1; dx <= width; dx += 1) {
+        const tile = map[y + dy]?.[x + dx];
+        if (!tile || tile.prop || tile.shrineId) return false;
+      }
+    }
+    return true;
+  };
+  const place = (x, y, kind, room) => {
+    const width = SEWER_PROP_WIDTHS[kind];
+    if (room.center.y === y && room.center.x >= x && room.center.x < x + width) return;
+    for (let offset = 0; offset < width; offset += 1) if (!open(x + offset, y)) return;
+    if (!clearRing(x, y, width)) return;
+    map[y][x].prop = kind;
+    // The right half of a two-tile prop blocks too; the sprite is drawn from the left tile.
+    for (let offset = 1; offset < width; offset += 1) map[y][x + offset].prop = "extends";
+  };
+  rooms.forEach((room, index) => {
+    if (index === 0) return;
+    const left = room.x + 2;
+    const right = room.x + room.width - 3;
+    const top = room.y + 2;
+    const bottom = room.y + room.height - 3;
+    if (right < left || bottom < top) return;
+    const roll = hashPoint(room.x, room.y, seed) % 100;
+    // Big rooms sometimes get a colonnade: a pair of pillars, plus a second pair lower down when the room
+    // is tall enough to leave a visible gap (pillars stand three tiles high, so closer pairs merge).
+    if (room.width >= 8 && room.height >= 6 && roll < 45) {
+      const kind = roll % 2 ? "pillar_slime" : "pillar";
+      const spots = [[left, top], [right, top]];
+      if (bottom - top >= 3) spots.push([left, bottom], [right, bottom]);
+      for (const [x, y] of spots) place(x, y, kind, room);
+      return;
+    }
+    const kinds = ["cauldron", "crate_large", "crate_small", "rocks"];
+    const count = room.width * room.height >= 40 ? 2 : 1;
+    for (let n = 0; n < count; n += 1) {
+      const pick = hashPoint(room.x + n * 7, room.y + n * 3, seed + n);
+      if (pick % 100 >= 60) continue;
+      const kind = kinds[pick % kinds.length];
+      const span = right - left - (SEWER_PROP_WIDTHS[kind] - 1) + 1;
+      if (span <= 0) continue;
+      place(left + ((pick >>> 3) % span), top + ((pick >>> 9) % (bottom - top + 1)), kind, room);
+    }
+  });
+}
+
+function clearPropsBlockingRooms(map, rooms, spawn) {
+  // Every room must still have some walkable tile you can reach (a room's centre may be a shrine).
+  const allReachable = () => {
+    const reachable = floodFill(map, spawn);
+    return rooms.every((room) => {
+      for (let y = room.y; y < room.y + room.height; y += 1) {
+        for (let x = room.x; x < room.x + room.width; x += 1) {
+          if (reachable.has(toKey(x, y))) return true;
+        }
+      }
+      return false;
+    });
+  };
+  let guard = 0;
+  while (!allReachable() && guard < 40) {
+    guard += 1;
+    // Drop the first prop found; props are few, so this settles quickly.
+    let removed = false;
+    for (let y = 0; y < map.length && !removed; y += 1) {
+      for (let x = 0; x < map[0].length && !removed; x += 1) {
+        if (map[y][x].prop && map[y][x].prop !== "extends") {
+          map[y][x].prop = null;
+          for (let offset = 1; map[y][x + offset]?.prop === "extends"; offset += 1) map[y][x + offset].prop = null;
+          removed = true;
+        }
+      }
+    }
+    if (!removed) break;
+  }
+}
+
 function chooseEncounterPool(floorNumber) {
   if (floorNumber <= 2) return FLOOR_ENCOUNTERS.early;
   if (floorNumber <= 4) return [...FLOOR_ENCOUNTERS.early, ...FLOOR_ENCOUNTERS.mid];
@@ -224,7 +317,7 @@ function findOpenTilesInRoom(room, map) {
   for (let y = room.y + 1; y < room.y + room.height - 1; y += 1) {
     for (let x = room.x + 1; x < room.x + room.width - 1; x += 1) {
       const tile = map[y][x];
-      if (tile.type === "floor" && !tile.occupant && !tile.chestId && !tile.vendor && !tile.stairs && !tile.hole) {
+      if (tile.type === "floor" && !tile.occupant && !tile.chestId && !tile.vendor && !tile.stairs && !isBlockedFloor(tile)) {
         positions.push({ x, y });
       }
     }
@@ -498,7 +591,7 @@ function placeTraps(map, rooms, rng, floorNumber, trapCount) {
   for (let y = 1; y < map.length - 1; y += 1) {
     for (let x = 1; x < map[0].length - 1; x += 1) {
       const tile = map[y][x];
-      if (tile.type !== "floor" || tile.occupant || tile.stairs || tile.vendor || tile.shrineId || tile.hole) continue;
+      if (tile.type !== "floor" || tile.occupant || tile.stairs || tile.vendor || isBlockedFloor(tile)) continue;
       const room = rooms.find((candidate) => x >= candidate.x && x < candidate.x + candidate.width && y >= candidate.y && y < candidate.y + candidate.height);
       const roomTile = Boolean(room);
       if (!roomTile || rng.chance(0.32)) {
@@ -786,7 +879,7 @@ function placeVendor(map, room, rng, floorNumber, playerClass) {
 function hasAllAdjacentFloors(map, x, y) {
   for (const d of [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }]) {
     const t = map[y + d.y]?.[x + d.x];
-    if (!t || t.type !== "floor" || t.hole || t.stairs || t.shrineId || t.chestId || t.vendor) return false;
+    if (!t || t.type !== "floor" || isBlockedFloor(t) || t.stairs || t.chestId || t.vendor) return false;
   }
   return true;
 }
@@ -1124,6 +1217,8 @@ export function generateFloor(runSeed, floorNumber, playerClass) {
     const theme = getFloorTheme(floorNumber);
     placeHoles(map, theme, floorNumber);
     clearHolesBlockingPath(map, spawn, exit);
+    placeSewerProps(map, rooms, theme, floorNumber);
+    clearPropsBlockingRooms(map, rooms, spawn);
 
     const state = { enemyId: 0 };
     const encounterCount = rng.int(config.enemies[0], config.enemies[1]);

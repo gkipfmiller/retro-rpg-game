@@ -34,6 +34,15 @@ const ACTOR_RECOLORS = {
   vendor_ember_factor: { source: frameSet("dwarf_m_idle_anim_f"), palette: { hueShift: 0.93, satMul: 1.2 } },
 };
 
+// Deep-floor wall and floor atlases: the sewer atlases (Floors 16-19) re-inked at load time by mapping
+// each pixel's brightness onto a colour ramp (dark to light), so the same autotiled walls carry each
+// band's palette: void violet (21-25), obsidian and ember (26-29), obsidian and gold (the throne, 30).
+const THEME_ATLAS_RAMPS = {
+  void_deep: ["#07060f", "#1d1838", "#463d7a", "#8d7fd0", "#d8d0ff"],
+  obsidian_reach: ["#080405", "#1e0d12", "#4a1a22", "#b0402c", "#ffb070"],
+  abyssal_throne: ["#060508", "#1a1520", "#3a2e3e", "#8a6a3a", "#f2c46b"],
+};
+
 // Boss reward chests, recoloured from the standard chest (wood only; the gold trim is kept):
 // bone for Super Skeletor, crimson for Patches, abyssal violet for the Overlord.
 const CHEST_WOOD_HUES = [0.9, 0.1];
@@ -55,6 +64,8 @@ const assetManifest = {
   themeAtlases: {
     sunkenVaultFloor: `${SEWER}/floor.png`,
     sunkenVaultWalls: `${SEWER}/atlas_walls_low-16x16.png`,
+    // Sewer props, torches, ooze falls, drips and cobwebs (source rects in render.js SEWER_SPRITES).
+    sewerItems: `${SEWER}/items.png`,
   },
   walls: {
     center: `${BASE}/wall_mid.png`,
@@ -421,6 +432,31 @@ function recolorImage(image, { hue = null, hueShift = null, satMul = 1, valMul =
   return canvas.toDataURL();
 }
 
+function hexToRgb(hex) {
+  return [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16));
+}
+
+// Maps each pixel's brightness onto a colour ramp (a gradient map), keeping alpha. Suits near-grey art
+// like the sewer stone, where a hue swap has almost no colour to work with.
+function rampRecolorImage(image, ramp) {
+  const { canvas, ctx, data } = readPixels(image);
+  const pixels = data.data;
+  const stops = ramp.map(hexToRgb);
+  const segments = stops.length - 1;
+  for (let index = 0; index < pixels.length; index += 4) {
+    if (!pixels[index + 3]) continue;
+    const brightness = (0.299 * pixels[index] + 0.587 * pixels[index + 1] + 0.114 * pixels[index + 2]) / 255;
+    const position = brightness * segments;
+    const stop = Math.min(Math.floor(position), segments - 1);
+    const blend = position - stop;
+    for (let channel = 0; channel < 3; channel += 1) {
+      pixels[index + channel] = Math.round(stops[stop][channel] + (stops[stop + 1][channel] - stops[stop][channel]) * blend);
+    }
+  }
+  ctx.putImageData(data, 0, 0);
+  return canvas.toDataURL();
+}
+
 async function recolorFrames(images, framePaths, palette) {
   const keys = [];
   for (const path of framePaths) {
@@ -435,6 +471,23 @@ async function recolorFrames(images, framePaths, palette) {
 }
 
 async function buildRecoloredActors(images) {
+  // Themes drawn with the autotiled atlas walls, and the atlas images each one uses.
+  assetManifest.themeAtlasSets = {
+    sunken_vault: { walls: assetManifest.themeAtlases.sunkenVaultWalls, floor: assetManifest.themeAtlases.sunkenVaultFloor },
+  };
+  for (const [theme, ramp] of Object.entries(THEME_ATLAS_RAMPS)) {
+    const walls = images[assetManifest.themeAtlases.sunkenVaultWalls];
+    const floor = images[assetManifest.themeAtlases.sunkenVaultFloor];
+    if (!walls || !floor) continue;
+    const set = {};
+    for (const [part, source] of [["walls", walls], ["floor", floor]]) {
+      const key = rampRecolorImage(source, ramp);
+      const { image } = await createImage(key);
+      images[key] = image;
+      set[part] = key;
+    }
+    assetManifest.themeAtlasSets[theme] = set;
+  }
   assetManifest.chestVariants = {};
   for (const [variant, palette] of Object.entries(CHEST_RECOLORS)) {
     const frames = await recolorFrames(images, [assetManifest.chestClosed], palette);

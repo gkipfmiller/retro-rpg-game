@@ -11,6 +11,7 @@ export const BAND_NAMES = {
   necropolis: "The Necropolis",
   stitchworks: "The Stitchworks",
   void_deep: "The Void Deep",
+  obsidian_reach: "The Obsidian Reach",
   abyssal_throne: "The Abyssal Throne",
 };
 
