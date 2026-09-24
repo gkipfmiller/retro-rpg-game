@@ -696,8 +696,24 @@ loadAssets().then((assets) => {
   window.requestAnimationFrame(frame);
 });
 
+// Dev: reveal the current floor for playtesting.
+//   revealFloor()                 map the whole floor (rooms, walls, stairs, chests, props)
+//   revealFloor({ all: true })    also keep every enemy and item in view, every turn and on later floors
+//   revealFloor({ all: false })   turn that back off (the explored map stays)
+//   revealFloor({ traps: true })  also reveal hidden traps on this floor
+function revealFloor({ all, traps = false } = {}) {
+  if (!game.state.run) return "No run in progress.";
+  if (typeof all === "boolean") game.debugSeeAll = all;
+  game.revealFloorTiles();
+  if (traps) for (const trap of game.state.run.currentFloor.traps) trap.revealed = true;
+  game.updateVisibility();
+  refresh();
+  return `Floor ${game.state.run.floorNumber} revealed${game.debugSeeAll ? "; see-all is ON (revealFloor({ all: false }) to turn off)" : ""}${traps ? "; traps revealed" : ""}.`;
+}
+
 window.dungeon30Debug = {
   game,
   refresh,
   jumpToFloor,
+  revealFloor,
 };

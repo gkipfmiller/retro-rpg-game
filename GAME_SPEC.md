@@ -916,7 +916,7 @@ Current visual polish layers:
 - floor-theme palette variation across dungeon bands
 - sewer wall/floor atlas support for the Floor 16-20 biome
 - sewer dressing (Floors 16-19), drawn from the sewer pack's item sheet and floor atlas:
-  - animated green-flame torches on room-facing walls (spaced out, and lighting the map green), animated ooze falls, and slime drips
+  - animated green-flame torches on room-facing walls (spaced out, and lighting the map green)
   - floor decor on about 9% of tiles: drain grates, manholes, rivet plates, cracked stone, and drain "eyes" that blink and glow
   - cobwebs in some room corners
   - obstacle props that block movement (not sight): slime-streaked or stone pillar colonnades in larger rooms, sludge cauldrons (animated), crates, and mossy rubble; placed by tile hash (so seeded enemies and loot are unchanged), at least two tiles in from room edges, never touching each other or a shrine, skipping the arrival room, and removed if they would cut off any room; hovering names them
@@ -989,3 +989,13 @@ The current focus is:
 - readability
 - usability
 - final stabilization
+
+## Dev Tools
+
+Available in the browser console as `dungeon30Debug`:
+- `jumpToFloor(n, { classId, boonId })`: descend to floor `n` (1-30), clearing enemies on skipped floors; starts a run with `classId` if none is in progress, and picks `boonId` (or the first offered boon) at the sage
+- `revealFloor()`: map the whole current floor (floor tiles and the walls touching them)
+- `revealFloor({ all: true })`: also keep every enemy and item in view each turn, including on later floors; `revealFloor({ all: false })` turns it off
+- `revealFloor({ traps: true })`: also reveal the floor's hidden traps
+- `game` and `refresh()`: direct access to game state, and a redraw after editing it
+- `localStorage.removeItem("dungeon30_boss_memory")` resets what bosses remember about you

@@ -72,8 +72,6 @@ const FLOOR_DETAILS = {
 // Sprites cut from the sewer item sheet (x, y, width, height in source pixels); lists are animation frames.
 const SEWER_SPRITES = {
   torch: [[144, 32, 16, 32], [160, 32, 16, 32], [176, 32, 16, 32], [192, 32, 16, 32], [208, 32, 16, 32]],
-  ooze: [[176, 96, 16, 32], [192, 96, 16, 32], [208, 96, 16, 32]],
-  drip: [[192, 64, 16, 32], [208, 64, 16, 32]],
   web: [[144, 112, 16, 16]],
   webCorner: [[160, 112, 16, 16]],
   pillar: [[0, 144, 16, 48]],
@@ -83,7 +81,7 @@ const SEWER_SPRITES = {
   cauldron: [[32, 160, 32, 32], [64, 160, 32, 32], [96, 160, 32, 32]],
   rocks: [[144, 0, 32, 16]],
 };
-const SEWER_FRAME_MS = { torch: 120, ooze: 150, drip: 450, cauldron: 420 };
+const SEWER_FRAME_MS = { torch: 120, cauldron: 420 };
 
 // Sewer floor decor from the sewer floor atlas (column, row), by kind. Drain eyes blink between two frames.
 const SEWER_FLOOR_DECOR = [
@@ -473,16 +471,14 @@ function getThemeWallAtlasCoord(theme, map, x, y, options = {}) {
   return [2, 0];
 }
 
-// A sewer wall feature on a south-facing wall (a wall with floor below it): a green-flame torch, an ooze
-// fall, or a slime drip. Torches are spaced along a diagonal pattern so they never bunch up.
+// A green-flame torch on a south-facing wall (a wall with floor below it), spaced along a diagonal
+// pattern so torches never bunch up.
 function getSewerWallFeature(map, x, y, seed) {
   const tile = map[y]?.[x];
   const below = map[y + 1]?.[x];
   if (!tile || tile.type !== "wall" || !below || below.type !== "floor" || below.stairs) return null;
   const roll = hashPoint(x, y, seed ^ 0x3c71) % 100;
   if ((x + y * 3) % 5 === 0 && roll < 55) return "torch";
-  if (roll < 6) return "ooze";
-  if (roll < 14) return "drip";
   return null;
 }
 
@@ -814,8 +810,7 @@ export class Renderer {
     const sparkleTiles = [];
     // Floor details that glow (void rifts, ember cracks, gilt glints) get a second pass after the lighting.
     const glowingDetails = [];
-    // Sewer props and wall features, drawn after all tiles (top row first) so ooze and drips that hang
-    // onto the floor below aren't painted over; torches also light the map.
+    // Sewer props and wall torches, drawn after all tiles (top row first); torches also light the map.
     const sewerSheet = currentFloor.theme === "sunken_vault" ? this.assets?.images[this.assets.manifest.themeAtlases.sewerItems] : null;
     const sewerFloorAtlas = sewerSheet ? this.assets.images[this.assets.manifest.themeAtlases.sunkenVaultFloor] : null;
     const sewerStanding = [];
@@ -1522,8 +1517,7 @@ export class Renderer {
     }
   }
 
-  // One sewer sprite at native pixel scale. Props stand on their tile; torches rise above the wall;
-  // ooze falls and drips start on the wall face and spill onto the floor below.
+  // One sewer sprite at native pixel scale. Props stand on their tile; torches rise above the wall.
   drawSewerSprite(sheet, entry, tileSize) {
     const frames = SEWER_SPRITES[entry.kind];
     if (!sheet || !frames) return;
@@ -1535,8 +1529,6 @@ export class Renderer {
     const height = sh * scale;
     let dx = entry.px;
     let dy = entry.py + tileSize - height;
-    if (entry.kind === "ooze") dy = entry.py;
-    if (entry.kind === "drip") dy = entry.py + tileSize * 0.7;
     if (entry.kind === "webCorner") dy = entry.py;
     const { ctx } = this;
     ctx.save();

@@ -110,6 +110,8 @@ export class Game {
     this.highScoreStorageKey = "dungeon30_high_scores";
     this.saveStorageKey = "dungeon30_save";
     this.bossMemoryStorageKey = "dungeon30_boss_memory";
+    // Dev only (dungeon30Debug.revealFloor({ all: true })): keep the whole floor in view every turn.
+    this.debugSeeAll = false;
     this.blockedNameTerms = [
       "fuck", "shit", "bitch", "cunt", "nigger", "nigga", "fag", "faggot", "slut",
       "whore", "asshole", "motherfucker", "dick", "cock", "pussy", "penis", "vagina",
@@ -3282,6 +3284,24 @@ export class Game {
         }
       }
     }
+    if (this.debugSeeAll) this.revealFloorTiles({ visible: true });
+  }
+
+  // Marks every floor tile, and each wall touching one, as explored (and optionally visible). Solid rock
+  // between rooms stays hidden, as it would after exploring the whole floor on foot.
+  revealFloorTiles({ visible = false } = {}) {
+    const { map } = this.state.run.currentFloor;
+    map.forEach((row, y) => row.forEach((tile, x) => {
+      let reveal = tile.type === "floor";
+      for (let dy = -1; dy <= 1 && !reveal; dy += 1) {
+        for (let dx = -1; dx <= 1 && !reveal; dx += 1) {
+          if (map[y + dy]?.[x + dx]?.type === "floor") reveal = true;
+        }
+      }
+      if (!reveal) return;
+      tile.explored = true;
+      if (visible) tile.visible = true;
+    }));
   }
 
   endPlayerTurn() {
