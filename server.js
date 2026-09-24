@@ -14,6 +14,8 @@ const mimeTypes = {
   ".jpeg": "image/jpeg",
   ".json": "application/json; charset=utf-8",
   ".svg": "image/svg+xml",
+  ".woff2": "font/woff2",
+  ".wav": "audio/wav",
 };
 
 createServer((req, res) => {

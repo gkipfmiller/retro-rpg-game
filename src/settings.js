@@ -4,6 +4,7 @@ const DEFAULT_SETTINGS = {
   muted: false,
   volume: 0.8,
   minimap: true,
+  logFilter: "all",
 };
 
 export function loadSettings() {

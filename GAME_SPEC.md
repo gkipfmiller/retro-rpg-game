@@ -831,13 +831,32 @@ Current HUD and input layout:
 - the HUD shows a highlighted "skill points to spend (K)" prompt whenever skill points are unspent; clicking it opens the skill tree
 - the skill tree shows all three branches side by side, with unlocked, available, and locked skills visually distinct
 - a Settings panel (main menu button, or O in game) holds mute, master volume, and the minimap toggle, remembered per browser
-- all controls show a visible keyboard focus ring; in overlays, arrow keys move between controls, moving across item tiles selects them, Enter on the selected item runs its main action (Use/Equip/Buy), and Enter in the high-score name field saves the score
+- all controls show a visible keyboard focus ring; in overlays, arrow keys move between controls, moving across item tiles selects them, Enter on the selected item runs its main action (Use/Equip/Buy/Unequip), and Enter in the high-score name field saves the score
+- hovering the map outlines the tile and shows a tooltip: enemies in view (HP, role, its hit chance and damage against you, your weapon's and first damage spell's hit chance and damage against it, statuses), plus remembered stairs, chests (and whether you carry a vault's key), shrines, vendors, the sage, floor items, and revealed traps; mimics still read as chests
+- damaged enemies show a small HP bar along the bottom of their tile
+- the target panel shows the last enemy you fought while it's in view, otherwise the nearest visible enemy (labelled "nearest"): sprite, rank, distance, HP bar, role, "hits you" odds and damage, your weapon and spell odds and damage (dimmed when out of range), defense and evasion, and statuses
+- the combat log keeps the last 300 lines and scrolls back freely (it only sticks to the bottom while you're at the bottom); lines are coloured by kind (damage dealt, damage taken, misses, kills, healing, statuses, loot, progression), repeated lines merge into "×N", lines from before your latest action are dimmed, and All / Combat / Loot chips filter it (remembered per browser)
+- inventory: an equipped strip (click or arrow to an equipped item to see it and Unequip), All / Gear / Consumables / Other filters, Recent / Rarity / Type sorting, a denser 4-column grid, double-click to use or equip, ▲ / ▼ / ◆ marks for upgrade, downgrade, or trade-off against the equipped item, and dimmed tiles for another class's gear
+- vendor: the same gear marks on stock and sell rows, unaffordable prices in red, price shown beside your gold, a "Sell junk" button (gear worse than equipped, spare copies of equipped gear, or another class's gear; consumables, tomes and keys never count) that previews the list and total before selling, a confirm step before selling rare or boss items, and vault keys are no longer sellable
+- the character sheet shows derived numbers with hover breakdowns: weapon damage range, accuracy, crit chance, spell damage, spell power and accuracy (when you have a damage spell), max HP and mana, defense, evasion, what each attribute currently gives, your boon, unlocked skills, and enchanted gear effects
+
+Current visual identity:
+- warm stone-and-iron palette across every screen (bronze-bordered stone panels, iron buttons, gold accent), replacing the earlier blue glass look
+- Pixelify Sans (bundled in `fonts/`, SIL Open Font License) for headings, names, numbers, and buttons; descriptions stay in a readable sans
+- the main menu, class select, and high scores sit over a live canvas diorama built from the game's own tiles: torch-lit back wall with banners, an animated lava fountain, the three delvers idling, flickering light pools, and drifting embers (a still frame under reduced motion); it only runs while those screens are visible
+- the main menu has a title lockup ("Dungeon 30" / "The Abyssal Throne") and a vertical button stack on the left so the diorama shows on the right
+- class cards show the hero on a lit pedestal, their name and flavour, level-1 HP and mana with per-level growth, attribute pip bars, starting kit icons and abilities, and Strong / Weak lines
+- the Grey Witness boon choice shows the sage's animated portrait and line, and each boon card has an icon, a category (Offense, Defense, Sustain, Arcane, Fortune) that tints the card, the mechanical summary, and flavour text
+- choosing a boon has no confirmation modal: play resumes at once while the Grey Witness dissolves on the map (fading, lifting, shedding grey motes) and speaks a four-line sequence in the dialogue box, one of three per run (the gift's weight, the throne's ledger and its hunger for an heir, then a farewell); each line is also written to the log so it can be reread
+- status effects use 8x8 pixel-art icons (`src/pixelIcons.js`) in HUD and target badges (with a turn-count chip) and as pips above actors on the map; the player's effects have their own HUD row
+- death is a full-screen epitaph: an animated portrait of what killed you (enemy sprite, trap sprite, or poison icon) on a carved headstone with the hero's name, class, level, boon, where they fell, and a floor-band epitaph line, beside a run recap (floor, level, kills, turns, damage dealt and taken, gold, score, finest possession carried), the high-score save, and the leaderboard; lingering statuses are cleared on death
+- victory uses the same layout as a gilded throne-room card with the hero's portrait
 
 Other current UI details:
 - class select now uses animated class sprites
 - class select presents three named delvers instead of generic class-only picks
 - death and victory overlays cannot be dismissed accidentally
-- NPC dialogue for the Grey Witness and vendors appears in a small on-screen dialogue box
+- NPC dialogue for the Grey Witness and vendors appears in a dialogue box over the lower-middle of the map (below the centred player), fading in as each conversation starts
 - the main HUD shows the currently active boon
 
 ## Art Direction

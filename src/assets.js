@@ -70,6 +70,26 @@ const assetManifest = {
   chestClosed: `${BASE}/chest_empty_open_anim_f0.png`,
   chestOpen: `${BASE}/chest_full_open_anim_f2.png`,
   coin: `${BASE}/coin_anim_f2.png`,
+  // One icon per Grey Witness boon, for the boon choice cards.
+  boonIcons: {
+    vicious_star: `${EXTRACTED}/amulet_spark.png`,
+    ward_of_ash: `${EXTRACTED}/ring_white.png`,
+    iron_remnant: `${EXTRACTED}/armor_iron_cuirass.png`,
+    crimson_hunger: `${EXTRACTED}/amulet_crimson.png`,
+    fortunes_ledger: `${BASE}/coin_anim_f2.png`,
+    sages_echo: `${EXTRACTED}/tome_arcane_violet.png`,
+    stoneblood: `${BASE}/ui_heart_full.png`,
+    deep_wells: `${BASE}/flask_big_blue.png`,
+    relentless_step: `${BASE}/flask_big_red.png`,
+    grave_insight: `${EXTRACTED}/amulet_skull.png`,
+    treasure_sense: `${EXTRACTED}/key_crypt.png`,
+    battle_trance: `${EXTRACTED}/ring_warbrand.png`,
+    phantom_quiver: `${EXTRACTED}/bow_galeforce.png`,
+  },
+  uiIcons: {
+    heart: `${BASE}/ui_heart_full.png`,
+    mana: "./RPG Art Assets/Assets/UI/mana.png",
+  },
   hearts: {
     full: `${BASE}/ui_heart_full.png`,
     half: `${BASE}/ui_heart_half.png`,
@@ -293,6 +313,9 @@ export async function loadAssets() {
   collectPaths(assetManifest.props);
   collectPaths(assetManifest.actors);
   collectPaths(assetManifest.items);
+  // Preloaded like everything else so they show even if the server goes away mid-session.
+  collectPaths(assetManifest.boonIcons);
+  collectPaths(assetManifest.uiIcons);
   Object.values(ACTOR_RECOLORS).forEach((entry) => collectPaths(entry.source));
 
   const loaded = await Promise.all([...paths].map(createImage));

@@ -12,6 +12,8 @@ import {
   getWallSprite,
 } from "./assets.js";
 import { clamp } from "./utils.js";
+import { LOG_FILTERS, logText, mergeLogEntries } from "./log.js";
+import { getStatusIconCanvas, getStatusIconUrl } from "./pixelIcons.js";
 
 const COLORS = {
   wall: "#26303d",
@@ -38,6 +40,8 @@ const MIN_VIEW_TILES_WIDE_NARROW = 15;
 const NARROW_CANVAS_CSS_PX = 640;
 const CANVAS_ASPECT = 3 / 4;
 const CAMERA_FOLLOW_MS = 90;
+// How long the Grey Witness takes to dissolve after granting a boon.
+const SAGE_FADE_MS = 1800;
 
 const MINIMAP_COLORS = {
   panel: "rgba(8, 10, 13, 0.78)",
@@ -167,6 +171,7 @@ function formatStatuses(statuses = []) {
   return statuses.map((status) => STATUS_DEFINITIONS[status.id]?.name ?? status.id).join(", ");
 }
 
+// Matches each status's pixel icon (see pixelIcons.js).
 function getStatusColor(statusId) {
   switch (statusId) {
     case "chilled":
@@ -174,13 +179,13 @@ function getStatusColor(statusId) {
     case "poisoned":
       return "#7fd36b";
     case "sundered":
-      return "#f3a65a";
+      return "#d9b27a";
     case "weakened":
-      return "#b48cff";
+      return "#e0833f";
     case "hexed":
-      return "#ef6fa8";
+      return "#b06cff";
     case "arcane_shield":
-      return "#79e1c9";
+      return "#7fb6ff";
     default:
       return "#d7a54d";
   }
@@ -457,7 +462,11 @@ function renderStatusBadges(statuses = []) {
     const tooltip = [def?.name ?? status.id, def?.description ?? "No description available.", status.turns ? `Turns remaining: ${status.turns}` : ""]
       .filter(Boolean)
       .join("&#10;");
-    return `<span class="status-badge" style="--badge-color:${getStatusColor(status.id)}" data-tooltip="${tooltip}"><span class="status-icon">${def?.icon ?? "?"}</span>${def?.name ?? status.id}${status.turns ? ` ${status.turns}` : ""}</span>`;
+    const iconUrl = getStatusIconUrl(status.id);
+    const icon = iconUrl
+      ? `<img class="status-icon" src="${iconUrl}" alt="">`
+      : `<span class="status-icon status-icon-letter">${def?.icon ?? "?"}</span>`;
+    return `<span class="status-badge" style="--badge-color:${getStatusColor(status.id)}" data-tooltip="${tooltip}">${icon}${def?.name ?? status.id}${status.turns ? `<span class="status-turns">${status.turns}</span>` : ""}</span>`;
   }).join("");
 }
 
@@ -554,6 +563,11 @@ export class Renderer {
     this.showMinimap = true;
     // Where keyboard focus should land the next time the overlay is redrawn (set by main.js).
     this.pendingOverlayFocus = null;
+    this.logFilter = "all";
+    this.logKey = null;
+    // Map tile under the mouse (set by main.js) and the geometry of the last drawn frame.
+    this.hoverTile = null;
+    this.mapView = null;
   }
 
   // Keeps the canvas backing store equal to its displayed size (in device pixels) so every
@@ -608,7 +622,18 @@ export class Renderer {
     this.renderHud();
     this.renderLog();
     this.renderOverlay();
+    this.animateOverlayActors();
     this.renderNpcDialog();
+  }
+
+  // Overlay portraits marked data-animate-actor play the actor's idle frames, like on the map.
+  animateOverlayActors() {
+    if (!this.assets || this.overlay.classList.contains("hidden")) return;
+    const frame = Math.floor(performance.now() / 220);
+    for (const image of this.overlayContent.querySelectorAll("img[data-animate-actor]")) {
+      const path = getActorSpriteFrame(this.assets.manifest, image.dataset.animateActor, frame);
+      if (path && image.getAttribute("src") !== path) image.setAttribute("src", path);
+    }
   }
 
   renderMap() {
@@ -802,7 +827,8 @@ export class Renderer {
           const vendorSpritePath = this.assets ? getActorSpriteFrame(this.assets.manifest, getVendorSpriteId(this.assets.manifest, currentFloor.vendor), animationFrame) : null;
           const vendorSprite = vendorSpritePath ? this.assets?.images[vendorSpritePath] : null;
           const sage = currentFloor.sage;
-          const sageSpritePath = (sage && !sage.vanished && sage.x === x && sage.y === y && this.assets)
+          const sageFade = sage?.vanished ? 1 - (Date.now() - (sage.vanishedAt ?? 0)) / SAGE_FADE_MS : 1;
+          const sageSpritePath = (sage && sageFade > 0 && sage.x === x && sage.y === y && this.assets)
             ? getActorSpriteFrame(this.assets.manifest, sage.actorId ?? "sage", animationFrame)
             : null;
           const sageSprite = sageSpritePath ? this.assets?.images[sageSpritePath] : null;
@@ -827,7 +853,8 @@ export class Renderer {
           if (tile.stairs && stairsSprite) ctx.drawImage(stairsSprite, px, py, tileSize, tileSize);
           if (tile.shrineId) this.drawShrineStructure(currentFloor.theme, tile, px, py, tileSize);
           if (tile.vendor && vendorSprite) this.drawActor(vendorSprite, px, py, tileSize);
-          if (sageSprite) this.drawActor(sageSprite, px, py, tileSize);
+          if (sageSprite && sageFade >= 1) this.drawActor(sageSprite, px, py, tileSize);
+          else if (sageSprite) this.drawFadingActor(sageSprite, px, py, tileSize, sageFade);
           if (tile.chestId && (currentFloor.theme === "sunken_vault" || floorNumber === 20)) {
             ctx.save();
             ctx.fillStyle = currentFloor.theme === "sunken_vault"
@@ -899,8 +926,17 @@ export class Renderer {
       );
     }
 
+    // Health bars go on top of every actor so a taller sprite standing below can't hide them.
+    for (const enemy of currentFloor.enemies) {
+      if (enemy.disguised || !currentFloor.map[enemy.y][enemy.x].visible) continue;
+      this.drawHealthBar(offsetX + enemy.x * tileSize, offsetY + enemy.y * tileSize, tileSize, enemy);
+    }
+
+    this.mapView = { offsetX, offsetY, tileSize, floor: currentFloor };
+    this.drawHoverOutline(currentFloor, offsetX, offsetY, tileSize);
     this.renderProjectiles(tileSize, offsetX, offsetY);
     this.renderDamagePopups(tileSize, offsetX, offsetY);
+    this.minimapRect = null;
     if (this.showMinimap) this.renderMinimap(tileSize, offsetX, offsetY);
   }
 
@@ -952,6 +988,7 @@ export class Renderer {
     const pad = Math.max(4, Math.round(tileSize / 8));
     const x = this.canvas.width - width - pad * 3;
     const y = pad * 2;
+    this.minimapRect = { x: x - pad, y: y - pad, width: width + pad * 2, height: height + pad * 2 };
     ctx.save();
     ctx.fillStyle = MINIMAP_COLORS.panel;
     ctx.fillRect(x - pad, y - pad, width + pad * 2, height + pad * 2);
@@ -1025,15 +1062,97 @@ export class Renderer {
     if (top) this.drawSprite(top, x, y - tileSize, tileSize, tileSize, 1.2);
   }
 
+  // An actor dissolving away: fading and lifting slightly, shedding grey motes that drift upward.
+  drawFadingActor(image, x, y, tileSize, remaining) {
+    const { ctx } = this;
+    const progress = 1 - remaining;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, remaining);
+    this.drawActor(image, x, y - Math.round(progress * tileSize * 0.25), tileSize);
+    ctx.restore();
+    const mote = Math.max(1, Math.floor(tileSize / 16));
+    ctx.save();
+    for (let index = 0; index < 10; index += 1) {
+      const seedX = ((index * 37) % 11) / 10;
+      const rise = (progress * 1.6 + index * 0.13) % 1;
+      ctx.globalAlpha = Math.max(0, remaining) * (1 - rise);
+      ctx.fillStyle = index % 3 === 0 ? "#e9e2f7" : "#9d93b8";
+      ctx.fillRect(
+        Math.round(x + seedX * tileSize),
+        Math.round(y + tileSize * 0.8 - rise * tileSize * 1.6),
+        mote,
+        mote,
+      );
+    }
+    ctx.restore();
+  }
+
+  // A thin bar along the bottom of the tile, only once an enemy has taken damage.
+  drawHealthBar(x, y, tileSize, enemy) {
+    if (enemy.hp >= enemy.maxHp || enemy.hp <= 0) return;
+    const height = Math.max(3, Math.floor(tileSize * 0.12));
+    const inset = Math.floor(tileSize * 0.1);
+    const width = tileSize - inset * 2;
+    const top = y + tileSize - height - 1;
+    const ratio = clamp(enemy.hp / enemy.maxHp, 0, 1);
+    this.ctx.fillStyle = "rgba(8, 10, 13, 0.85)";
+    this.ctx.fillRect(x + inset - 1, top - 1, width + 2, height + 2);
+    this.ctx.fillStyle = ratio > 0.5 ? "#d16464" : ratio > 0.25 ? "#e0833f" : "#ff4d4d";
+    this.ctx.fillRect(x + inset, top, Math.max(1, Math.round(width * ratio)), height);
+  }
+
+  drawHoverOutline(currentFloor, offsetX, offsetY, tileSize) {
+    const hover = this.hoverTile;
+    const tile = hover ? currentFloor.map[hover.y]?.[hover.x] : null;
+    if (!tile || (!tile.explored && !tile.visible)) return;
+    const line = Math.max(1, Math.floor(tileSize / 16));
+    this.ctx.save();
+    this.ctx.strokeStyle = "rgba(240, 234, 214, 0.75)";
+    this.ctx.lineWidth = line;
+    this.ctx.strokeRect(offsetX + hover.x * tileSize + line / 2, offsetY + hover.y * tileSize + line / 2, tileSize - line, tileSize - line);
+    this.ctx.restore();
+  }
+
+  // Converts a mouse position to the map tile under it, using the last drawn camera.
+  tileAtClientPoint(clientX, clientY) {
+    if (!this.mapView) return null;
+    const rect = this.canvas.getBoundingClientRect();
+    if (!rect.width) return null;
+    const scale = this.canvas.width / rect.width;
+    const { offsetX, offsetY, tileSize, floor } = this.mapView;
+    const canvasX = (clientX - rect.left) * scale;
+    const canvasY = (clientY - rect.top) * scale;
+    const minimap = this.minimapRect;
+    if (minimap && canvasX >= minimap.x && canvasX < minimap.x + minimap.width && canvasY >= minimap.y && canvasY < minimap.y + minimap.height) return null;
+    const x = Math.floor((canvasX - offsetX) / tileSize);
+    const y = Math.floor((canvasY - offsetY) / tileSize);
+    if (x < 0 || y < 0 || x >= floor.width || y >= floor.height) return null;
+    return { x, y };
+  }
+
+  // Up to three status icons in a row above the actor's tile, on a dark backing so they read on any floor.
   drawStatusPips(x, y, tileSize, statuses = []) {
     if (!statuses?.length) return;
-    const size = Math.max(4, Math.floor(tileSize * 0.18));
+    const scale = Math.max(1, Math.round(tileSize / 32));
+    const size = 8 * scale;
+    const gap = scale;
+    const { ctx } = this;
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
     statuses.slice(0, 3).forEach((status, index) => {
-      this.ctx.fillStyle = getStatusColor(status.id);
-      this.ctx.fillRect(x + index * (size + 2), y - size - 2, size, size);
-      this.ctx.strokeStyle = "#0a0c10";
-      this.ctx.strokeRect(x + index * (size + 2), y - size - 2, size, size);
+      const left = x + 1 + index * (size + gap);
+      const top = y - size - 3;
+      ctx.fillStyle = "rgba(8, 6, 5, 0.75)";
+      ctx.fillRect(left - 1, top - 1, size + 2, size + 2);
+      const icon = getStatusIconCanvas(status.id);
+      if (icon) {
+        ctx.drawImage(icon, left, top, size, size);
+      } else {
+        ctx.fillStyle = getStatusColor(status.id);
+        ctx.fillRect(left, top, size, size);
+      }
     });
+    ctx.restore();
   }
 
   queueProjectile(projectile) {
@@ -1229,7 +1348,15 @@ export class Renderer {
     intelligenceLine.dataset.tooltip = "Intelligence\nImproves spell damage and maximum mana.";
     defenseLine.dataset.tooltip = "Defense\nReduces incoming damage from enemy attacks.";
     const powerLine = document.getElementById("hud-power");
-    powerLine.innerHTML = `Power: ${derived.meleeBonus}/${derived.spellBonus}${renderOptionalStatusBadges(player.statuses)}`;
+    powerLine.textContent = `Power: ${derived.meleeBonus}/${derived.spellBonus}`;
+    // Rewritten only on change so a hovered badge keeps its tooltip.
+    const statusMarkup = player.statuses.length ? renderStatusBadges(player.statuses) : "";
+    const statusRow = document.getElementById("hud-statuses");
+    if (statusRow && statusRow.dataset.markup !== statusMarkup) {
+      statusRow.innerHTML = statusMarkup;
+      statusRow.dataset.markup = statusMarkup;
+      statusRow.classList.toggle("hidden", !statusMarkup);
+    }
     powerLine.dataset.tooltip = "Power\nFirst value is melee power.\nSecond value is spell power.";
 
     const quickButtons = [
@@ -1255,36 +1382,83 @@ export class Renderer {
       button.dataset.tooltip = formatEntryTooltip(entry);
     });
 
-    const target = this.game.getCurrentTarget();
     const panel = document.getElementById("target-panel");
-    if (!target) {
-      panel.innerHTML = "<p>No target</p>";
-    } else {
-      const spritePath = this.assets ? getActorSpriteFrame(this.assets.manifest, getEnemySpriteId(this.assets.manifest, target), animationFrame) : null;
-      const spriteMarkup = spritePath ? `<img src="${spritePath}" alt="${target.name}" class="target-sprite">` : "";
-      const bossLabel = target.templateId === "abyssal_overlord"
-        ? `Final Boss${target.phaseTwo ? " • Phase 2" : " • Phase 1"}`
-        : ENEMIES[target.templateId]?.behavior === "boss"
-          ? "Boss"
-          : target.elite
-            ? "Elite"
-            : "Enemy";
-      panel.innerHTML = `
-        ${spriteMarkup}
-        <p><strong>${target.name}</strong></p>
-        <p>HP: ${target.hp}/${target.maxHp}</p>
-        <p>${bossLabel}</p>
-        ${renderOptionalStatusBadges(target.statuses)}
-      `;
+    const { enemy: target, nearest } = this.game.getPanelTarget();
+    const markup = this.renderTargetPanel(target, nearest);
+    // Only rewrite when something changed, so a hovered row keeps its tooltip; the sprite animates in place.
+    if (markup !== this.lastTargetMarkup) {
+      panel.innerHTML = markup;
+      this.lastTargetMarkup = markup;
     }
+    const sprite = panel.querySelector(".target-sprite");
+    const spritePath = target && this.assets ? getActorSpriteFrame(this.assets.manifest, getEnemySpriteId(this.assets.manifest, target), animationFrame) : null;
+    if (sprite && spritePath && sprite.getAttribute("src") !== spritePath) sprite.setAttribute("src", spritePath);
   }
 
+  renderTargetPanel(target, nearest) {
+    if (!target) return `<p class="muted">No enemies in sight.</p>`;
+    const intel = this.game.getEnemyIntel(target);
+    const spriteMarkup = this.assets ? `<img alt="" class="target-sprite">` : "";
+    const range = ([low, high]) => (low === high ? `${low}` : `${low}–${high}`);
+    const hpPct = Math.round((intel.hp / intel.maxHp) * 100);
+    const rankClass = intel.rank.startsWith("Final") || intel.rank === "Boss" ? "boss" : intel.rank === "Elite" ? "elite" : "";
+    const attackRow = (label, entry, tooltip) => `
+      <div class="${entry.inRange ? "" : "out-of-range"}" data-tooltip="${escapeTooltip(`${tooltip}${entry.inRange ? "" : "\nOut of range right now."}`)}">
+        <dt>${label}</dt><dd>${entry.hitChance}% · ${range(entry.damage)}</dd>
+      </div>`;
+    return `
+      <div class="target-head">
+        ${spriteMarkup}
+        <div class="target-title">
+          <span class="target-rank ${rankClass}">${intel.rank}${nearest ? " · nearest" : ""}</span>
+          <strong>${intel.name}</strong>
+          <span class="muted">${intel.distance} tile${intel.distance === 1 ? "" : "s"} away</span>
+        </div>
+      </div>
+      <div class="target-hp" data-tooltip="${escapeTooltip(`${intel.name}\n${intel.hp} of ${intel.maxHp} HP left.`)}">
+        <div class="meter"><div class="meter-fill hp" style="width:${hpPct}%"></div></div>
+        <span>${intel.hp}/${intel.maxHp}</span>
+      </div>
+      <p class="target-behavior">${intel.behavior}</p>
+      <dl class="target-stats">
+        <div class="target-stats-head" aria-hidden="true"><dt></dt><dd>hit · dmg</dd></div>
+        <div class="threat" data-tooltip="${escapeTooltip(`Its attacks\nChance to hit you and damage after your defense.\nReach: ${intel.threat.range} tile${intel.threat.range === 1 ? "" : "s"}.`)}">
+          <dt>Hits you</dt><dd>${intel.threat.hitChance}% · ${range(intel.threat.damage)}</dd>
+        </div>
+        ${attackRow(intel.attack.label, intel.attack, "Your weapon\nChance to hit and damage after its defense (before crits).")}
+        ${intel.spell ? attackRow(intel.spell.label, intel.spell, "Your spell\nChance to hit and damage after its defense (before crits).") : ""}
+        <div data-tooltip="${escapeTooltip("Defenses\nDefense is subtracted from your damage.\nEvasion lowers your chance to hit.")}">
+          <dt>Defense</dt><dd>DEF ${intel.defense} · EVA ${intel.evasion}</dd>
+        </div>
+      </dl>
+      ${renderOptionalStatusBadges(intel.statuses)}
+    `;
+  }
+
+  // Rebuilt only when the log or filter changes, so the player can scroll back through history.
+  // Lines from before the latest action are dimmed; it sticks to the bottom unless scrolled up.
   renderLog() {
-    this.logElement.innerHTML = this.game.state.logs
-      .slice(-12)
-      .map((entry) => `<div>${entry}</div>`)
-      .join("");
-    this.logElement.scrollTop = this.logElement.scrollHeight;
+    const { logs, run } = this.game.state;
+    const currentTurn = run?.turn ?? 0;
+    const key = `${logs.length}|${logText(logs[logs.length - 1])}|${currentTurn}|${this.logFilter}`;
+    if (key === this.logKey) return;
+    this.logKey = key;
+    for (const chip of document.querySelectorAll("[data-log-filter]")) {
+      chip.classList.toggle("active", chip.dataset.logFilter === this.logFilter);
+      chip.setAttribute("aria-pressed", String(chip.dataset.logFilter === this.logFilter));
+    }
+    const kinds = LOG_FILTERS[this.logFilter]?.kinds ?? null;
+    const log = this.logElement;
+    const pinnedToBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 24;
+    const lines = mergeLogEntries(logs)
+      .filter((entry) => !kinds || kinds.includes(entry.kind))
+      .map((entry) => {
+        const fresh = entry.turn >= currentTurn - 1;
+        const count = entry.count > 1 ? ` <span class="log-count">&times;${entry.count}</span>` : "";
+        return `<div class="log-line log-${entry.kind}${fresh ? "" : " log-old"}">${entry.text}${count}</div>`;
+      });
+    log.innerHTML = lines.join("") || `<div class="log-line log-old">Nothing yet.</div>`;
+    if (pinnedToBottom) log.scrollTop = log.scrollHeight;
   }
 
   renderOverlay() {
@@ -1308,6 +1482,8 @@ export class Renderer {
       const wasOpenType = this.lastOverlayType;
       this.overlayTitle.textContent = overlay.title;
       this.overlayContent.innerHTML = overlay.html;
+      // A variant restyles the whole overlay (e.g. the full-screen death and victory cards).
+      this.overlay.className = `overlay overlay--${overlay.type ?? "panel"} ${overlay.variant ?? ""}`.trim();
       this.lastOverlaySignature = signature;
       this.lastOverlayType = overlay.type;
       this.restoreOverlayFocus(wasOpenType !== overlay.type);
@@ -1322,24 +1498,36 @@ export class Renderer {
     this.pendingOverlayFocus = null;
     let target = null;
     if (pending) {
+      // pending is the used button's dataset; find the redrawn button with the same data.
       target = [...content.querySelectorAll(`[data-action="${pending.action}"]`)]
-        .find((element) => (pending.index == null || element.dataset.index === pending.index)
-          && (pending.skillId == null || element.dataset.skillId === pending.skillId)
-          && (pending.entryId == null || element.dataset.entryId === pending.entryId)
-          && (pending.slotIndex == null || element.dataset.slotIndex === pending.slotIndex)) ?? null;
+        .find((element) => Object.entries(pending).every(([key, value]) => key === "tooltip" || element.dataset[key] === value)) ?? null;
     }
+    // A confirm prompt that just appeared takes focus, so Enter answers it.
+    const confirmButton = content.querySelector('[data-action="vendor-sell-confirm"], [data-action="vendor-sell-junk-confirm"]');
+    if (confirmButton && pending?.action !== confirmButton.dataset.action) target = confirmButton;
     if (!target && (pending || justOpened)) {
-      target = content.querySelector(".inventory-tile.selected, .skill-card.available button, input:not([disabled]), button:not([disabled])");
+      // Checked in priority order (a single selector list would just return the first in page order).
+      const fallbacks = [".inventory-tile.selected", ".equip-slot.selected", ".skill-card.available button", "input:not([disabled])", "button:not([disabled])"];
+      for (const selector of fallbacks) {
+        target = content.querySelector(selector);
+        if (target) break;
+      }
     }
     target?.focus({ preventScroll: false });
   }
 
   renderNpcDialog() {
-    const dialog = this.game.state.ui.npcDialog;
+    const { ui } = this.game.state;
     if (!this.npcDialog) return;
+    // When a line expires, the next queued line from the same conversation takes its place.
+    if (ui.npcDialog && Date.now() > ui.npcDialog.until && ui.npcDialogQueue?.length) {
+      const next = ui.npcDialogQueue.shift();
+      ui.npcDialog = { speaker: next.speaker, text: next.text, until: Date.now() + next.duration };
+    }
+    const dialog = ui.npcDialog;
     if (!dialog || Date.now() > dialog.until) {
       if (dialog && Date.now() > dialog.until) {
-        this.game.state.ui.npcDialog = null;
+        ui.npcDialog = null;
       }
       this.npcDialog.classList.add("hidden");
       return;

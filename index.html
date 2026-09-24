@@ -7,14 +7,21 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
+    <canvas id="menu-backdrop" class="menu-backdrop hidden" aria-hidden="true"></canvas>
     <div id="app">
       <section id="menu-screen" class="screen visible">
-        <div class="panel hero-panel">
-          <h1>Dungeon 30: The Abyssal Throne</h1>
+        <div class="panel hero-panel menu-panel">
+          <div class="title-lockup">
+            <span class="title-kicker">Thirty floors down</span>
+            <h1 class="game-title">
+              <span class="title-main">Dungeon 30</span>
+              <span class="title-sub">The Abyssal Throne</span>
+            </h1>
+          </div>
           <p class="subtitle">
-            Turn-based roguelike dungeon crawl through 30 procedural dungeon floors with class builds, vendors, loot, bosses, and permadeath.
+            A turn-based roguelike descent through procedural floors, with class builds, vendors, loot, bosses, and permadeath.
           </p>
-          <div class="menu-actions">
+          <div class="menu-actions menu-actions--stack">
             <button id="continue-run-button" class="primary hidden">Continue Run</button>
             <button id="new-run-button" class="primary">New Run</button>
             <button id="how-to-play-button">How to Play</button>
@@ -31,6 +38,7 @@
             <p><strong>Character:</strong> C</p>
             <p><strong>Skills:</strong> K</p>
             <p><strong>Minimap:</strong> M (toggle)</p>
+            <p><strong>Inspect:</strong> hover the map for enemy odds and what's on a tile</p>
             <p><strong>Quick Slots:</strong> 1-3 (manage from Character screen)</p>
             <p><strong>Settings:</strong> O</p>
             <p><strong>Close Overlay:</strong> Escape</p>
@@ -40,7 +48,10 @@
 
       <section id="class-screen" class="screen">
         <div class="panel class-select-panel">
-          <h2>Choose Your Delver</h2>
+          <div class="screen-heading">
+            <span class="title-kicker">Who descends?</span>
+            <h2>Choose Your Delver</h2>
+          </div>
           <div class="class-grid">
             <button class="class-card" data-class-id="warrior">
               <span class="class-portrait">
@@ -50,7 +61,8 @@
               <span class="class-role">Warrior</span>
               <strong class="class-name">Garrick Ironhand</strong>
               <span class="class-flavor">A scarred sellsword who survives by breaking shields, holding chokepoints, and outlasting whatever lurks below.</span>
-              <span class="class-traits">Strengths: high HP, strong melee, heavier armor. Weaknesses: poor range, low mana, limited spell access.</span>
+              <span class="class-stats" data-class-stats="warrior"></span>
+              <span class="class-traits"><span class="trait trait-good"><span class="trait-label">Strong</span> High HP, strong melee, heavier armor.</span><span class="trait trait-bad"><span class="trait-label">Weak</span> Poor range, low mana, limited spell access.</span></span>
             </button>
             <button class="class-card" data-class-id="wizard">
               <span class="class-portrait">
@@ -60,7 +72,8 @@
               <span class="class-role">Sorceress</span>
               <strong class="class-name">Selara Ashveil</strong>
               <span class="class-flavor">An arcane scholar of the underdeep who wins with distance, control, and precise bursts of destructive magic.</span>
-              <span class="class-traits">Strengths: high mana, ranged spells, control tools. Weaknesses: low HP, weak armor, punished hard when cornered.</span>
+              <span class="class-stats" data-class-stats="wizard"></span>
+              <span class="class-traits"><span class="trait trait-good"><span class="trait-label">Strong</span> High mana, ranged spells, control tools.</span><span class="trait trait-bad"><span class="trait-label">Weak</span> Low HP, weak armor, punished hard when cornered.</span></span>
             </button>
             <button class="class-card" data-class-id="ranger">
               <span class="class-portrait">
@@ -70,7 +83,8 @@
               <span class="class-role">Ranger</span>
               <strong class="class-name">Sydor Alamasy</strong>
               <span class="class-flavor">A keen-eyed wanderer who picks apart foes from afar, blending bowcraft with subtle nature magic and a survivalist's instinct.</span>
-              <span class="class-traits">Strengths: ranged attacks, high accuracy, good evasion. Weaknesses: moderate HP, weaker in melee, split stat scaling.</span>
+              <span class="class-stats" data-class-stats="ranger"></span>
+              <span class="class-traits"><span class="trait trait-good"><span class="trait-label">Strong</span> Ranged attacks, high accuracy, good evasion.</span><span class="trait trait-bad"><span class="trait-label">Weak</span> Moderate HP, weaker in melee, split stat scaling.</span></span>
             </button>
           </div>
           <button id="class-back-button">Back</button>
@@ -134,13 +148,20 @@
                 <p id="hud-defense"></p>
                 <p id="hud-power"></p>
               </div>
+              <div id="hud-statuses" class="status-badge-row hidden" aria-label="Active effects"></div>
             </div>
           </div>
         </aside>
 
         <main class="play-area">
           <div class="panel canvas-panel">
-            <canvas id="game-canvas" width="768" height="576"></canvas>
+            <div class="map-stage">
+              <canvas id="game-canvas" width="768" height="576"></canvas>
+              <div id="npc-dialog" class="npc-dialog hidden">
+                <div id="npc-dialog-speaker" class="npc-dialog-speaker"></div>
+                <div id="npc-dialog-text" class="npc-dialog-text"></div>
+              </div>
+            </div>
             <div class="hotbar" aria-label="Quick slots">
               <button id="quick-slot-1" class="quick-button"></button>
               <button id="quick-slot-2" class="quick-button"></button>
@@ -158,6 +179,14 @@
           </div>
 
           <div class="panel log-panel sidebar-log-panel">
+            <div class="log-header">
+              <h3>Log</h3>
+              <div class="log-filters" role="group" aria-label="Filter the log">
+                <button type="button" class="log-chip active" data-log-filter="all" aria-pressed="true">All</button>
+                <button type="button" class="log-chip" data-log-filter="combat" aria-pressed="false">Combat</button>
+                <button type="button" class="log-chip" data-log-filter="loot" aria-pressed="false">Loot</button>
+              </div>
+            </div>
             <div id="combat-log"></div>
             <div class="control-strip">
               <span>Move: WASD / Arrows</span>
@@ -180,10 +209,6 @@
           </div>
         </div>
 
-        <div id="npc-dialog" class="npc-dialog hidden">
-          <div id="npc-dialog-speaker" class="npc-dialog-speaker"></div>
-          <div id="npc-dialog-text" class="npc-dialog-text"></div>
-        </div>
         <div id="transition-banner" class="transition-banner hidden"></div>
         <div id="ui-tooltip" class="ui-tooltip hidden"></div>
 

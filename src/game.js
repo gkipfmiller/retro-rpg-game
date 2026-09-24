@@ -1,7 +1,9 @@
 import { BOONS, BOSS_REWARDS, CHEST_TABLE, CLASSES, ENEMIES, ITEMS, SKILL_TREES, SPELLS, STATUS_DEFINITIONS, TRAPS } from "./data.js";
 import { attachVaultFeaturesToFloor, generateFloor, getDropForEnemy } from "./generator.js";
-import { getItemSprite } from "./assets.js";
+import { getActorSpriteFrame, getEnemySpriteId, getItemSprite } from "./assets.js";
+import { getStatusIconUrl } from "./pixelIcons.js";
 import { clamp, createRng, deepClone, hashSeed, manhattan, toKey } from "./utils.js";
+import { MAX_LOG_ENTRIES, logText, normalizeLogs } from "./log.js";
 
 const XP_THRESHOLDS = {
   1: 0,
@@ -102,7 +104,7 @@ export class Game {
       mode: "menu",
       run: null,
       ui: { overlay: null, selectedId: null, npcDialog: null },
-      logs: ["Begin a new run to enter the dungeon."],
+      logs: normalizeLogs(["Begin a new run to enter the dungeon."]),
     };
     this.renderer = null;
     this.highScoreStorageKey = "dungeon30_high_scores";
@@ -170,6 +172,30 @@ export class Game {
       picks.push(pool.splice(rng.int(0, pool.length - 1), 1)[0]);
     }
     return picks;
+  }
+
+  // What the Grey Witness says as they fade after granting a boon: the gift's weight, the throne's
+  // ledger, and a farewell. One of several sequences, fixed per run.
+  getSageBurdenLines(runSeed, boon) {
+    const sequences = [
+      [
+        `It is done. ${boon.name} is yours now, and so is its weight.`,
+        "Every gift taken here is a debt owed below. The throne keeps the ledger.",
+        "Thirty floors, delver. Many have carried their burden down. None have carried it back up.",
+      ],
+      [
+        `${boon.name}. Carry it well; it grows heavier with every floor.`,
+        "I have watched a hundred delvers take a gift from these hands. I have watched the throne take them back.",
+        "Something below has waited a long time for an heir. Do not let it choose you.",
+      ],
+      [
+        `So you choose ${boon.name}. They all choose, in the end.`,
+        "This dungeon was dug for one purpose: to deliver someone to the throne. Conqueror or offering, it does not care which.",
+        "When the torches gutter and the halls go quiet, remember whose gift you carry. I will remember you.",
+      ],
+    ];
+    const sequence = sequences[hashSeed(runSeed, "sage-burden") % sequences.length];
+    return [...sequence, this.getSageFarewellLine(runSeed, boon.id)];
   }
 
   getSageFarewellLine(runSeed, boonId) {
@@ -372,26 +398,38 @@ export class Game {
   openSageChoice() {
     const sage = this.state.run?.currentFloor?.sage;
     if (!sage || sage.vanished) return;
+    const manifest = this.renderer?.assets?.manifest;
+    const categoryLabels = { offense: "Offense", defense: "Defense", sustain: "Sustain", arcane: "Arcane", fortune: "Fortune" };
     const choices = sage.choices
       .map((boonId) => {
         const boon = BOONS[boonId];
+        const icon = manifest?.boonIcons?.[boon.id];
         return `
-          <button class="class-card boon-card" data-action="choose-boon" data-boon-id="${boon.id}">
-            <span class="class-role">Sage's Gift</span>
-            <strong class="class-name">${boon.name}</strong>
-            <span class="class-flavor">${boon.description}</span>
-            <span class="class-traits">${boon.summary}</span>
+          <button class="boon-card boon--${boon.category ?? "fortune"}" data-action="choose-boon" data-boon-id="${boon.id}">
+            <span class="boon-icon-frame">${icon ? `<img class="boon-icon" src="${icon}" alt="">` : ""}</span>
+            <span class="boon-category">${categoryLabels[boon.category] ?? "Gift"}</span>
+            <strong class="boon-name">${boon.name}</strong>
+            <span class="boon-summary">${boon.summary}</span>
+            <span class="boon-flavor">${boon.description}</span>
           </button>
         `;
       })
       .join("");
+    const sagePortrait = manifest ? getActorSpriteFrame(manifest, sage.actorId ?? "sage", 0) : null;
     this.state.ui.overlay = {
       type: "boon-choice",
+      variant: "boon-choice",
       dismissible: false,
-      title: this.sageName,
+      title: "Choose a Gift",
       html: `
-        <p class="muted">${this.sageName} offers three gifts. Accept one and carry its burden below.</p>
-        <div class="class-grid boon-grid">
+        <div class="sage-intro">
+          ${sagePortrait ? `<span class="sage-portrait-frame"><img class="sage-portrait" src="${sagePortrait}" data-animate-actor="${sage.actorId ?? "sage"}" alt=""></span>` : ""}
+          <div class="sage-speech">
+            <span class="sage-speaker">${this.sageName}</span>
+            <p>"Three gifts, delver. Take one, and carry its burden below."</p>
+          </div>
+        </div>
+        <div class="boon-grid">
           ${choices}
         </div>
       `,
@@ -411,21 +449,14 @@ export class Game {
     const derived = this.getDerivedStats(run.player);
     run.player.hp = Math.min(derived.maxHp, run.player.hp + (boonId === "stoneblood" ? 18 : 0));
     run.player.mana = Math.min(derived.maxMana, run.player.mana + (boonId === "deep_wells" ? 14 : 0));
-    const farewell = this.getSageFarewellLine(run.runSeed, boonId);
-    this.showNpcDialog(this.sageName, farewell, 3200);
+    if (sage) sage.vanishedAt = Date.now();
     this.log(`${this.sageName} grants ${boon.name}.`);
+    // No modal: the sage speaks while fading, and the player can move straight away.
+    const lines = this.getSageBurdenLines(run.runSeed, boon);
+    this.showNpcDialogSequence(this.sageName, lines);
+    for (const line of lines) this.log(`${this.sageName}: "${line}"`);
     this.log(`${this.sageName} fades, revealing the stairs to Floor 1.`);
-    this.state.ui.overlay = {
-      type: "sage-farewell",
-      dismissible: false,
-      title: this.sageName,
-      html: `
-        <p>${boon.description}</p>
-        <p><strong>${boon.summary}</strong></p>
-        <p class="muted">${farewell}</p>
-        <button class="primary" data-action="close-sage-message">Continue</button>
-      `,
-    };
+    this.state.ui.overlay = null;
     this.saveRun();
   }
 
@@ -440,10 +471,32 @@ export class Game {
   }
 
   log(message) {
-    this.state.logs.push(message);
+    this.state.logs.push({ text: message, turn: this.state.run?.turn ?? 0 });
+    if (this.state.logs.length > MAX_LOG_ENTRIES) this.state.logs.splice(0, this.state.logs.length - MAX_LOG_ENTRIES);
+  }
+
+  resetLogs(...messages) {
+    this.state.logs = [];
+    for (const message of messages) this.log(message);
+  }
+
+  lastLogText() {
+    return logText(this.lastLogText());
+  }
+
+  // Several lines in a row from one speaker, each shown long enough to read.
+  showNpcDialogSequence(speaker, lines) {
+    const [first, ...rest] = lines;
+    this.showNpcDialog(speaker, first, this.getDialogDuration(first));
+    this.state.ui.npcDialogQueue = rest.map((text) => ({ speaker, text, duration: this.getDialogDuration(text) }));
+  }
+
+  getDialogDuration(text) {
+    return clamp(1800 + text.length * 45, 2600, 6500);
   }
 
   showNpcDialog(speaker, text, duration = 2600) {
+    this.state.ui.npcDialogQueue = [];
     this.state.ui.npcDialog = {
       speaker,
       text,
@@ -508,7 +561,7 @@ export class Game {
       const payload = JSON.parse(raw);
       if (payload.version !== 1 || !payload.run) return false;
       this.state.run = payload.run;
-      this.state.logs = payload.logs ?? [];
+      this.state.logs = normalizeLogs(payload.logs ?? []);
       this.state.mode = "in_game";
       this.state.ui = { overlay: null, selectedId: null, npcDialog: null };
       this.updateVisibility();
@@ -617,14 +670,6 @@ export class Game {
           </div>
           <div class="detail-price">${summary.score} pts</div>
         </div>
-        <div class="detail-list">
-          <div>Floor: <strong>${summary.floor}</strong></div>
-          <div>Level: <strong>${summary.level}</strong></div>
-          <div>Kills: <strong>${summary.kills}</strong></div>
-          <div>Gold: <strong>${summary.gold}</strong></div>
-          <div>Cause: <strong>${summary.cause}</strong></div>
-          <div>Class: <strong>${summary.className}</strong></div>
-        </div>
         <div class="score-save-row">
           <input id="score-name-input" class="score-name-input" type="text" maxlength="18" placeholder="Enter your name" value="${savedName ? this.escapeTooltip(savedName).replaceAll("&#10;", "") : ""}">
           <button class="primary" data-action="save-score">Save Score</button>
@@ -718,17 +763,24 @@ export class Game {
       player,
       vaultPlan: this.createVaultPlan(runSeed),
       currentFloor: floorData,
-      runStats: { kills: 0 },
+      runStats: { kills: 0, damageDealt: 0, damageTaken: 0 },
       currentTargetId: null,
     };
     this.updateVisibility();
-    this.state.logs = [
+    this.resetLogs(
       `${this.sageName} waits before the first descent.`,
       "Approach the sage and press Enter to choose a boon.",
-    ];
+    );
     this.state.ui.overlay = null;
     this.state.mode = "in_game";
     this.renderer?.showTransition(this.getFloorTransitionBanner(0));
+  }
+
+  recordDamage(direction, amount) {
+    const stats = this.state.run?.runStats;
+    if (!stats || !(amount > 0)) return;
+    const key = direction === "dealt" ? "damageDealt" : "damageTaken";
+    stats[key] = (stats[key] ?? 0) + amount;
   }
 
   getDerivedStats(player) {
@@ -840,6 +892,98 @@ export class Game {
     return run?.currentFloor.enemies.find((enemy) => enemy.id === run.currentTargetId) ?? null;
   }
 
+  // Plain-text tooltip for the map tile under the mouse, or null when there's nothing worth saying.
+  // Enemies only show while in view; fixtures (chests, stairs, shrines) are remembered once explored.
+  describeTile(x, y) {
+    const { run } = this.state;
+    const tile = run?.currentFloor.map[y]?.[x];
+    if (!tile || (!tile.explored && !tile.visible)) return null;
+    const { currentFloor } = run;
+    const range = ([low, high]) => (low === high ? `${low}` : `${low}–${high}`);
+    const sections = [];
+
+    const enemy = tile.visible
+      ? currentFloor.enemies.find((entry) => entry.x === x && entry.y === y && !entry.disguised && entry.hp > 0)
+      : null;
+    if (enemy) {
+      const intel = this.getEnemyIntel(enemy);
+      const lines = [
+        `${intel.name}${intel.rank === "Enemy" ? "" : ` (${intel.rank})`}`,
+        `HP ${intel.hp}/${intel.maxHp} · ${intel.behavior}`,
+        `Hits you: ${intel.threat.hitChance}% for ${range(intel.threat.damage)}`,
+        `${intel.attack.label}: ${intel.attack.hitChance}% for ${range(intel.attack.damage)}${intel.attack.inRange ? "" : " (out of range)"}`,
+      ];
+      if (intel.spell) lines.push(`${intel.spell.label}: ${intel.spell.hitChance}% for ${range(intel.spell.damage)}${intel.spell.inRange ? "" : " (out of range)"}`);
+      if (intel.statuses.length) {
+        lines.push(`Status: ${intel.statuses.map((status) => `${STATUS_DEFINITIONS[status.id]?.name ?? status.id}${status.turns ? ` (${status.turns})` : ""}`).join(", ")}`);
+      }
+      sections.push(lines.join("\n"));
+    }
+
+    if (tile.stairs) {
+      const bossAlive = currentFloor.enemies.some((entry) => ENEMIES[entry.templateId]?.behavior === "boss");
+      const next = run.floorNumber + 1;
+      sections.push(`${currentFloor.theme === "sunken_vault" ? "Ladder" : "Stairs"} down${next <= 30 ? ` to Floor ${next}` : ""}\n${bossAlive ? "Sealed until the boss falls." : "Stand on it and press Enter."}`);
+    }
+
+    if (tile.chestId) {
+      const chest = currentFloor.chests.find((entry) => entry.id === tile.chestId);
+      const lines = [chest?.label ?? "Chest"];
+      if (chest?.locked) {
+        const keyName = ITEMS[chest.keyItemId]?.name ?? "a matching key";
+        lines.push(this.hasVaultKey(chest.keyItemId) ? `Locked. You carry the ${keyName}.` : `Locked. Needs the ${keyName}.`);
+      }
+      lines.push("Stand on it and press Enter to open.");
+      sections.push(lines.join("\n"));
+    }
+
+    if (tile.visible && tile.itemIds.length) {
+      const names = tile.itemIds.map((itemId) => ITEMS[itemId]?.name ?? itemId);
+      sections.push(`On the floor: ${names.join(", ")}\nWalk over it to pick up.`);
+    }
+
+    if (tile.vendor && currentFloor.vendor) {
+      sections.push(`${currentFloor.vendor.name ?? "Vendor"}\nMerchant. Stand here and press Enter to trade.`);
+    }
+
+    const sage = currentFloor.sage;
+    if (sage && !sage.vanished && sage.x === x && sage.y === y) {
+      sections.push(`${this.sageName}\nStand beside the sage and press Enter.`);
+    }
+
+    const shrine = this.getShrineAt(x, y);
+    if (shrine) {
+      const restores = shrine.mode === "healing" ? "HP" : "mana";
+      sections.push(`Shrine of ${shrine.mode === "healing" ? "Healing" : "Clarity"}\n${shrine.used ? "Spent." : `Restores 45% of your ${restores}. Stand beside it and press Enter.`}`);
+    }
+
+    const trap = tile.visible ? this.getTrapAt(x, y) : null;
+    if (trap?.revealed) {
+      const template = TRAPS[trap.templateId];
+      const lines = [template.name];
+      if (template.damage[1] > 0) lines.push(`Deals ${range(template.damage)} damage.`);
+      if (template.status) lines.push(`Inflicts ${STATUS_DEFINITIONS[template.status]?.name ?? template.status}.`);
+      if (template.alerts) lines.push("Alerts nearby enemies.");
+      sections.push(lines.join("\n"));
+    }
+
+    return sections.length ? sections.join("\n\n") : null;
+  }
+
+  // The enemy the target panel describes: the last one you fought if it's still in view, otherwise
+  // the nearest visible one (what your next attack would likely hit).
+  getPanelTarget() {
+    const { run } = this.state;
+    if (!run) return { enemy: null, nearest: false };
+    const isShown = (enemy) => enemy && !enemy.disguised && enemy.hp > 0 && run.currentFloor.map[enemy.y]?.[enemy.x]?.visible;
+    const current = this.getCurrentTarget();
+    if (isShown(current)) return { enemy: current, nearest: false };
+    const nearest = run.currentFloor.enemies
+      .filter(isShown)
+      .sort((a, b) => manhattan(run.player, a) - manhattan(run.player, b))[0] ?? null;
+    return { enemy: nearest, nearest: Boolean(nearest) };
+  }
+
   getTrapAt(x, y) {
     return this.state.run?.currentFloor.traps.find((trap) => trap.x === x && trap.y === y) ?? null;
   }
@@ -877,6 +1021,74 @@ export class Game {
           : template.damage,
       range: (template.range ?? 1) + (enemy.elite && template.behavior === "caster" ? 1 : 0) + (enemy.templateId === "abyssal_overlord" && enemy.phaseTwo ? 1 : 0),
       xp: template.xp + (enemy.elite ? Math.floor(template.xp * 0.45) : 0),
+    };
+  }
+
+  // Everything the target panel and map hover show about an enemy: its threat to you, and your odds
+  // against it. Damage ranges mirror performPlayerAttack/enemyAttack before crits and one-off bonuses.
+  getEnemyIntel(enemy) {
+    const player = this.state.run.player;
+    const template = ENEMIES[enemy.templateId];
+    const stats = this.getEnemyCombatStats(enemy);
+    const derived = this.getPlayerCombatSnapshot();
+    const weapon = ITEMS[player.equipment.weapon];
+    const evasion = stats.evasion ?? 0;
+    const distance = manhattan(player, enemy);
+
+    const ranged = Boolean(weapon?.range);
+    const bonus = ranged ? derived.rangedBonus : derived.meleeBonus;
+    const damagePct = (ranged ? derived.rangedDamagePct : derived.meleeDamagePct) ?? 0;
+    const enchantBonus = weapon?.enchantment?.type === "onHitBonusDamage" ? weapon.enchantment.value : 0;
+    const weaponHit = (roll) => Math.max(1, Math.floor((roll + bonus) * (1 + damagePct / 100)) - stats.defense) + enchantBonus;
+    const weaponRoll = weapon?.damage ?? [1, 2];
+
+    const spellId = [...player.quickSlots, ...player.learnedSpells]
+      .find((entryId) => SPELLS[entryId]?.type === "spell" && SPELLS[entryId].damage);
+    const spell = spellId ? SPELLS[spellId] : null;
+    const spellEnchant = weapon?.enchantment?.type === "spellBonusDamage" ? weapon.enchantment.value : 0;
+    const spellHit = (roll) => Math.max(1, Math.floor((roll + derived.spellBonus) * (1 + derived.spellDamagePct / 100)) - stats.defense) + spellEnchant;
+
+    let playerDefense = derived.defense;
+    if (this.hasStatus(player, "arcane_shield")) playerDefense += 2;
+    const range = stats.range ?? 1;
+    const behaviorLabels = {
+      melee: "Melee: closes in to strike",
+      skirmisher: "Skirmisher: fast and evasive",
+      blocker: "Blocker: tough, holds the line",
+      caster: `Caster: attacks from range ${range}`,
+      lurker: `Lurker: stays put, strikes within ${range}`,
+      boss: range > 1 ? `Boss: melee and range ${range}` : "Boss: heavy melee",
+    };
+
+    return {
+      name: enemy.name,
+      rank: enemy.templateId === "abyssal_overlord"
+        ? `Final Boss${enemy.phaseTwo ? " • Phase 2" : " • Phase 1"}`
+        : template.behavior === "boss" ? "Boss" : enemy.elite ? "Elite" : "Enemy",
+      behavior: behaviorLabels[template.behavior] ?? template.behavior,
+      hp: Math.max(0, enemy.hp),
+      maxHp: enemy.maxHp,
+      defense: stats.defense,
+      evasion,
+      distance,
+      statuses: enemy.statuses ?? [],
+      threat: {
+        hitChance: clamp(stats.accuracy - derived.evasion, 10, 95),
+        damage: [Math.max(1, stats.damage[0] - playerDefense), Math.max(1, stats.damage[1] - playerDefense)],
+        range,
+      },
+      attack: {
+        label: ranged ? `${weapon.name} (F)` : weapon?.name ?? "Unarmed",
+        hitChance: clamp(derived.accuracy - evasion, 10, 95),
+        damage: [weaponHit(weaponRoll[0]), weaponHit(weaponRoll[1])],
+        inRange: ranged ? distance <= weapon.range : distance <= 1,
+      },
+      spell: spell ? {
+        label: spell.name,
+        hitChance: clamp(90 + (derived.spellAccuracyFlat ?? 0) - evasion, 10, 95),
+        damage: [spellHit(spell.damage[0]), spellHit(spell.damage[1])],
+        inRange: distance <= spell.range,
+      } : null,
     };
   }
 
@@ -1045,6 +1257,7 @@ export class Game {
     const damage = template.damage[1] === 0 ? 0 : Math.max(1, rawDamage);
     if (damage > 0) {
       this.state.run.player.hp = Math.max(0, this.state.run.player.hp - damage);
+      this.recordDamage("taken", damage);
       this.renderer?.queueDamagePopup({ x: this.state.run.player.x, y: this.state.run.player.y, damage, type: "player" });
       this.log(`${template.name} hits you for ${damage} damage.`);
     } else {
@@ -1070,7 +1283,7 @@ export class Game {
         : "The alarm echoes through the halls.");
     }
     this.triggerRelentlessStep();
-    if (this.state.run.player.hp <= 0) this.handleDeath(`Killed by ${template.name}.`);
+    if (this.state.run.player.hp <= 0) this.handleDeath(`Killed by ${template.name}.`, { kind: "trap", name: template.name, trapId: trap.templateId });
   }
 
   formatItemStats(itemId) {
@@ -1129,7 +1342,7 @@ export class Game {
       { label: item.category, tone: "muted" },
     ];
     if (item.classBias) {
-      badges.push({ label: `${item.classBias} fit`, tone: item.classBias });
+      badges.push({ label: `${CLASSES[item.classBias]?.name ?? item.classBias} gear`, tone: item.classBias });
     }
     if (item.slot && item.slot !== item.category) {
       badges.push({ label: item.slot, tone: "muted" });
@@ -1178,6 +1391,53 @@ export class Game {
     return rows;
   }
 
+  // How a piece of gear stacks up against what's equipped in its slot:
+  // "upgrade" (better or equal everywhere, or the slot is empty), "downgrade", "mixed", "equal",
+  // or "duplicate" (a copy of the equipped item). Null for items that don't equip.
+  // Enchantments and hands effects can't be weighed against stats, so a difference there counts both ways.
+  getGearVerdict(itemId) {
+    const item = ITEMS[itemId];
+    if (!item?.slot) return null;
+    const equippedId = this.state.run.player.equipment[item.slot];
+    if (!equippedId) return "upgrade";
+    if (equippedId === itemId) return "duplicate";
+    const equipped = ITEMS[equippedId];
+    const rows = this.getComparisonRows(itemId);
+    const extra = (entry) => JSON.stringify(entry.enchantment ?? entry.handsEffect ?? null);
+    const extrasDiffer = extra(item) !== extra(equipped);
+    const gains = rows.some((row) => row.delta > 0) || (extrasDiffer && extra(item) !== "null");
+    const losses = rows.some((row) => row.delta < 0) || (extrasDiffer && extra(equipped) !== "null");
+    if (gains && losses) return "mixed";
+    if (gains) return "upgrade";
+    if (losses) return "downgrade";
+    return "equal";
+  }
+
+  isOffClassItem(itemId) {
+    const bias = ITEMS[itemId]?.classBias;
+    return Boolean(bias && bias !== this.state.run.player.classId);
+  }
+
+  // Gear the "Sell junk" button offers: strictly worse than equipped, a spare copy of it, or made for
+  // another class. Consumables, tomes and keys never count.
+  isJunkItem(itemId) {
+    if (!ITEMS[itemId]?.slot) return false;
+    const verdict = this.getGearVerdict(itemId);
+    return this.isOffClassItem(itemId) || verdict === "downgrade" || verdict === "duplicate";
+  }
+
+  renderGearVerdict(itemId) {
+    const verdict = this.getGearVerdict(itemId);
+    const marks = {
+      upgrade: ["up", "&#9650;", "Upgrade over your equipped gear"],
+      downgrade: ["down", "&#9660;", "Worse than your equipped gear"],
+      mixed: ["mixed", "&#9670;", "Trade-off: better in some stats, worse in others"],
+    };
+    const mark = marks[verdict];
+    if (!mark) return "";
+    return `<span class="gear-verdict ${mark[0]}" aria-label="${mark[2]}">${mark[1]}</span>`;
+  }
+
   compareItemToEquipped(itemId) {
     const item = ITEMS[itemId];
     if (!item?.slot) return "";
@@ -1219,7 +1479,7 @@ export class Game {
       parts.push(`Stack: ${options.stackCount}`);
     }
     if (item.category) {
-      parts.push(`Type: ${item.category}${item.slot ? ` (${item.slot})` : ""}`);
+      parts.push(`Type: ${item.category}${item.slot && item.slot !== item.category ? ` (${item.slot})` : ""}`);
     }
     const stats = this.formatItemStats(itemId);
     if (stats) {
@@ -1336,9 +1596,14 @@ export class Game {
       actionLabel,
       actionDisabled = false,
       actionIndex = null,
+      actionAttrs = "",
       priceLabel = null,
       footer = "",
+      showComparison = true,
     } = options;
+    const offClassLine = this.isOffClassItem(itemId)
+      ? `<p class="negative">Made for the ${CLASSES[item.classBias]?.name ?? item.classBias}.</p>`
+      : "";
 
     const enchantmentLine = item.enchantment
       ? `<p class="positive">${item.description ?? this.getEnchantmentDescription(item)}</p>`
@@ -1355,9 +1620,10 @@ export class Game {
         </div>
         ${this.renderStatsChipRow(itemId)}
         ${enchantmentLine}
-        ${this.renderComparisonTable(itemId)}
+        ${offClassLine}
+        ${showComparison ? this.renderComparisonTable(itemId) : ""}
         ${footer}
-        ${action ? `<div class="detail-actions"><button class="primary" data-action="${action}" ${actionIndex !== null ? `data-index="${actionIndex}"` : ""} ${actionDisabled ? "disabled" : ""}>${actionLabel}</button></div>` : ""}
+        ${action ? `<div class="detail-actions"><button class="primary" data-action="${action}" ${actionIndex !== null ? `data-index="${actionIndex}"` : ""} ${actionAttrs} ${actionDisabled ? "disabled" : ""}>${actionLabel}</button></div>` : ""}
       </div>
     `;
   }
@@ -1423,7 +1689,7 @@ export class Game {
   getInventoryStacksWithSellValue() {
     return this.getInventoryStacks().map((stack) => ({
       ...stack,
-      sellValue: Math.max(1, Math.floor((ITEMS[stack.itemId]?.value ?? 0) * 0.15)),
+      sellValue: this.getSellValue(stack.itemId),
     }));
   }
 
@@ -1577,6 +1843,7 @@ export class Game {
     damage = Math.max(1, Math.floor(damage * damageMultiplier));
 
     enemy.hp -= damage;
+    this.recordDamage("dealt", damage);
     this.soundPlayer?.play('player_hit_enemy');
     this.renderer?.queueDamagePopup({ x: enemy.x, y: enemy.y, damage, type: "enemy", critical: criticalHit });
     this.log(`You ${criticalHit ? "critically strike" : "hit"} ${enemy.name} for ${damage} damage.`);
@@ -1626,6 +1893,7 @@ export class Game {
       const adjacentEnemies = this.state.run.currentFloor.enemies.filter((candidate) => candidate.id !== enemy.id && manhattan(candidate, enemy) === 1);
       for (const adjacent of adjacentEnemies.slice(0, 2)) {
         adjacent.hp -= splashDamage;
+        this.recordDamage("dealt", splashDamage);
         this.renderer?.queueDamagePopup({ x: adjacent.x, y: adjacent.y, damage: splashDamage, type: "enemy" });
         this.log(`${adjacent.name} takes ${splashDamage} cleave damage.`);
         if (adjacent.hp <= 0) this.killEnemy(adjacent);
@@ -1642,6 +1910,7 @@ export class Game {
         if (phantomTarget) {
           const phantomDamage = Math.max(1, Math.floor(damage * 0.5));
           phantomTarget.hp -= phantomDamage;
+          this.recordDamage("dealt", phantomDamage);
           this.renderer?.queueProjectile({ kind: "arrow", from: { x: player.x, y: player.y }, to: { x: phantomTarget.x, y: phantomTarget.y } });
           this.renderer?.queueDamagePopup({ x: phantomTarget.x, y: phantomTarget.y, damage: phantomDamage, type: "enemy" });
           this.log(`A phantom arrow strikes ${phantomTarget.name} for ${phantomDamage} damage.`);
@@ -2091,79 +2360,258 @@ export class Game {
     this.saveRun();
   }
 
-  openInventory(selectedIndex = 0) {
+  getInventoryView() {
+    this.state.ui.inventoryView = this.state.ui.inventoryView ?? { filter: "all", sort: "recent" };
+    return this.state.ui.inventoryView;
+  }
+
+  // Filters and orders stacks for display. Each keeps its index in getInventoryStacks(), which is what
+  // the inventory actions use, so sorting never changes what a button acts on.
+  getVisibleInventoryStacks(view) {
+    const typeOrder = ["weapon", "armor", "hands", "accessory", "consumable", "tome", "quest"];
+    const rarityOrder = ["boss", "rare", "uncommon", "common"];
+    const typeRank = (item) => {
+      const rank = typeOrder.indexOf(item.slot ?? item.category);
+      return rank === -1 ? typeOrder.length : rank;
+    };
+    const matches = {
+      all: () => true,
+      gear: (item) => Boolean(item.slot),
+      consumable: (item) => item.category === "consumable",
+      other: (item) => !item.slot && item.category !== "consumable",
+    };
+    const visible = this.getInventoryStacks()
+      .map((stack, index) => ({ ...stack, index, item: ITEMS[stack.itemId] }))
+      .filter((stack) => (matches[view.filter] ?? matches.all)(stack.item));
+    if (view.sort === "rarity") {
+      visible.sort((a, b) => rarityOrder.indexOf(this.getItemRarity(a.itemId)) - rarityOrder.indexOf(this.getItemRarity(b.itemId))
+        || typeRank(a.item) - typeRank(b.item)
+        || a.item.name.localeCompare(b.item.name));
+    } else if (view.sort === "type") {
+      visible.sort((a, b) => typeRank(a.item) - typeRank(b.item)
+        || rarityOrder.indexOf(this.getItemRarity(a.itemId)) - rarityOrder.indexOf(this.getItemRarity(b.itemId))
+        || a.item.name.localeCompare(b.item.name));
+    }
+    return visible;
+  }
+
+  // selectedIndex is a stack index from getInventoryStacks(); equippedSlot selects an equipped item instead.
+  openInventory(selectedIndex = 0, equippedSlot = null) {
+    const player = this.state.run.player;
+    const view = this.getInventoryView();
     const stacks = this.getInventoryStacks();
-    const safeIndex = stacks.length ? clamp(selectedIndex, 0, stacks.length - 1) : -1;
-    const selectedStack = safeIndex >= 0 ? stacks[safeIndex] : null;
-    const list = stacks.map((stack, index) => {
-      const item = ITEMS[stack.itemId];
+    const visible = this.getVisibleInventoryStacks(view);
+    const selectedEquippedId = equippedSlot ? player.equipment[equippedSlot] : null;
+    const selectedStack = selectedEquippedId
+      ? null
+      : visible.find((stack) => stack.index === selectedIndex) ?? visible[0] ?? null;
+    const safeIndex = selectedStack ? selectedStack.index : -1;
+
+    const slotNames = { weapon: "Weapon", armor: "Armor", hands: "Hands", accessory: "Accessory" };
+    const equippedStrip = Object.entries(slotNames).map(([slot, label]) => {
+      const itemId = player.equipment[slot];
+      if (!itemId) {
+        return `<div class="equip-slot empty"><span class="equip-slot-label">${label}</span><span class="muted">Empty</span></div>`;
+      }
       return `
         <button
-          class="inventory-tile ${index === safeIndex ? "selected" : ""} ${this.getItemRarity(stack.itemId)}"
-          data-action="inventory-select"
-          data-index="${index}"
-          data-tooltip="${this.escapeTooltip(this.getItemTooltip(stack.itemId, { stackCount: stack.count, includeCompare: true, includeValue: true }))}"
+          class="equip-slot ${this.getItemRarity(itemId)} ${selectedEquippedId && slot === equippedSlot ? "selected" : ""}"
+          data-action="inventory-select-equipped"
+          data-slot="${slot}"
+          data-tooltip="${this.escapeTooltip(this.getItemTooltip(itemId))}"
         >
-          <span class="inventory-tile-rarity">${this.getItemRarity(stack.itemId)}</span>
-          ${this.renderItemIcon(stack.itemId)}
-          ${stack.count > 1 ? `<span class="inventory-stack-count">x${stack.count}</span>` : ""}
-          <span class="inventory-tile-name">${item.name}</span>
+          ${this.renderItemIcon(itemId, "equip-slot-icon")}
+          <span class="equip-slot-text">
+            <span class="equip-slot-label">${label}</span>
+            <span class="equip-slot-name">${ITEMS[itemId].name}</span>
+          </span>
         </button>
       `;
     }).join("");
 
-    const detail = selectedStack
-      ? this.renderItemDetail(selectedStack.itemId, {
-        action: "inventory-use",
-        actionLabel: ITEMS[selectedStack.itemId].slot ? "Equip" : ITEMS[selectedStack.itemId].category === "tome" ? "Read Tome" : "Use Item",
-        actionIndex: safeIndex,
-        footer: selectedStack.count > 1 ? `<p class="muted">Stack size: ${selectedStack.count}</p>` : "",
-      })
-      : "<p>No items.</p>";
+    const filters = { all: "All", gear: "Gear", consumable: "Consumables", other: "Other" };
+    const sorts = { recent: "Recent", rarity: "Rarity", type: "Type" };
+    const toolbar = `
+      <div class="inventory-toolbar">
+        <div class="segmented" role="group" aria-label="Show">
+          ${Object.entries(filters).map(([id, label]) => `<button class="${view.filter === id ? "active" : ""}" data-action="inventory-filter" data-filter="${id}" aria-pressed="${view.filter === id}">${label}</button>`).join("")}
+        </div>
+        <div class="segmented" role="group" aria-label="Sort by">
+          <span class="muted">Sort</span>
+          ${Object.entries(sorts).map(([id, label]) => `<button class="${view.sort === id ? "active" : ""}" data-action="inventory-sort" data-sort="${id}" aria-pressed="${view.sort === id}">${label}</button>`).join("")}
+        </div>
+      </div>
+    `;
 
+    const list = visible.map((stack) => `
+        <button
+          class="inventory-tile ${stack.index === safeIndex ? "selected" : ""} ${this.getItemRarity(stack.itemId)} ${this.isOffClassItem(stack.itemId) ? "off-class" : ""}"
+          data-action="inventory-select"
+          data-index="${stack.index}"
+          data-tooltip="${this.escapeTooltip(this.getItemTooltip(stack.itemId, { stackCount: stack.count, includeCompare: true, includeValue: true }))}"
+        >
+          ${this.renderGearVerdict(stack.itemId)}
+          ${this.renderItemIcon(stack.itemId)}
+          ${stack.count > 1 ? `<span class="inventory-stack-count">x${stack.count}</span>` : ""}
+          <span class="inventory-tile-name">${stack.item.name}</span>
+        </button>
+      `).join("");
+
+    let detail = `<p class="muted">Nothing here.</p>`;
+    if (selectedEquippedId) {
+      detail = this.renderItemDetail(selectedEquippedId, {
+        action: "inventory-unequip",
+        actionLabel: "Unequip",
+        actionAttrs: `data-slot="${equippedSlot}"`,
+        showComparison: false,
+        footer: `<p class="muted">Equipped in your ${equippedSlot} slot. Unequipping moves it to your pack.</p>`,
+      });
+    } else if (selectedStack) {
+      const item = selectedStack.item;
+      // Keys and similar items have no action; they work automatically.
+      const usable = Boolean(item.slot || item.category === "tome" || item.effect);
+      detail = this.renderItemDetail(selectedStack.itemId, {
+        action: usable ? "inventory-use" : null,
+        actionLabel: item.slot ? "Equip" : item.category === "tome" ? "Read Tome" : "Use Item",
+        actionIndex: safeIndex,
+        footer: `${selectedStack.count > 1 ? `<p class="muted">Stack size: ${selectedStack.count}</p>` : ""}${usable ? `<p class="muted detail-hint">Double-click an item, or press Enter, to ${item.slot ? "equip" : "use"} it.</p>` : ""}`,
+      });
+    }
+
+    const emptyMessage = stacks.length ? "Nothing matches this filter." : "Your pack is empty.";
     this.state.ui.overlay = {
       type: "inventory",
       title: "Inventory",
       selectedIndex: safeIndex,
-      html: stacks.length ? `
+      html: `
+        <div class="equip-strip">${equippedStrip}</div>
         <div class="compare-layout">
           <div class="compare-list">
             <div class="compare-list-header">
               <h3>Pack</h3>
-              <span class="muted">${stacks.length} stack${stacks.length === 1 ? "" : "s"} • ${this.state.run.player.inventory.length} item${this.state.run.player.inventory.length === 1 ? "" : "s"}</span>
+              <span class="muted">${player.inventory.length} item${player.inventory.length === 1 ? "" : "s"}</span>
             </div>
+            ${toolbar}
             <div class="inventory-grid">
-              ${list}
+              ${list || `<p class="muted">${emptyMessage}</p>`}
             </div>
           </div>
           <div class="compare-detail-pane">
             ${detail}
           </div>
         </div>
-      ` : "<p>No items.</p>",
+      `,
     };
+  }
+
+  unequipSlot(slot) {
+    const player = this.state.run.player;
+    const itemId = player.equipment[slot];
+    if (!itemId) return;
+    const previousDerived = this.getDerivedStats(player);
+    player.equipment[slot] = null;
+    player.inventory.push({ id: `inv-${Date.now()}-${itemId}`, itemId });
+    this.applyResourceCapDelta(player, previousDerived, this.getDerivedStats(player));
+    this.soundPlayer?.play('equip_item');
+    this.log(`Unequipped ${ITEMS[itemId].name}.`);
+    const nextIndex = this.getStackIndexByItemId(this.getInventoryStacks(), itemId, 0);
+    this.openInventory(nextIndex);
   }
 
   openCharacter() {
     const player = this.state.run.player;
-    const derived = this.getDerivedStats(player);
+    const run = this.state.run;
+    // The snapshot includes temporary effects (Hexed, Chilled, Mana Shield), matching what combat uses.
+    const combat = this.getPlayerCombatSnapshot();
     const boon = this.getBoonDefinition(player.boonId);
+    const weapon = ITEMS[player.equipment.weapon];
+    const range = ([low, high]) => (low === high ? `${low}` : `${low}–${high}`);
+    const row = (label, value, tooltip = "") => `
+      <div class="sheet-row"${tooltip ? ` data-tooltip="${this.escapeTooltip(tooltip)}"` : ""}>
+        <span>${label}</span><strong>${value}</strong>
+      </div>`;
+
+    const ranged = Boolean(weapon?.range);
+    const bonus = ranged ? combat.rangedBonus : combat.meleeBonus;
+    const damagePct = (ranged ? combat.rangedDamagePct : combat.meleeDamagePct) ?? 0;
+    const enchantBonus = weapon?.enchantment?.type === "onHitBonusDamage" ? weapon.enchantment.value : 0;
+    const weaponRoll = weapon?.damage ?? [1, 2];
+    const weaponDamage = weaponRoll.map((roll) => Math.floor((roll + bonus) * (1 + damagePct / 100)) + enchantBonus);
+    const critChance = clamp(5 + (combat.critBonus ?? 0), 5, 45);
+    const spellId = [...player.quickSlots, ...player.learnedSpells].find((entryId) => SPELLS[entryId]?.type === "spell" && SPELLS[entryId].damage);
+    const spell = spellId ? SPELLS[spellId] : null;
+    const spellEnchant = weapon?.enchantment?.type === "spellBonusDamage" ? weapon.enchantment.value : 0;
+    const spellDamage = spell?.damage.map((roll) => Math.floor((roll + combat.spellBonus) * (1 + combat.spellDamagePct / 100)) + spellEnchant);
+    const xpNeeded = this.getXpForLevel(player.level + 1);
+
+    const offense = [
+      row(ranged ? "Ranged damage" : "Melee damage", range(weaponDamage), `${weapon?.name ?? "Unarmed"}\nDamage per hit before the enemy's defense and crits.\nWeapon ${range(weaponRoll)}, +${bonus} from ${ranged ? "Dexterity" : "Strength"}${damagePct ? `, +${damagePct}% from gear and skills` : ""}${enchantBonus ? `, +${enchantBonus} enchantment` : ""}.`),
+      row("Accuracy", `${Math.min(95, combat.accuracy)}%`, "Accuracy\nWeapon hit chance before the enemy's evasion (capped at 95%).\n85 base + Dexterity + gear."),
+      row("Critical chance", `${critChance}%`, "Critical hits\nDeal 1.5× damage. 5% base, capped at 45%."),
+      spell ? row(`${spell.name} damage`, range(spellDamage), `${spell.name}\nDamage per hit before the enemy's defense and crits.\nSpell ${range(spell.damage)}, +${combat.spellBonus} spell power${combat.spellDamagePct ? `, +${combat.spellDamagePct}% spell damage` : ""}.`) : "",
+      // Spell numbers only matter once you have a damaging spell.
+      spell ? row("Spell power", `+${combat.spellBonus}`, "Spell power\nAdded to every spell's damage roll.\nIntelligence ÷ 2 + gear + class.") : "",
+      spell && combat.spellDamagePct ? row("Spell damage", `+${combat.spellDamagePct}%`, "Spell damage\nMultiplies spell damage after spell power.") : "",
+      spell ? row("Spell accuracy", `${Math.min(95, 90 + (combat.spellAccuracyFlat ?? 0))}%`, "Spell accuracy\nSpell hit chance before the enemy's evasion (capped at 95%).") : "",
+    ].join("");
+
+    const defense = [
+      row("Max HP", combat.maxHp, `Max HP\n14 base + 3 per Vitality + ${CLASSES[player.classId].hpGrowth} per level + gear.`),
+      row("Max mana", combat.maxMana, `Max mana\n2 base + 2 per Intelligence + ${CLASSES[player.classId].manaGrowth} per level + gear.`),
+      row("Defense", combat.defense, "Defense\nSubtracted from every hit you take (minimum 1 damage)."),
+      row("Evasion", combat.evasion, "Evasion\nSubtracted from each enemy's chance to hit you.\nDexterity ÷ 2 + gear."),
+    ].join("");
+
+    const attributes = [
+      row("Strength", combat.strength, `Strength\n+${combat.meleeBonus} melee damage (1 per 3 Strength).`),
+      row("Dexterity", combat.dexterity, `Dexterity\n+${combat.dexterity} accuracy, +${Math.floor(combat.dexterity / 2)} evasion, +${combat.rangedBonus} ranged damage.`),
+      row("Vitality", combat.vitality, `Vitality\n+${combat.vitality * 3} max HP (3 per point).`),
+      row("Intelligence", combat.intelligence, `Intelligence\n+${combat.intelligence * 2} max mana and +${Math.floor(combat.intelligence / 2)} spell power.`),
+    ].join("");
+
+    const gearEffects = Object.values(player.equipment)
+      .filter(Boolean)
+      .map((itemId) => ITEMS[itemId])
+      .filter((item) => item.enchantment || item.handsEffect)
+      .map((item) => `<li><strong>${item.name}</strong> <span class="muted">${item.description ?? this.getEnchantmentDescription(item)}</span></li>`);
+    const skills = player.unlockedSkills
+      .map((skillId) => this.findSkill(skillId))
+      .filter(Boolean)
+      .map((skill) => `<li><strong>${skill.name}</strong> <span class="muted">${skill.description}</span></li>`);
+    const activeStatuses = player.statuses.filter((status) => ["hexed", "chilled", "arcane_shield"].includes(status.id));
+
     this.state.ui.overlay = {
       type: "character",
       title: "Character",
       html: `
-        <div class="stat-list">
-          <div>Class: <strong>${CLASSES[player.classId].name}</strong></div>
-          <div>Boon: <strong>${boon?.name ?? "None"}</strong></div>
-          <div>Level: <strong>${player.level}</strong></div>
-          <div>Strength: <strong>${derived.strength}</strong></div>
-          <div>Dexterity: <strong>${derived.dexterity}</strong></div>
-          <div>Vitality: <strong>${derived.vitality}</strong></div>
-          <div>Intelligence: <strong>${derived.intelligence}</strong></div>
-          <div>Defense: <strong>${derived.defense}</strong></div>
-          <div>Melee Bonus: <strong>${derived.meleeBonus}</strong></div>
-          <div>Spell Bonus: <strong>${derived.spellBonus}</strong></div>
-          <div>Gold: <strong>${player.gold}</strong></div>
+        <div class="sheet-summary">
+          <div>
+            <span class="section-kicker">${CLASSES[player.classId].name} · Level ${player.level}</span>
+            <h3>${boon ? boon.name : "No boon yet"}</h3>
+            ${boon ? `<p class="muted">${boon.summary}</p>` : ""}
+          </div>
+          <div class="sheet-run">
+            ${row("XP", player.level >= 10 ? "Max level" : `${player.xp}/${xpNeeded}`)}
+            ${row("Gold", `${player.gold}g`)}
+            ${row("Floor", run.floorNumber === 0 ? "Prelude" : run.floorNumber)}
+            ${row("Kills", run.runStats.kills)}
+          </div>
+        </div>
+        ${activeStatuses.length ? `<p class="muted sheet-note">Numbers include your current ${activeStatuses.map((status) => STATUS_DEFINITIONS[status.id]?.name ?? status.id).join(" and ")}.</p>` : ""}
+        <div class="sheet-grid">
+          <section><h4>Offense</h4>${offense}</section>
+          <section><h4>Defense</h4>${defense}</section>
+          <section><h4>Attributes</h4>${attributes}</section>
+        </div>
+        <div class="sheet-grid sheet-sources">
+          <section>
+            <h4>Skills <span class="muted">(${skills.length})</span></h4>
+            ${skills.length ? `<ul>${skills.join("")}</ul>` : `<p class="muted">None yet. ${player.skillPoints ? "Press K to spend your skill points." : "Level up to earn skill points."}</p>`}
+          </section>
+          <section>
+            <h4>Gear effects</h4>
+            ${gearEffects.length ? `<ul>${gearEffects.join("")}</ul>` : `<p class="muted">No enchanted gear equipped.</p>`}
+          </section>
         </div>
         <p><button data-action="open-loadout">Manage Quick Slots</button></p>
       `,
@@ -2306,21 +2754,39 @@ export class Game {
     this.openInventory(nextIndex >= 0 ? nextIndex : 0);
   }
 
+  getSellValue(itemId) {
+    return Math.max(1, Math.floor((ITEMS[itemId]?.value ?? 0) * 0.15));
+  }
+
+  // Every pack entry "Sell junk" would sell, with the total it would fetch.
+  getJunkSale() {
+    const entries = this.state.run.player.inventory.filter((entry) => this.isJunkItem(entry.itemId));
+    const counts = new Map();
+    for (const entry of entries) counts.set(entry.itemId, (counts.get(entry.itemId) ?? 0) + 1);
+    return {
+      count: entries.length,
+      gold: entries.reduce((sum, entry) => sum + this.getSellValue(entry.itemId), 0),
+      lines: [...counts].map(([itemId, count]) => ({ itemId, count })),
+    };
+  }
+
   openVendor(selectedIndex = 0) {
     const vendor = this.state.run.currentFloor.vendor;
     if (!vendor) return;
+    const player = this.state.run.player;
+    const confirm = this.state.ui.vendorConfirm ?? null;
     const vendorStacks = this.getVendorStacks();
     const safeIndex = vendorStacks.length ? clamp(selectedIndex, 0, vendorStacks.length - 1) : -1;
     const selectedStack = safeIndex >= 0 ? vendorStacks[safeIndex] : null;
     const selectedItemId = selectedStack?.itemId ?? null;
     const vendorList = vendorStacks.map((stack, index) => `
       <button
-        class="inventory-tile vendor-tile ${index === safeIndex ? "selected" : ""} ${this.getItemRarity(stack.itemId)}"
+        class="inventory-tile vendor-tile ${index === safeIndex ? "selected" : ""} ${this.getItemRarity(stack.itemId)} ${this.isOffClassItem(stack.itemId) ? "off-class" : ""} ${player.gold < this.getVendorBuyPrice(stack.itemId) ? "unaffordable" : ""}"
         data-action="vendor-select"
         data-index="${index}"
         data-tooltip="${this.escapeTooltip(this.getItemTooltip(stack.itemId, { stackCount: stack.count, includeCompare: true, includeValue: true }))}"
       >
-        <span class="inventory-tile-rarity">${this.getItemRarity(stack.itemId)}</span>
+        ${this.renderGearVerdict(stack.itemId)}
         <span class="inventory-tile-price">${this.getVendorBuyPrice(stack.itemId)}g</span>
         ${this.renderItemIcon(stack.itemId)}
         ${stack.count > 1 ? `<span class="inventory-stack-count">x${stack.count}</span>` : ""}
@@ -2328,36 +2794,68 @@ export class Game {
       </button>
     `).join("");
 
-    const sellStacks = this.getInventoryStacksWithSellValue();
+    // Quest keys can't be sold; the vault needs them.
+    const sellStacks = this.getInventoryStacksWithSellValue()
+      .map((stack, index) => ({ ...stack, index }))
+      .filter((stack) => ITEMS[stack.itemId]?.category !== "quest");
     const sellable = sellStacks
-      .map((stack, index) => `
-        <div class="sell-row" data-tooltip="${this.escapeTooltip(this.getItemTooltip(stack.itemId, { stackCount: stack.count, includeCompare: true, includeValue: true, sellValue: stack.sellValue }))}">
-          <div>
-            <strong>${ITEMS[stack.itemId].name}${stack.count > 1 ? ` x${stack.count}` : ""}</strong>
-            <p class="muted">${stack.sellValue}g each${stack.count > 1 ? ` • ${stack.sellValue * stack.count}g total` : ""}</p>
+      .map((stack) => {
+        const item = ITEMS[stack.itemId];
+        const confirming = confirm?.type === "sell" && confirm.index === stack.index;
+        const junk = this.isJunkItem(stack.itemId);
+        const actions = confirming
+          ? `<span class="sell-confirm-text">Sell this ${this.getItemRarity(stack.itemId)} item?</span>
+             <button class="primary" data-action="vendor-sell-confirm" data-index="${stack.index}">Sell</button>
+             <button data-action="vendor-cancel">Keep</button>`
+          : `<button data-action="vendor-sell" data-index="${stack.index}">Sell</button>`;
+        return `
+          <div class="sell-row ${this.getItemRarity(stack.itemId)} ${confirming ? "confirming" : ""}" data-tooltip="${this.escapeTooltip(this.getItemTooltip(stack.itemId, { stackCount: stack.count, includeCompare: true, includeValue: true, sellValue: stack.sellValue }))}">
+            <div class="sell-row-item">
+              ${this.renderItemIcon(stack.itemId, "sell-row-icon")}
+              <div>
+                <strong>${this.renderGearVerdict(stack.itemId)}${item.name}${stack.count > 1 ? ` x${stack.count}` : ""}</strong>
+                <p class="muted">${stack.sellValue}g each${stack.count > 1 ? ` • ${stack.sellValue * stack.count}g total` : ""}${junk ? ` • <span class="junk-tag">junk</span>` : ""}</p>
+              </div>
+            </div>
+            <div class="sell-row-actions">${actions}</div>
           </div>
-          <button data-action="vendor-sell" data-index="${index}">Sell</button>
-        </div>
-      `)
+        `;
+      })
       .join("");
 
+    const junk = this.getJunkSale();
+    const junkPanel = confirm?.type === "junk" && junk.count
+      ? `
+        <div class="junk-confirm">
+          <strong>Sell ${junk.count} item${junk.count === 1 ? "" : "s"} for ${junk.gold}g?</strong>
+          <ul>${junk.lines.map((line) => `<li>${ITEMS[line.itemId].name}${line.count > 1 ? ` x${line.count}` : ""}</li>`).join("")}</ul>
+          <p class="muted">Worse than what you have equipped, spare copies of it, or made for another class.</p>
+          <div class="detail-actions">
+            <button class="primary" data-action="vendor-sell-junk-confirm">Sell all</button>
+            <button data-action="vendor-cancel">Cancel</button>
+          </div>
+        </div>
+      `
+      : "";
+
+    const price = selectedItemId ? this.getVendorBuyPrice(selectedItemId) : 0;
     const detail = selectedItemId
       ? this.renderItemDetail(selectedItemId, {
         action: "vendor-buy",
-        actionLabel: "Buy",
+        actionLabel: `Buy for ${price}g`,
         actionIndex: safeIndex,
-        actionDisabled: this.state.run.player.gold < this.getVendorBuyPrice(selectedItemId),
-        priceLabel: `${this.getVendorBuyPrice(selectedItemId)}g`,
-        footer: `${selectedStack?.count > 1 ? `<p class="muted">Vendor stack: ${selectedStack.count}</p>` : ""}${this.state.run.player.gold < this.getVendorBuyPrice(selectedItemId)
-          ? `<p class="negative">You need ${this.getVendorBuyPrice(selectedItemId) - this.state.run.player.gold} more gold.</p>`
-          : `<p class="positive">You can afford this item.</p>`}`,
+        actionDisabled: player.gold < price,
+        priceLabel: `${price}g<span class="detail-price-note">you have ${player.gold}g</span>`,
+        footer: `${selectedStack?.count > 1 ? `<p class="muted">Vendor stack: ${selectedStack.count}</p>` : ""}${player.gold < price
+          ? `<p class="negative">You need ${price - player.gold} more gold.</p>`
+          : `<p class="muted">${player.gold - price}g left after buying.</p>`}`,
       })
       : "<p>No items for sale.</p>";
 
     const html = `
       <div class="vendor-topline">
         <span>Your gold</span>
-        <strong>${this.state.run.player.gold}g</strong>
+        <strong>${player.gold}g</strong>
       </div>
       <div class="compare-layout">
         <div class="compare-list">
@@ -2377,7 +2875,11 @@ export class Game {
                 <span class="section-kicker">Sell</span>
                 <h3>Your Pack</h3>
               </div>
+              <button data-action="vendor-sell-junk" ${junk.count ? "" : "disabled"} data-tooltip="${this.escapeTooltip("Sell junk\nSells gear that is worse than what you have equipped, spare copies of it, and gear made for another class. You'll see the list first.")}">
+                Sell junk${junk.count ? ` (${junk.count} · ${junk.gold}g)` : ""}
+              </button>
             </div>
+            ${junkPanel}
             ${sellable || "<p class=\"muted\">Nothing to sell.</p>"}
           </div>
         </div>
@@ -2408,17 +2910,41 @@ export class Game {
     this.openVendor(nextIndex >= 0 ? nextIndex : 0);
   }
 
-  vendorSell(index) {
+  // Rare and boss items ask once before selling (confirmed = true skips the question).
+  vendorSell(index, confirmed = false) {
     const stack = this.getInventoryStacksWithSellValue()[index];
     const entryIndex = stack?.indices[0];
     const entry = entryIndex !== undefined ? this.state.run.player.inventory[entryIndex] : null;
-    if (!entry) return;
+    this.state.ui.vendorConfirm = null;
+    if (!entry || ITEMS[entry.itemId]?.category === "quest") {
+      this.openVendor(this.state.ui.overlay?.selectedIndex ?? 0);
+      return;
+    }
     const item = ITEMS[entry.itemId];
-    const value = Math.max(1, Math.floor(item.value * 0.15));
+    const rarity = this.getItemRarity(entry.itemId);
+    if (!confirmed && (rarity === "rare" || rarity === "boss")) {
+      this.state.ui.vendorConfirm = { type: "sell", index };
+      this.openVendor(this.state.ui.overlay?.selectedIndex ?? 0);
+      return;
+    }
+    const value = this.getSellValue(entry.itemId);
     this.state.run.player.gold += value;
     this.state.run.player.inventory.splice(entryIndex, 1);
     this.soundPlayer?.play('buy_sell');
     this.log(`Sold ${item.name} for ${value} gold.`);
+    this.openVendor(this.state.ui.overlay?.selectedIndex ?? 0);
+  }
+
+  vendorSellJunk(confirmed = false) {
+    const sale = this.getJunkSale();
+    this.state.ui.vendorConfirm = !confirmed && sale.count ? { type: "junk" } : null;
+    if (confirmed && sale.count) {
+      const player = this.state.run.player;
+      player.inventory = player.inventory.filter((entry) => !this.isJunkItem(entry.itemId));
+      player.gold += sale.gold;
+      this.soundPlayer?.play('buy_sell');
+      this.log(`Sold ${sale.count} junk item${sale.count === 1 ? "" : "s"} for ${sale.gold} gold.`);
+    }
     this.openVendor(this.state.ui.overlay?.selectedIndex ?? 0);
   }
 
@@ -2478,6 +3004,7 @@ export class Game {
         if (status.fresh) return { ...status, fresh: false };
         if (status.id === "poisoned") {
           player.hp = Math.max(0, player.hp - 1);
+          this.recordDamage("taken", 1);
           this.renderer?.queueDamagePopup({ x: player.x, y: player.y, damage: 1, type: "player" });
           this.log("Poisoned deals 1 damage.");
           const turnLoss = player.lastAction === "wait" ? 2 : 1;
@@ -2492,7 +3019,7 @@ export class Game {
       }
     }
     if (player.hp <= 0) {
-      this.handleDeath("Succumbed to poison.");
+      this.handleDeath("Succumbed to poison.", { kind: "poison", name: "Poison" });
       return;
     }
     for (const enemy of [...this.state.run.currentFloor.enemies]) {
@@ -2507,6 +3034,7 @@ export class Game {
         .filter((status) => status.turns > 0);
       if (poisonDamage > 0) {
         enemy.hp -= poisonDamage;
+        this.recordDamage("dealt", poisonDamage);
         if (this.state.run.currentFloor.map[enemy.y]?.[enemy.x]?.visible) {
           this.renderer?.queueDamagePopup({ x: enemy.x, y: enemy.y, damage: poisonDamage, type: "enemy" });
           this.log(`${enemy.name} takes ${poisonDamage} poison damage.`);
@@ -2789,6 +3317,7 @@ export class Game {
     }
 
     player.hp -= damage;
+    this.recordDamage("taken", damage);
     this.soundPlayer?.play('enemy_hit_player');
     this.renderer?.queueDamagePopup({ x: player.x, y: player.y, damage, type: "player" });
     this.triggerRelentlessStep();
@@ -2843,70 +3372,151 @@ export class Game {
       this.log("The Overlord's cleave leaves you reeling.");
     }
     this.state.run.currentTargetId = enemy.id;
-    if (player.hp <= 0) this.handleDeath(`Slain by ${enemy.name}.`);
+    if (player.hp <= 0) this.handleDeath(`Slain by ${enemy.name}.`, { kind: "enemy", name: enemy.name, templateId: enemy.templateId, elite: enemy.elite });
   }
 
-  handleDeath(message) {
+  // source: { kind: "enemy" | "trap" | "poison", name, templateId?, elite? } for the epitaph portrait.
+  handleDeath(message, source = null) {
     if (this.state.run.deathMessage) return;
     this.state.run.deathMessage = message;
     this.soundPlayer?.play('player_death');
     this.clearSave();
     this.log(message);
-    const summary = this.buildRunSummary(this.state.run, message.replace(/^Slain by /, "").replace(/^Killed by /, ""), "death");
-    const deathFlavor = this.state.run.floorNumber >= 30
-      ? "<p class=\"muted\">The throne remains below, and whatever judged you there is not finished.</p>"
-      : "";
+    // Lingering effects shouldn't keep ticking or show on the fallen hero.
+    this.state.run.player.statuses = [];
+    this.state.run.endInfo = { result: "death", cause: message.replace(/^(Slain|Killed) by /, "").replace(/\.$/, ""), source };
     this.state.mode = "in_game";
-    this.state.ui.overlay = {
-      type: "death",
-      dismissible: false,
-      title: "You Died",
-      html: `
-        <p>${message}</p>
-        <p>Floor reached: <strong>${this.state.run.floorNumber}</strong></p>
-        <p>Level reached: <strong>${this.state.run.player.level}</strong></p>
-        <p>Enemies defeated: <strong>${this.state.run.runStats.kills}</strong></p>
-        <p>Every run resets from Floor 1.</p>
-        ${deathFlavor}
-        ${this.renderScoreSaveSection(summary)}
-        <button data-action="new-run-from-death">Start New Run</button>
-        <button data-action="main-menu">Main Menu</button>
-      `,
-    };
+    this.openRunEnd();
   }
 
   handleVictory() {
     this.clearSave();
-    const { player, floorNumber, runStats, turn } = this.state.run;
-    const unlockedSkills = player.unlockedSkills.length;
-    const learnedSpells = player.learnedSpells.filter((spellId) => SPELLS[spellId]).length;
-    const victoryHeadline = floorNumber >= 30
-      ? "The Abyssal Overlord is slain, and the throne below no longer stands empty."
-      : `You reached Floor ${floorNumber} and cleared the current Milestone 2 build.`;
-    const victoryFooter = floorNumber >= 30
-      ? "Whether you broke the dungeon's cycle or fulfilled its oldest demand remains unclear."
-      : "The full Floor 30 final-boss run is still reserved for Milestone 3.";
-    const summary = this.buildRunSummary(this.state.run, floorNumber >= 30 ? "Dungeon Cleared" : `Reached Floor ${floorNumber}`, "victory");
+    this.state.run.endInfo = { result: "victory", cause: "Dungeon Cleared", source: null };
+    this.openRunEnd();
+  }
+
+  // Highest rarity, then highest value, across everything the hero carried at the end.
+  getBestItemCarried(player) {
+    const rarityRank = { boss: 4, rare: 3, uncommon: 2, common: 1 };
+    const itemIds = [...Object.values(player.equipment).filter(Boolean), ...player.inventory.map((entry) => entry.itemId)]
+      .filter((itemId) => ITEMS[itemId] && ITEMS[itemId].category !== "quest");
+    return itemIds.sort((a, b) => (rarityRank[this.getItemRarity(b)] ?? 0) - (rarityRank[this.getItemRarity(a)] ?? 0)
+      || (ITEMS[b].value ?? 0) - (ITEMS[a].value ?? 0))[0] ?? null;
+  }
+
+  getEpitaphLine(run) {
+    const floor = run.floorNumber;
+    const lines = floor >= 30
+      ? ["The throne was near. It is always near.", "Whatever judged you there is not finished."]
+      : floor >= 21
+        ? ["The void does not remember names.", "Starless dark took the last of the light.", "Even the echoes stopped answering."]
+        : floor === 20
+          ? ["Patches stitched one more trophy to the wall.", "The second threshold held."]
+          : floor >= 11
+            ? ["The deep water closes over the name.", "The vaults keep their silence, and now yours.", "Somewhere below, the drains carried the rest."]
+            : floor === 10
+              ? ["Super Skeletor adds another bone to the pile.", "The first seal held."]
+              : ["The crypt keeps what it takes.", "Only the torches saw the end.", "A short delve, and a long rest."];
+    const rng = createRng(hashSeed(run.runSeed, floor, "epitaph"));
+    return rng.pick(lines);
+  }
+
+  renderRunPortrait(run, source) {
+    const manifest = this.renderer?.assets?.manifest;
+    if (!manifest) return "";
+    if (source?.kind === "enemy" && source.templateId) {
+      const path = getActorSpriteFrame(manifest, getEnemySpriteId(manifest, { templateId: source.templateId, elite: source.elite }), 0);
+      const actorId = getEnemySpriteId(manifest, { templateId: source.templateId, elite: source.elite });
+      return path ? `<img class="run-end-portrait" src="${path}" data-animate-actor="${actorId}" alt="${source.name}">` : "";
+    }
+    if (source?.kind === "poison") {
+      const url = getStatusIconUrl("poisoned");
+      return url ? `<img class="run-end-portrait run-end-portrait--icon" src="${url}" alt="Poison">` : "";
+    }
+    if (source?.kind === "trap") {
+      const path = manifest.traps?.[source.trapId] ?? manifest.traps?.spikes;
+      return path ? `<img class="run-end-portrait run-end-portrait--icon" src="${path}" alt="${source.name}">` : "";
+    }
+    const heroPath = getActorSpriteFrame(manifest, run.player.classId, 0);
+    return heroPath ? `<img class="run-end-portrait" src="${heroPath}" data-animate-actor="${run.player.classId}" alt="${CLASSES[run.player.classId].heroName}">` : "";
+  }
+
+  renderRunRecap(run, summary) {
+    const { player, runStats } = run;
+    const bestItemId = this.getBestItemCarried(player);
+    const tile = (label, value) => `<div class="recap-stat"><span>${label}</span><strong>${value}</strong></div>`;
+    const bestItem = bestItemId
+      ? `
+        <div class="recap-best ${this.getItemRarity(bestItemId)}" data-tooltip="${this.escapeTooltip(this.getItemTooltip(bestItemId))}">
+          ${this.renderItemIcon(bestItemId, "recap-best-icon")}
+          <div>
+            <span class="section-kicker">Finest possession</span>
+            <strong>${ITEMS[bestItemId].name}</strong>
+            <span class="muted">${this.getItemRarity(bestItemId)}</span>
+          </div>
+        </div>`
+      : "";
+    return `
+      <div class="recap-grid">
+        ${tile("Floor", run.floorNumber)}
+        ${tile("Level", player.level)}
+        ${tile("Kills", runStats.kills)}
+        ${tile("Turns", run.turn)}
+        ${tile("Damage dealt", runStats.damageDealt ?? 0)}
+        ${tile("Damage taken", runStats.damageTaken ?? 0)}
+        ${tile("Gold", `${player.gold}g`)}
+        ${tile("Score", summary.score)}
+      </div>
+      ${bestItem}
+    `;
+  }
+
+  // Full-screen end-of-run card: a gravestone for deaths, the empty throne for victories.
+  openRunEnd(options = {}) {
+    const run = this.state.run;
+    const info = run.endInfo ?? { result: "death", cause: "Unknown", source: null };
+    const victory = info.result === "victory";
+    const summary = this.buildRunSummary(run, info.cause, info.result);
+    const classDef = CLASSES[run.player.classId];
+    const boon = this.getBoonDefinition(run.player.boonId);
+    const article = (name) => (/^[aeiou]/i.test(name) ? "an" : "a");
+    const deathLine = info.source?.kind === "enemy"
+      ? `Fell on Floor ${run.floorNumber} to ${info.source.templateId && ENEMIES[info.source.templateId]?.behavior === "boss" ? "" : `${article(info.source.name)} `}${info.source.elite ? "elite " : ""}${info.source.name}.`
+      : info.source?.kind === "trap"
+        ? `Fell on Floor ${run.floorNumber} to ${article(info.source.name)} ${info.source.name}.`
+        : info.source?.kind === "poison"
+          ? `Succumbed to poison on Floor ${run.floorNumber}.`
+          : `Fell on Floor ${run.floorNumber}.`;
+
+    const hero = `
+      <div class="run-end-stone">
+        <span class="run-end-kicker">${victory ? "The Abyssal Throne" : "Here lies"}</span>
+        <div class="run-end-portrait-frame">${this.renderRunPortrait(run, victory ? null : info.source)}</div>
+        <h2 class="run-end-name">${classDef.heroName}</h2>
+        <p class="run-end-class">${classDef.name} · Level ${run.player.level}${boon ? ` · ${boon.name}` : ""}</p>
+        <p class="run-end-line">${victory ? "The Abyssal Overlord is slain, and the throne below stands empty." : deathLine}</p>
+        <p class="run-end-flavor">${victory ? "Whether you broke the dungeon's cycle or fulfilled its oldest demand remains unclear." : this.getEpitaphLine(run)}</p>
+      </div>
+    `;
+
     this.state.ui.overlay = {
-      type: "victory",
+      type: victory ? "victory" : "death",
+      variant: victory ? "run-end run-end--victory" : "run-end run-end--death",
       dismissible: false,
-      title: floorNumber >= 30 ? "Dungeon Cleared" : "Milestone 2 Clear",
+      title: victory ? "Dungeon Cleared" : "You Died",
       html: `
-        <p>${victoryHeadline}</p>
-        <div class="detail-list">
-          <div>Class: <strong>${CLASSES[player.classId].name}</strong></div>
-          <div>Level: <strong>${player.level}</strong></div>
-          <div>Enemies defeated: <strong>${runStats.kills}</strong></div>
-          <div>Gold carried: <strong>${player.gold}</strong></div>
-          <div>Skills unlocked: <strong>${unlockedSkills}</strong></div>
-          <div>Spells learned: <strong>${learnedSpells}</strong></div>
-          <div>Turns taken: <strong>${turn}</strong></div>
-          <div>Max floor reached: <strong>${floorNumber}</strong></div>
+        <div class="run-end-layout">
+          ${hero}
+          <div class="run-end-details">
+            <h3 class="run-end-heading">Run recap</h3>
+            ${this.renderRunRecap(run, summary)}
+            ${this.renderScoreSaveSection(summary, { savedName: options.savedName ?? "", feedback: options.feedback ?? "", feedbackTone: options.feedback ? "negative" : "muted" })}
+            <div class="run-end-actions">
+              <button class="primary" data-action="new-run-from-death">Start New Run</button>
+              <button data-action="main-menu">Main Menu</button>
+            </div>
+          </div>
         </div>
-        <p>${victoryFooter}</p>
-        ${this.renderScoreSaveSection(summary)}
-        <button data-action="new-run-from-death">Start New Run</button>
-        <button data-action="main-menu">Main Menu</button>
       `,
     };
   }
@@ -2915,6 +3525,7 @@ export class Game {
     if (this.state.ui.overlay && this.state.ui.overlay.dismissible === false) return;
     this.soundPlayer?.play('ui_cancel');
     this.state.ui.overlay = null;
+    this.state.ui.vendorConfirm = null;
   }
 
   handleOverlayAction(action, payload) {
@@ -2922,14 +3533,25 @@ export class Game {
       case "choose-boon":
         this.chooseBoon(payload.boonId);
         break;
-      case "close-sage-message":
-        this.state.ui.overlay = null;
-        break;
       case "inventory-use":
         this.equipInventoryIndex(Number(payload.index));
         break;
       case "inventory-select":
         this.openInventory(Number(payload.index));
+        break;
+      case "inventory-select-equipped":
+        this.openInventory(this.state.ui.overlay?.selectedIndex ?? 0, payload.slot);
+        break;
+      case "inventory-unequip":
+        this.unequipSlot(payload.slot);
+        break;
+      case "inventory-filter":
+        this.getInventoryView().filter = payload.filter;
+        this.openInventory(this.state.ui.overlay?.selectedIndex ?? 0);
+        break;
+      case "inventory-sort":
+        this.getInventoryView().sort = payload.sort;
+        this.openInventory(this.state.ui.overlay?.selectedIndex ?? 0);
         break;
       case "open-loadout":
         this.openLoadout();
@@ -2944,13 +3566,28 @@ export class Game {
         this.clearQuickSlot(Number(payload.slotIndex));
         break;
       case "vendor-buy":
+        this.state.ui.vendorConfirm = null;
         this.vendorBuy(Number(payload.index));
         break;
       case "vendor-select":
+        this.state.ui.vendorConfirm = null;
         this.openVendor(Number(payload.index));
         break;
       case "vendor-sell":
         this.vendorSell(Number(payload.index));
+        break;
+      case "vendor-sell-confirm":
+        this.vendorSell(Number(payload.index), true);
+        break;
+      case "vendor-sell-junk":
+        this.vendorSellJunk();
+        break;
+      case "vendor-sell-junk-confirm":
+        this.vendorSellJunk(true);
+        break;
+      case "vendor-cancel":
+        this.state.ui.vendorConfirm = null;
+        this.openVendor(this.state.ui.overlay?.selectedIndex ?? 0);
         break;
       case "new-run-from-death":
         this.state.mode = "class";
@@ -2960,7 +3597,7 @@ export class Game {
         this.state.mode = "menu";
         this.state.run = null;
         this.state.ui.overlay = null;
-        this.state.logs = ["Begin a new run to enter the dungeon."];
+        this.resetLogs("Begin a new run to enter the dungeon.");
         break;
       case "save-score": {
         if (!this.state.run) break;
@@ -2968,74 +3605,20 @@ export class Game {
           this.state.mode = "scores";
           this.state.ui.overlay = null;
           this.state.run = null;
-          this.state.logs = ["Begin a new run to enter the dungeon."];
+          this.resetLogs("Begin a new run to enter the dungeon.");
           break;
         }
-        const overlayType = this.state.ui.overlay?.type;
-        const result = overlayType === "victory" ? "victory" : "death";
-        const cause = result === "victory"
-          ? (this.state.run.floorNumber >= 30 ? "Dungeon Cleared" : `Reached Floor ${this.state.run.floorNumber}`)
-          : (this.state.run.deathMessage ?? this.state.logs[this.state.logs.length - 1] ?? "Unknown");
-        const summary = this.buildRunSummary(this.state.run, cause.replace(/^Slain by /, "").replace(/^Killed by /, ""), result);
+        const endInfo = this.state.run.endInfo ?? { result: "death", cause: this.lastLogText() || "Unknown" };
+        const summary = this.buildRunSummary(this.state.run, endInfo.cause, endInfo.result);
         const saveResult = this.saveHighScore(payload.playerName, summary);
         if (saveResult.ok) {
           this.state.run.scoreSaved = true;
           this.state.mode = "scores";
           this.state.ui.overlay = null;
           this.state.run = null;
-          this.state.logs = ["Begin a new run to enter the dungeon."];
+          this.resetLogs("Begin a new run to enter the dungeon.");
         } else {
-          const message = result === "victory"
-            ? (this.state.run.floorNumber >= 30
-              ? "The Abyssal Overlord is slain, and the throne below no longer stands empty."
-              : `You reached Floor ${this.state.run.floorNumber} and cleared the current Milestone 2 build.`)
-            : (this.state.run.deathMessage ?? this.state.logs[this.state.logs.length - 1]);
-          if (result === "victory") {
-            const { player, floorNumber, runStats, turn } = this.state.run;
-            const unlockedSkills = player.unlockedSkills.length;
-            const learnedSpells = player.learnedSpells.filter((spellId) => SPELLS[spellId]).length;
-            const victoryFooter = floorNumber >= 30
-              ? "Whether you broke the dungeon's cycle or fulfilled its oldest demand remains unclear."
-              : "The full Floor 30 final-boss run is still reserved for Milestone 3.";
-            this.state.ui.overlay = {
-              type: "victory",
-              dismissible: false,
-              title: floorNumber >= 30 ? "Dungeon Cleared" : "Milestone 2 Clear",
-              html: `
-                <p>${message}</p>
-                <div class="detail-list">
-                  <div>Class: <strong>${CLASSES[player.classId].name}</strong></div>
-                  <div>Level: <strong>${player.level}</strong></div>
-                  <div>Enemies defeated: <strong>${runStats.kills}</strong></div>
-                  <div>Gold carried: <strong>${player.gold}</strong></div>
-                  <div>Skills unlocked: <strong>${unlockedSkills}</strong></div>
-                  <div>Spells learned: <strong>${learnedSpells}</strong></div>
-                  <div>Turns taken: <strong>${turn}</strong></div>
-                  <div>Max floor reached: <strong>${floorNumber}</strong></div>
-                </div>
-                <p>${victoryFooter}</p>
-                ${this.renderScoreSaveSection(summary, { savedName: this.normalizePlayerName(payload.playerName), feedback: saveResult.error, feedbackTone: "negative" })}
-                <button data-action="new-run-from-death">Start New Run</button>
-                <button data-action="main-menu">Main Menu</button>
-              `,
-            };
-          } else {
-            this.state.ui.overlay = {
-              type: "death",
-              dismissible: false,
-              title: "You Died",
-              html: `
-                <p>${message}</p>
-                <p>Floor reached: <strong>${this.state.run.floorNumber}</strong></p>
-                <p>Level reached: <strong>${this.state.run.player.level}</strong></p>
-                <p>Enemies defeated: <strong>${this.state.run.runStats.kills}</strong></p>
-                <p>Every run resets from Floor 1.</p>
-                ${this.renderScoreSaveSection(summary, { savedName: this.normalizePlayerName(payload.playerName), feedback: saveResult.error, feedbackTone: "negative" })}
-                <button data-action="new-run-from-death">Start New Run</button>
-                <button data-action="main-menu">Main Menu</button>
-              `,
-            };
-          }
+          this.openRunEnd({ feedback: saveResult.error, savedName: this.normalizePlayerName(payload.playerName) });
         }
         break;
       }

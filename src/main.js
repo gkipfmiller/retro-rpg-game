@@ -1,9 +1,11 @@
 import { Game } from "./game.js";
 import { Renderer } from "./render.js";
 import { SoundPlayer } from "./sound.js";
-import { getActorSpriteFrame, loadAssets } from "./assets.js";
+import { getActorSpriteFrame, getItemSprite, loadAssets } from "./assets.js";
+import { MenuScene } from "./menuScene.js";
 import { SPELLS, ITEMS, CLASSES, BOONS } from "./data.js";
 import { loadSettings, renderSettingsControls, saveSettings } from "./settings.js";
+import { logText } from "./log.js";
 
 const game = new Game();
 const renderer = new Renderer(game);
@@ -16,6 +18,7 @@ const settings = loadSettings();
 function applySettings() {
   soundPlayer.setMasterVolume(settings.muted ? 0 : settings.volume);
   renderer.showMinimap = settings.minimap;
+  renderer.logFilter = settings.logFilter;
 }
 
 // Keeps every copy of the settings controls (menu card and in-game panel) in step with the stored values.
@@ -50,6 +53,8 @@ function openSettingsOverlay() {
 
 applySettings();
 
+const menuScene = new MenuScene(document.getElementById("menu-backdrop"));
+
 const screens = {
   menu: document.getElementById("menu-screen"),
   class: document.getElementById("class-screen"),
@@ -82,12 +87,49 @@ function syncClassPortraits(frameIndex = 0) {
   }
 }
 
+// Fills each class card with its level-1 numbers, straight from the class data.
+function renderClassStats() {
+  const attributeNames = { strength: "STR", dexterity: "DEX", vitality: "VIT", intelligence: "INT" };
+  const maxPips = 8;
+  for (const slot of document.querySelectorAll("[data-class-stats]")) {
+    const classDef = CLASSES[slot.dataset.classStats];
+    const stats = classDef.startingStats;
+    // Same formulas as getDerivedStats at level 1 with no gear bonuses.
+    const hp = 14 + stats.vitality * 3;
+    const mana = 2 + stats.intelligence * 2;
+    const attributes = Object.entries(attributeNames).map(([key, label]) => `
+      <span class="attr-row">
+        <span class="attr-name">${label}</span>
+        <span class="attr-pips">${Array.from({ length: maxPips }, (_, index) => `<span class="attr-pip${index < stats[key] ? " filled" : ""}"></span>`).join("")}</span>
+        <span class="attr-value">${stats[key]}</span>
+      </span>`).join("");
+    const kit = classDef.startingItems.map((itemId) => {
+      const icon = loadedAssets ? getItemSprite(loadedAssets.manifest, itemId) : null;
+      const tooltip = game.escapeTooltip(game.getItemTooltip(itemId));
+      return icon ? `<img class="kit-icon" src="${icon}" alt="${ITEMS[itemId].name}" data-tooltip="${tooltip}">` : "";
+    }).join("");
+    const abilities = classDef.abilities
+      .map((spellId) => `<span class="ability-chip" data-tooltip="${game.escapeTooltip(game.getSpellTooltip(spellId))}">${SPELLS[spellId]?.name ?? spellId}</span>`)
+      .join("");
+    slot.innerHTML = `
+      <span class="class-vitals">
+        <span class="vital vital-hp"><img src="${loadedAssets?.manifest.uiIcons.heart ?? ""}" alt="">${hp} HP</span>
+        <span class="vital vital-mana"><img src="${loadedAssets?.manifest.uiIcons.mana ?? ""}" alt="">${mana} Mana</span>
+        <span class="vital vital-growth">+${classDef.hpGrowth} HP / +${classDef.manaGrowth} MP per level</span>
+      </span>
+      <span class="attr-rows">${attributes}</span>
+      <span class="class-kit"><span class="kit-label">Starts with</span>${kit}${abilities}</span>
+    `;
+  }
+}
+
 function syncScreens() {
   Object.values(screens).forEach((screen) => screen.classList.remove("visible"));
   if (game.state.mode === "menu") screens.menu.classList.add("visible");
   else if (game.state.mode === "class") screens.class.classList.add("visible");
   else if (game.state.mode === "scores") screens.scores.classList.add("visible");
   else screens.game.classList.add("visible");
+  menuScene.setActive(game.state.mode !== "in_game");
   const continueBtn = document.getElementById("continue-run-button");
   if (continueBtn) continueBtn.classList.toggle("hidden", !game.hasSave());
   renderer.render();
@@ -140,7 +182,7 @@ function syncMobileControls() {
   const mobileLog = document.getElementById("mobile-log");
   if (mobileLog) {
     const recent = game.state.logs.slice(-3);
-    mobileLog.innerHTML = recent.map((entry) => `<div>${entry}</div>`).join("");
+    mobileLog.innerHTML = recent.map((entry) => `<div>${logText(entry)}</div>`).join("");
   }
 
   // Quick slot labels
@@ -202,6 +244,8 @@ function frame() {
     syncClassPortraits(Math.floor(performance.now() / 220));
   }
   renderer.render();
+  // Re-check every frame: enemies move under a still cursor, and the camera glides after each step.
+  if (mapHoverPoint || mapHoverText) updateMapHover();
   window.requestAnimationFrame(frame);
 }
 
@@ -249,6 +293,15 @@ document.addEventListener("change", (event) => {
   refresh();
 });
 
+for (const chip of document.querySelectorAll("[data-log-filter]")) {
+  chip.addEventListener("click", () => {
+    updateSetting("logFilter", chip.dataset.logFilter);
+    // Hand focus back so Space and Enter keep driving the game, not the chip.
+    chip.blur();
+    refresh();
+  });
+}
+
 document.getElementById("hud-skill-points").addEventListener("click", () => {
   game.openSkills();
   refresh();
@@ -274,23 +327,28 @@ document.getElementById("overlay-close-button").addEventListener("click", () => 
   refresh();
 });
 
+// A second click on the same inventory item within this window counts as a double-click. (The first
+// click re-renders the overlay, so the browser's own dblclick event can't be relied on.)
+const DOUBLE_CLICK_MS = 400;
+let lastInventoryClick = null;
+
 document.getElementById("overlay-content").addEventListener("click", (event) => {
   const button = event.target.closest("button[data-action]");
   if (!button) return;
   const payload = { ...button.dataset };
+  if (payload.action === "inventory-select" && event.detail > 0) {
+    const now = performance.now();
+    const isDouble = lastInventoryClick?.index === payload.index && now - lastInventoryClick.time < DOUBLE_CLICK_MS;
+    lastInventoryClick = isDouble ? null : { index: payload.index, time: now };
+    if (isDouble) payload.action = "inventory-use";
+  }
   // Remember which control was used so focus lands back on it after the overlay re-renders.
-  renderer.pendingOverlayFocus = {
-    action: payload.action,
-    index: payload.index,
-    skillId: payload.skillId,
-    entryId: payload.entryId,
-    slotIndex: payload.slotIndex,
-  };
+  renderer.pendingOverlayFocus = { ...button.dataset };
   if (payload.action === "save-score") {
     const input = document.getElementById("score-name-input");
     payload.playerName = input?.value ?? "";
   }
-  game.handleOverlayAction(button.dataset.action, payload);
+  game.handleOverlayAction(payload.action, payload);
   refresh();
 });
 
@@ -303,16 +361,58 @@ document.body.addEventListener("mouseover", (event) => {
   tooltip.classList.remove("hidden");
 });
 
+// Keeps the tooltip beside the cursor but flips it to the other side near the window edges.
+function positionTooltip(clientX, clientY) {
+  const width = tooltip.offsetWidth || 260;
+  const height = tooltip.offsetHeight || 100;
+  const left = clientX + 14 + width > window.innerWidth ? clientX - 14 - width : clientX + 14;
+  const top = clientY + 14 + height > window.innerHeight ? clientY - 14 - height : clientY + 14;
+  tooltip.style.left = `${Math.max(4, left)}px`;
+  tooltip.style.top = `${Math.max(4, top)}px`;
+}
+
 document.body.addEventListener("mousemove", (event) => {
   if (!tooltip || tooltip.classList.contains("hidden")) return;
-  tooltip.style.left = `${Math.min(window.innerWidth - 280, event.clientX + 14)}px`;
-  tooltip.style.top = `${Math.min(window.innerHeight - 120, event.clientY + 14)}px`;
+  positionTooltip(event.clientX, event.clientY);
 });
 
 document.body.addEventListener("mouseout", (event) => {
   const target = event.target.closest("[data-tooltip]");
   if (!target || !tooltip) return;
   tooltip.classList.add("hidden");
+});
+
+// ── Map hover ──
+// The tooltip describes the tile under the mouse.
+const gameCanvas = document.getElementById("game-canvas");
+let mapHoverPoint = null;
+let mapHoverText = null;
+
+function updateMapHover() {
+  const inGame = game.state.mode === "in_game" && game.state.run && !game.state.ui.overlay;
+  const tile = inGame && mapHoverPoint ? renderer.tileAtClientPoint(mapHoverPoint.x, mapHoverPoint.y) : null;
+  renderer.hoverTile = tile;
+  const text = tile ? game.describeTile(tile.x, tile.y) : null;
+  if (text === mapHoverText) return;
+  mapHoverText = text;
+  if (!tooltip) return;
+  if (text) {
+    tooltip.textContent = text;
+    tooltip.classList.remove("hidden");
+    positionTooltip(mapHoverPoint.x, mapHoverPoint.y);
+  } else {
+    tooltip.classList.add("hidden");
+  }
+}
+
+gameCanvas.addEventListener("mousemove", (event) => {
+  mapHoverPoint = { x: event.clientX, y: event.clientY };
+  updateMapHover();
+});
+
+gameCanvas.addEventListener("mouseleave", () => {
+  mapHoverPoint = null;
+  updateMapHover();
 });
 
 const ARROW_DIRECTIONS = {
@@ -336,7 +436,7 @@ function moveOverlayFocus(direction) {
   ].filter((element) => element && !element.disabled && !element.classList.contains("hidden") && isShown(element));
   const active = document.activeElement;
   if (!candidates.includes(active)) {
-    (content.querySelector(".inventory-tile.selected") ?? candidates[0])?.focus();
+    (content.querySelector(".inventory-tile.selected, .equip-slot.selected") ?? candidates[0])?.focus();
     return;
   }
   const from = active.getBoundingClientRect();
@@ -362,7 +462,7 @@ function moveOverlayFocus(direction) {
   best.focus();
   best.scrollIntoView({ block: "nearest", inline: "nearest" });
   // Moving across item tiles selects them so the detail pane follows the focus.
-  if (best.dataset.action === "inventory-select" || best.dataset.action === "vendor-select") best.click();
+  if (["inventory-select", "inventory-select-equipped", "vendor-select"].includes(best.dataset.action)) best.click();
 }
 
 function handleOverlayKey(event) {
@@ -391,7 +491,7 @@ function handleOverlayKey(event) {
       return;
     }
     // Enter on the already-selected item runs its main action (Use, Equip, Buy).
-    if (active?.matches?.(".inventory-tile.selected")) {
+    if (active?.matches?.(".inventory-tile.selected, .equip-slot.selected")) {
       const primary = document.querySelector("#overlay-content .detail-actions button.primary:not([disabled])");
       if (primary) {
         event.preventDefault();
@@ -510,6 +610,7 @@ loadAssets().then((assets) => {
   loadedAssets = assets;
   renderer.setAssets(assets);
   syncClassPortraits(0);
+  renderClassStats();
   refresh();
   window.requestAnimationFrame(frame);
 });
