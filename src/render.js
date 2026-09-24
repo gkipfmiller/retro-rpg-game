@@ -29,6 +29,32 @@ const COLORS = {
   health: "#cf5f5f",
 };
 
+// Camera: tiles render at a whole-number multiple of the 16px source art, the largest multiple that still
+// fits at least this many tiles across (fewer on phone-width canvases so tiles stay readable).
+// The canvas backing store matches its on-screen size so pixels stay crisp.
+const SOURCE_TILE_PX = 16;
+const MIN_VIEW_TILES_WIDE = 22;
+const MIN_VIEW_TILES_WIDE_NARROW = 15;
+const NARROW_CANVAS_CSS_PX = 640;
+const CANVAS_ASPECT = 3 / 4;
+const CAMERA_FOLLOW_MS = 90;
+
+const MINIMAP_COLORS = {
+  panel: "rgba(8, 10, 13, 0.78)",
+  border: "rgba(215, 165, 77, 0.55)",
+  wall: "#2c313b",
+  floor: "#4a505c",
+  floorVisible: "#737b8c",
+  stairs: "#89d185",
+  vendor: "#d8b4fe",
+  shrine: "#79e1c9",
+  chest: "#d7a54d",
+  enemy: "#e05555",
+  boss: "#f0d37a",
+  player: "#ffffff",
+  viewport: "rgba(240, 234, 214, 0.7)",
+};
+
 // Actors draw at their native pixel proportions (16 source px = 1 tile), times this scale.
 const ACTOR_SCALES = {
   bone_captain: 1.4,
@@ -521,6 +547,53 @@ export class Renderer {
     this.wasCriticalHp = false;
     this.projectiles = [];
     this.damagePopups = [];
+    this.camera = null;
+    this.minimapCanvas = document.createElement("canvas");
+    this.minimapKey = null;
+    // Set from the player's settings by main.js.
+    this.showMinimap = true;
+    // Where keyboard focus should land the next time the overlay is redrawn (set by main.js).
+    this.pendingOverlayFocus = null;
+  }
+
+  // Keeps the canvas backing store equal to its displayed size (in device pixels) so every
+  // source pixel maps to a whole number of screen pixels.
+  syncCanvasSize() {
+    const displayWidth = this.canvas.clientWidth;
+    if (!displayWidth) return;
+    const dpr = window.devicePixelRatio || 1;
+    const width = Math.round(displayWidth * dpr);
+    const height = Math.round(width * CANVAS_ASPECT);
+    if (this.canvas.width !== width || this.canvas.height !== height) {
+      this.canvas.width = width;
+      this.canvas.height = height;
+    }
+  }
+
+  // Returns the camera centre in tile coordinates, easing toward the player and clamped to the map.
+  updateCamera(currentFloor, player, tileSize) {
+    const viewWide = this.canvas.width / tileSize;
+    const viewTall = this.canvas.height / tileSize;
+    const axisTarget = (playerPos, mapSize, viewSize) => (mapSize <= viewSize
+      ? mapSize / 2
+      : clamp(playerPos + 0.5, viewSize / 2, mapSize - viewSize / 2));
+    const target = {
+      x: axisTarget(player.x, currentFloor.width, viewWide),
+      y: axisTarget(player.y, currentFloor.height, viewTall),
+    };
+    const now = performance.now();
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (!this.camera || this.camera.floor !== currentFloor || this.camera.tileSize !== tileSize || reduceMotion) {
+      this.camera = { ...target, floor: currentFloor, tileSize, time: now };
+      return this.camera;
+    }
+    const ease = 1 - Math.exp(-(now - this.camera.time) / CAMERA_FOLLOW_MS);
+    this.camera.x += (target.x - this.camera.x) * ease;
+    this.camera.y += (target.y - this.camera.y) * ease;
+    if (Math.abs(target.x - this.camera.x) < 0.01) this.camera.x = target.x;
+    if (Math.abs(target.y - this.camera.y) < 0.01) this.camera.y = target.y;
+    this.camera.time = now;
+    return this.camera;
   }
 
   setAssets(assets) {
@@ -540,7 +613,8 @@ export class Renderer {
 
   renderMap() {
     const { ctx } = this;
-    const { currentFloor, player, floorNumber } = this.game.state.run;
+    const { currentFloor, player, floorNumber, runSeed } = this.game.state.run;
+    const floorTileSeed = ((runSeed ?? 0) + floorNumber * 7919) | 0;
     const floorTheme = FLOOR_THEMES[currentFloor.theme] ?? FLOOR_THEMES.crypt;
     const bossRoom = currentFloor.rooms?.find((room) => room.type === "boss") ?? null;
     const inBossRoom = (x, y) => bossRoom
@@ -554,14 +628,23 @@ export class Renderer {
       && y >= room.y
       && y < room.y + room.height
     )?.type ?? "normal";
+    this.syncCanvasSize();
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     const animationFrame = Math.floor(performance.now() / 220);
-    const tileSize = Math.floor(Math.min(this.canvas.width / currentFloor.width, this.canvas.height / currentFloor.height));
-    const offsetX = Math.floor((this.canvas.width - currentFloor.width * tileSize) / 2);
-    const offsetY = Math.floor((this.canvas.height - currentFloor.height * tileSize) / 2);
+    const minTilesWide = this.canvas.clientWidth < NARROW_CANVAS_CSS_PX ? MIN_VIEW_TILES_WIDE_NARROW : MIN_VIEW_TILES_WIDE;
+    const pixelScale = Math.max(1, Math.floor(this.canvas.width / (SOURCE_TILE_PX * minTilesWide)));
+    const tileSize = SOURCE_TILE_PX * pixelScale;
+    const camera = this.updateCamera(currentFloor, player, tileSize);
+    const offsetX = Math.round(this.canvas.width / 2 - camera.x * tileSize);
+    const offsetY = Math.round(this.canvas.height / 2 - camera.y * tileSize);
+    // Only walk tiles on screen; extra rows below catch tall sprites whose feet are just off-screen.
+    const firstX = Math.max(0, Math.floor(-offsetX / tileSize) - 1);
+    const lastX = Math.min(currentFloor.width - 1, Math.ceil((this.canvas.width - offsetX) / tileSize) + 1);
+    const firstY = Math.max(0, Math.floor(-offsetY / tileSize) - 1);
+    const lastY = Math.min(currentFloor.height - 1, Math.ceil((this.canvas.height - offsetY) / tileSize) + 3);
 
-    for (let y = 0; y < currentFloor.height; y += 1) {
-      for (let x = 0; x < currentFloor.width; x += 1) {
+    for (let y = firstY; y <= lastY; y += 1) {
+      for (let x = firstX; x <= lastX; x += 1) {
         const tile = currentFloor.map[y][x];
         const px = offsetX + x * tileSize;
         const py = offsetY + y * tileSize;
@@ -574,7 +657,7 @@ export class Renderer {
 
         const floorAtlasCoord = getThemeFloorAtlasCoord(currentFloor.theme, x, y);
         const floorAtlas = floorAtlasCoord ? this.assets?.images[this.assets.manifest.themeAtlases.sunkenVaultFloor] : null;
-        const floorSprite = floorAtlas ? null : this.assets?.images[getFloorSprite(this.assets.manifest, x, y)];
+        const floorSprite = floorAtlas ? null : this.assets?.images[getFloorSprite(this.assets.manifest, x, y, floorTileSeed)];
         const wallAtlasCoord = getThemeWallAtlasCoord(currentFloor.theme, currentFloor.map, x, y, { useExploredMask: true });
         const wallAtlas = wallAtlasCoord ? this.assets?.images[this.assets.manifest.themeAtlases.sunkenVaultWalls] : null;
         const wallSpritePath = this.assets
@@ -818,6 +901,79 @@ export class Renderer {
 
     this.renderProjectiles(tileSize, offsetX, offsetY);
     this.renderDamagePopups(tileSize, offsetX, offsetY);
+    if (this.showMinimap) this.renderMinimap(tileSize, offsetX, offsetY);
+  }
+
+  // Redraws the 1px-per-tile minimap only when the turn, floor, or player position changes.
+  buildMinimap(run) {
+    const { currentFloor, player } = run;
+    const key = `${run.floorNumber}|${run.turn}|${player.x},${player.y}|${currentFloor.enemies.length}`;
+    if (this.minimapKey === key && this.minimapFloor === currentFloor) return;
+    this.minimapKey = key;
+    this.minimapFloor = currentFloor;
+    const mini = this.minimapCanvas;
+    mini.width = currentFloor.width;
+    mini.height = currentFloor.height;
+    const mctx = mini.getContext("2d");
+    mctx.clearRect(0, 0, mini.width, mini.height);
+    const plot = (x, y, color) => {
+      mctx.fillStyle = color;
+      mctx.fillRect(x, y, 1, 1);
+    };
+    for (let y = 0; y < currentFloor.height; y += 1) {
+      for (let x = 0; x < currentFloor.width; x += 1) {
+        const tile = currentFloor.map[y][x];
+        if (!tile.explored && !tile.visible) continue;
+        if (tile.type === "wall") plot(x, y, MINIMAP_COLORS.wall);
+        else if (tile.stairs) plot(x, y, MINIMAP_COLORS.stairs);
+        else if (tile.vendor) plot(x, y, MINIMAP_COLORS.vendor);
+        else if (tile.shrineId) plot(x, y, MINIMAP_COLORS.shrine);
+        else if (tile.chestId) plot(x, y, MINIMAP_COLORS.chest);
+        else plot(x, y, tile.visible ? MINIMAP_COLORS.floorVisible : MINIMAP_COLORS.floor);
+      }
+    }
+    for (const enemy of currentFloor.enemies) {
+      if (enemy.disguised || !currentFloor.map[enemy.y]?.[enemy.x]?.visible) continue;
+      plot(enemy.x, enemy.y, ENEMIES[enemy.templateId]?.behavior === "boss" ? MINIMAP_COLORS.boss : MINIMAP_COLORS.enemy);
+    }
+    plot(player.x, player.y, MINIMAP_COLORS.player);
+  }
+
+  renderMinimap(tileSize, offsetX, offsetY) {
+    const { run } = this.game.state;
+    const { currentFloor } = run;
+    this.buildMinimap(run);
+    const { ctx } = this;
+    const maxWidth = this.canvas.width * 0.24;
+    const maxHeight = this.canvas.height * 0.28;
+    const cell = Math.max(1, Math.floor(Math.min(maxWidth / currentFloor.width, maxHeight / currentFloor.height)));
+    const width = currentFloor.width * cell;
+    const height = currentFloor.height * cell;
+    const pad = Math.max(4, Math.round(tileSize / 8));
+    const x = this.canvas.width - width - pad * 3;
+    const y = pad * 2;
+    ctx.save();
+    ctx.fillStyle = MINIMAP_COLORS.panel;
+    ctx.fillRect(x - pad, y - pad, width + pad * 2, height + pad * 2);
+    ctx.strokeStyle = MINIMAP_COLORS.border;
+    ctx.lineWidth = Math.max(1, Math.round(tileSize / 32));
+    ctx.strokeRect(x - pad + 0.5, y - pad + 0.5, width + pad * 2 - 1, height + pad * 2 - 1);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(this.minimapCanvas, x, y, width, height);
+    // Outline of what the main view currently shows.
+    const viewX = clamp(-offsetX / tileSize, 0, currentFloor.width);
+    const viewY = clamp(-offsetY / tileSize, 0, currentFloor.height);
+    const viewRight = clamp((this.canvas.width - offsetX) / tileSize, 0, currentFloor.width);
+    const viewBottom = clamp((this.canvas.height - offsetY) / tileSize, 0, currentFloor.height);
+    ctx.strokeStyle = MINIMAP_COLORS.viewport;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(
+      Math.round(x + viewX * cell) + 0.5,
+      Math.round(y + viewY * cell) + 0.5,
+      Math.max(1, Math.round((viewRight - viewX) * cell) - 1),
+      Math.max(1, Math.round((viewBottom - viewY) * cell) - 1)
+    );
+    ctx.restore();
   }
 
   drawSprite(image, x, y, tileSize, baseTileSize, heightMultiplier = 1) {
@@ -982,6 +1138,13 @@ export class Renderer {
     document.getElementById("hud-class").textContent = CLASSES[player.classId].name;
     document.getElementById("hud-floor").textContent = run.floorNumber === 0 ? "Prelude" : `Floor ${run.floorNumber}`;
     document.getElementById("hud-level").textContent = `Level ${player.level}`;
+    const skillAlert = document.getElementById("hud-skill-points");
+    if (skillAlert) {
+      const points = player.skillPoints ?? 0;
+      skillAlert.classList.toggle("hidden", points <= 0);
+      const alertText = `${points} skill point${points === 1 ? "" : "s"} to spend (K)`;
+      if (points > 0 && skillAlert.textContent !== alertText) skillAlert.textContent = alertText;
+    }
     document.getElementById("hud-gold").textContent = `${player.gold}g`;
     document.getElementById("hud-hp-text").textContent = `${player.hp}/${derived.maxHp}`;
     document.getElementById("hud-mana-text").textContent = `${player.mana}/${derived.maxMana}`;
@@ -1077,7 +1240,7 @@ export class Renderer {
     player.quickSlots.forEach((entry, index) => {
       const button = quickButtons[index];
       if (!entry) {
-        button.textContent = `${index + 1}. Empty`;
+        button.innerHTML = `<span class="slot-key">${index + 1}</span><span class="slot-label muted">Empty</span>`;
         button.disabled = true;
         button.removeAttribute("data-tooltip");
         return;
@@ -1085,7 +1248,9 @@ export class Renderer {
       const label = SPELLS[entry]?.name ?? ITEMS[entry]?.name ?? entry;
       const iconPath = ITEMS[entry] ? getItemSprite(this.assets?.manifest, entry) : null;
       const icon = iconPath ? `<img src="${iconPath}" alt="" class="slot-icon">` : "";
-      button.innerHTML = `<span>${index + 1}.</span>${icon}<span>${label}</span>`;
+      const markup = `<span class="slot-key">${index + 1}</span>${icon}<span class="slot-label">${label}</span>`;
+      // Only rewrite when it changes, so a click in progress isn't interrupted by the per-frame render.
+      if (button.innerHTML !== markup) button.innerHTML = markup;
       button.disabled = false;
       button.dataset.tooltip = formatEntryTooltip(entry);
     });
@@ -1127,6 +1292,8 @@ export class Renderer {
     if (!overlay) {
       this.overlay.classList.add("hidden");
       this.lastOverlaySignature = null;
+      this.lastOverlayType = null;
+      this.pendingOverlayFocus = null;
       return;
     }
 
@@ -1138,10 +1305,33 @@ export class Renderer {
     }
     const signature = `${overlay.type ?? "overlay"}::${overlay.title}::${overlay.html}`;
     if (this.lastOverlaySignature !== signature) {
+      const wasOpenType = this.lastOverlayType;
       this.overlayTitle.textContent = overlay.title;
       this.overlayContent.innerHTML = overlay.html;
       this.lastOverlaySignature = signature;
+      this.lastOverlayType = overlay.type;
+      this.restoreOverlayFocus(wasOpenType !== overlay.type);
     }
+  }
+
+  // After the overlay HTML is replaced, put focus back on the control the player was using
+  // (so arrow-key navigation survives re-renders), or on a sensible default when it first opens.
+  restoreOverlayFocus(justOpened) {
+    const content = this.overlayContent;
+    const pending = this.pendingOverlayFocus;
+    this.pendingOverlayFocus = null;
+    let target = null;
+    if (pending) {
+      target = [...content.querySelectorAll(`[data-action="${pending.action}"]`)]
+        .find((element) => (pending.index == null || element.dataset.index === pending.index)
+          && (pending.skillId == null || element.dataset.skillId === pending.skillId)
+          && (pending.entryId == null || element.dataset.entryId === pending.entryId)
+          && (pending.slotIndex == null || element.dataset.slotIndex === pending.slotIndex)) ?? null;
+    }
+    if (!target && (pending || justOpened)) {
+      target = content.querySelector(".inventory-tile.selected, .skill-card.available button, input:not([disabled]), button:not([disabled])");
+    }
+    target?.focus({ preventScroll: false });
   }
 
   renderNpcDialog() {

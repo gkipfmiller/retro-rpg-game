@@ -434,9 +434,26 @@ export function getTrapSprite(manifest, trapId) {
   return manifest.traps[trapId] ?? null;
 }
 
-export function getFloorSprite(manifest, x, y) {
+// Relative weights for floor_1..floor_8: mostly plain stone, light cracks occasionally, heavy breaks rarely.
+const FLOOR_TILE_WEIGHTS = [72, 6, 5, 5, 4, 3, 3, 2];
+const FLOOR_TILE_WEIGHT_TOTAL = FLOOR_TILE_WEIGHTS.reduce((sum, weight) => sum + weight, 0);
+
+function hashTile(x, y, seed) {
+  let hash = Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(seed, 2246822519);
+  hash = Math.imul(hash ^ (hash >>> 13), 1274126177);
+  return (hash ^ (hash >>> 16)) >>> 0;
+}
+
+// Picks a floor tile from a position hash so tiles scatter naturally instead of forming diagonal stripes.
+// The seed makes each floor's layout of cracks different; the result is stable for a given tile.
+export function getFloorSprite(manifest, x, y, seed = 0) {
   const tiles = manifest.floorTiles;
-  return tiles[(x + y) % tiles.length];
+  let roll = hashTile(x, y, seed) % FLOOR_TILE_WEIGHT_TOTAL;
+  for (let index = 0; index < tiles.length; index += 1) {
+    roll -= FLOOR_TILE_WEIGHTS[index] ?? 0;
+    if (roll < 0) return tiles[index];
+  }
+  return tiles[0];
 }
 
 export function getWallSprite(manifest, map, x, y, options = {}) {

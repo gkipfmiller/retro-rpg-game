@@ -826,6 +826,13 @@ Implemented critical health feedback:
 - red screen flash when entering critical HP
 - persistent HP meter highlight below 20% HP
 
+Current HUD and input layout:
+- quick slots sit in a hotbar directly under the map, with the map capped by window height so the hotbar is always visible
+- the HUD shows a highlighted "skill points to spend (K)" prompt whenever skill points are unspent; clicking it opens the skill tree
+- the skill tree shows all three branches side by side, with unlocked, available, and locked skills visually distinct
+- a Settings panel (main menu button, or O in game) holds mute, master volume, and the minimap toggle, remembered per browser
+- all controls show a visible keyboard focus ring; in overlays, arrow keys move between controls, moving across item tiles selects them, Enter on the selected item runs its main action (Use/Equip/Buy), and Enter in the high-score name field saves the score
+
 Other current UI details:
 - class select now uses animated class sprites
 - class select presents three named delvers instead of generic class-only picks
@@ -847,6 +854,8 @@ Current build uses local integrated pixel-art assets for:
 - trap sprites
 
 Current visual polish layers:
+- player-following camera: tiles render at a whole-number multiple of the 16px source art (at least 22 tiles across on desktop, 15 on narrow screens), with the canvas buffer matched to its on-screen size so pixels stay crisp; the camera eases toward the player and clamps to the map edges
+- minimap in the top-right of the play area showing explored tiles, stairs, vendors, shrines, chests, visible enemies, the player, and the current view outline; toggled with M (remembered per browser)
 - animated actor sprites
 - actors drawn at their native pixel proportions (16 source px per tile), with per-actor scale for bosses and large sewer creatures
 - load-time palette swaps: elite enemies use a blood-red palette (gold for already-red enemies), and Super Skeletor uses a bone-white recolor of the necromancer sprite

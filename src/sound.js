@@ -22,6 +22,7 @@ const SOUND_MAP = {
 
 export class SoundPlayer {
   constructor() {
+    this.masterVolume = 1;
     this._cache = {};
     for (const [key, path] of Object.entries(SOUND_MAP)) {
       const audio = new Audio(path);
@@ -32,10 +33,15 @@ export class SoundPlayer {
 
   play(key) {
     const audio = this._cache[key];
-    if (!audio) return;
+    if (!audio || this.masterVolume <= 0) return;
     const clone = audio.cloneNode();
-    clone.volume = audio.volume;
+    clone.volume = audio.volume * this.masterVolume;
     clone.play().catch(() => {});
+  }
+
+  // 0 mutes all sound; 1 plays each effect at its own volume.
+  setMasterVolume(volume) {
+    this.masterVolume = Math.max(0, Math.min(1, volume));
   }
 
   setVolume(key, volume) {

@@ -3,12 +3,52 @@ import { Renderer } from "./render.js";
 import { SoundPlayer } from "./sound.js";
 import { getActorSpriteFrame, loadAssets } from "./assets.js";
 import { SPELLS, ITEMS, CLASSES, BOONS } from "./data.js";
+import { loadSettings, renderSettingsControls, saveSettings } from "./settings.js";
 
 const game = new Game();
 const renderer = new Renderer(game);
 const soundPlayer = new SoundPlayer();
 game.attachRenderer(renderer);
 game.attachSoundPlayer(soundPlayer);
+
+const settings = loadSettings();
+
+function applySettings() {
+  soundPlayer.setMasterVolume(settings.muted ? 0 : settings.volume);
+  renderer.showMinimap = settings.minimap;
+}
+
+// Keeps every copy of the settings controls (menu card and in-game panel) in step with the stored values.
+function syncSettingsControls() {
+  for (const input of document.querySelectorAll("[data-setting]")) {
+    const name = input.dataset.setting;
+    if (input.type === "checkbox") input.checked = Boolean(settings[name]);
+    if (name === "volume") {
+      input.value = String(Math.round(settings.volume * 100));
+      input.disabled = settings.muted;
+    }
+  }
+  for (const output of document.querySelectorAll('[data-setting-output="volume"]')) {
+    output.textContent = `${Math.round(settings.volume * 100)}%`;
+  }
+}
+
+function updateSetting(name, value) {
+  settings[name] = value;
+  saveSettings(settings);
+  applySettings();
+  syncSettingsControls();
+}
+
+function openSettingsOverlay() {
+  game.state.ui.overlay = {
+    type: "settings",
+    title: "Settings",
+    html: `<div class="settings-card">${renderSettingsControls(settings)}</div>`,
+  };
+}
+
+applySettings();
 
 const screens = {
   menu: document.getElementById("menu-screen"),
@@ -188,6 +228,32 @@ document.getElementById("how-to-play-button").addEventListener("click", () => {
   document.getElementById("how-to-play").classList.toggle("hidden");
 });
 
+document.getElementById("settings-button").addEventListener("click", () => {
+  const card = document.getElementById("menu-settings");
+  const opening = card.classList.contains("hidden");
+  if (opening) card.innerHTML = renderSettingsControls(settings);
+  card.classList.toggle("hidden", !opening);
+});
+
+document.addEventListener("input", (event) => {
+  const input = event.target.closest?.('[data-setting="volume"]');
+  if (input) updateSetting("volume", Number(input.value) / 100);
+});
+
+document.addEventListener("change", (event) => {
+  const input = event.target.closest?.("[data-setting]");
+  if (!input) return;
+  if (input.type === "checkbox") updateSetting(input.dataset.setting, input.checked);
+  // Play a sample so the player can hear the new level.
+  if (input.dataset.setting === "volume" || (input.dataset.setting === "muted" && !input.checked)) soundPlayer.play("ui_confirm");
+  refresh();
+});
+
+document.getElementById("hud-skill-points").addEventListener("click", () => {
+  game.openSkills();
+  refresh();
+});
+
 document.getElementById("high-scores-button").addEventListener("click", () => {
   game.openHighScores();
   refresh();
@@ -212,6 +278,14 @@ document.getElementById("overlay-content").addEventListener("click", (event) => 
   const button = event.target.closest("button[data-action]");
   if (!button) return;
   const payload = { ...button.dataset };
+  // Remember which control was used so focus lands back on it after the overlay re-renders.
+  renderer.pendingOverlayFocus = {
+    action: payload.action,
+    index: payload.index,
+    skillId: payload.skillId,
+    entryId: payload.entryId,
+    slotIndex: payload.slotIndex,
+  };
   if (payload.action === "save-score") {
     const input = document.getElementById("score-name-input");
     payload.playerName = input?.value ?? "";
@@ -241,13 +315,97 @@ document.body.addEventListener("mouseout", (event) => {
   tooltip.classList.add("hidden");
 });
 
+const ARROW_DIRECTIONS = {
+  ArrowUp: { x: 0, y: -1 },
+  ArrowDown: { x: 0, y: 1 },
+  ArrowLeft: { x: -1, y: 0 },
+  ArrowRight: { x: 1, y: 0 },
+};
+
+function isShown(element) {
+  return element.offsetParent !== null || element.getClientRects().length > 0;
+}
+
+// Moves focus to the nearest control in the arrow's direction (spatial navigation), so grids,
+// lists and card rows all work without per-screen wiring.
+function moveOverlayFocus(direction) {
+  const content = document.getElementById("overlay-content");
+  const candidates = [
+    ...content.querySelectorAll("button:not([disabled]), input:not([disabled])"),
+    document.getElementById("overlay-close-button"),
+  ].filter((element) => element && !element.disabled && !element.classList.contains("hidden") && isShown(element));
+  const active = document.activeElement;
+  if (!candidates.includes(active)) {
+    (content.querySelector(".inventory-tile.selected") ?? candidates[0])?.focus();
+    return;
+  }
+  const from = active.getBoundingClientRect();
+  const fromX = from.left + from.width / 2;
+  const fromY = from.top + from.height / 2;
+  let best = null;
+  let bestScore = Infinity;
+  for (const candidate of candidates) {
+    if (candidate === active) continue;
+    const rect = candidate.getBoundingClientRect();
+    const dx = rect.left + rect.width / 2 - fromX;
+    const dy = rect.top + rect.height / 2 - fromY;
+    const along = dx * direction.x + dy * direction.y;
+    if (along <= 4) continue;
+    const across = Math.abs(dx * direction.y) + Math.abs(dy * direction.x);
+    const score = along + across * 2;
+    if (score < bestScore) {
+      bestScore = score;
+      best = candidate;
+    }
+  }
+  if (!best) return;
+  best.focus();
+  best.scrollIntoView({ block: "nearest", inline: "nearest" });
+  // Moving across item tiles selects them so the detail pane follows the focus.
+  if (best.dataset.action === "inventory-select" || best.dataset.action === "vendor-select") best.click();
+}
+
+function handleOverlayKey(event) {
+  const active = document.activeElement;
+  if (event.key === "Escape") {
+    game.closeOverlay();
+    refresh();
+    return;
+  }
+  if ((event.key === "o" || event.key === "O") && game.state.ui.overlay?.type === "settings") {
+    game.closeOverlay();
+    refresh();
+    return;
+  }
+  if (ARROW_DIRECTIONS[event.key]) {
+    // Sliders and text fields keep their own arrow-key behaviour.
+    if (active?.matches?.('input[type="range"], input[type="text"]') && (event.key === "ArrowLeft" || event.key === "ArrowRight")) return;
+    event.preventDefault();
+    moveOverlayFocus(ARROW_DIRECTIONS[event.key]);
+    return;
+  }
+  if (event.key === "Enter") {
+    if (active?.id === "score-name-input") {
+      event.preventDefault();
+      document.querySelector('#overlay-content button[data-action="save-score"]')?.click();
+      return;
+    }
+    // Enter on the already-selected item runs its main action (Use, Equip, Buy).
+    if (active?.matches?.(".inventory-tile.selected")) {
+      const primary = document.querySelector("#overlay-content .detail-actions button.primary:not([disabled])");
+      if (primary) {
+        event.preventDefault();
+        primary.click();
+      }
+    }
+    // Otherwise Enter activates the focused button natively.
+  }
+}
+
 window.addEventListener("keydown", (event) => {
   if (game.state.mode !== "in_game") return;
   if (game.state.ui.overlay) {
-    if (event.key === "Escape") {
-      game.closeOverlay();
-      refresh();
-    }
+    handleOverlayKey(event);
     return;
   }
 
@@ -273,6 +431,10 @@ window.addEventListener("keydown", (event) => {
     game.openSkills();
   } else if (key === "f") {
     game.fireRangedWeapon();
+  } else if (key === "m") {
+    updateSetting("minimap", !settings.minimap);
+  } else if (key === "o") {
+    openSettingsOverlay();
   } else if (key === "1") {
     game.useQuickSlot(0);
   } else if (key === "2") {

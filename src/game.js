@@ -1131,7 +1131,7 @@ export class Game {
     if (item.classBias) {
       badges.push({ label: `${item.classBias} fit`, tone: item.classBias });
     }
-    if (item.slot) {
+    if (item.slot && item.slot !== item.category) {
       badges.push({ label: item.slot, tone: "muted" });
     }
     return badges;
@@ -1285,7 +1285,7 @@ export class Game {
 
   renderComparisonTable(itemId) {
     const item = ITEMS[itemId];
-    if (!item?.slot) return `<p class="muted">No equipment comparison for this item type.</p>`;
+    if (!item?.slot) return "";
     const equippedId = this.state.run.player.equipment[item.slot];
     if (!equippedId) {
       return `
@@ -1340,7 +1340,9 @@ export class Game {
       footer = "",
     } = options;
 
-    const enchantmentLine = item.enchantment ? `<p class="positive">${item.description ?? this.getEnchantmentDescription(item)}</p>` : `<p class="muted">${item.description ?? "A dungeon-find worth considering."}</p>`;
+    const enchantmentLine = item.enchantment
+      ? `<p class="positive">${item.description ?? this.getEnchantmentDescription(item)}</p>`
+      : item.description ? `<p class="muted">${item.description}</p>` : "";
 
     return `
       <div class="detail-card">
@@ -1707,7 +1709,7 @@ export class Game {
       const derived = this.getDerivedStats(player);
       player.hp = derived.maxHp;
       player.mana = derived.maxMana;
-      this.log(`Level ${player.level}. You gain a skill point.`);
+      this.log(`Level ${player.level}. You gain a skill point. Press K to spend it.`);
     }
   }
 
@@ -2231,21 +2233,21 @@ export class Game {
     const branches = SKILL_TREES[this.state.run.player.classId];
     const html = `
       <p>Unspent Skill Points: <strong>${this.state.run.player.skillPoints}</strong></p>
-      <div class="overlay-grid">
+      <div class="skill-grid">
         ${branches.map((branch) => `
-          <div>
+          <div class="skill-branch">
             <h3>${branch.name}</h3>
             ${branch.skills.map((skill, index) => {
               const unlocked = this.state.run.player.unlockedSkills.includes(skill.id);
               const previousId = index > 0 ? branch.skills[index - 1].id : null;
               const available = !unlocked && this.state.run.player.skillPoints > 0 && (!previousId || this.state.run.player.unlockedSkills.includes(previousId));
+              const state = unlocked ? "unlocked" : available ? "available" : "locked";
               return `
-                <div class="list-card ${unlocked ? "selected" : ""}" data-tooltip="${this.escapeTooltip(this.getSkillTooltip(skill, branch.name, unlocked, available))}">
+                <div class="skill-card ${state}" data-tooltip="${this.escapeTooltip(this.getSkillTooltip(skill, branch.name, unlocked, available))}">
+                  <span class="skill-tier" aria-hidden="true">${unlocked ? "&#10003;" : index + 1}</span>
                   <strong>${skill.name}</strong>
-                  <p class="muted">${skill.description}</p>
-                  <button ${available ? "" : "disabled"} data-action="buy-skill" data-skill-id="${skill.id}" data-tooltip="${this.escapeTooltip(this.getSkillTooltip(skill, branch.name, unlocked, available))}">
-                    ${unlocked ? "Unlocked" : available ? "Unlock" : "Locked"}
-                  </button>
+                  <p>${skill.description}</p>
+                  ${unlocked ? "" : `<button ${available ? "" : "disabled"} data-action="buy-skill" data-skill-id="${skill.id}">${available ? "Unlock" : "Locked"}</button>`}
                 </div>
               `;
             }).join("")}
