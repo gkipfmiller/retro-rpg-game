@@ -13,7 +13,7 @@ import {
 } from "./assets.js";
 import { clamp } from "./utils.js";
 import { LOG_FILTERS, logText, mergeLogEntries } from "./log.js";
-import { getStatusIconCanvas, getStatusIconUrl } from "./pixelIcons.js";
+import { getSpellIconUrl, getStatusIconCanvas, getStatusIconUrl } from "./pixelIcons.js";
 
 const COLORS = {
   wall: "#26303d",
@@ -42,6 +42,27 @@ const CANVAS_ASPECT = 3 / 4;
 const CAMERA_FOLLOW_MS = 90;
 // How long the Grey Witness takes to dissolve after granting a boon.
 const SAGE_FADE_MS = 1800;
+const BOSS_INTRO_MS = 3400;
+const FLOOR_CARD_MS = 1900;
+
+// Torch lighting is cosmetic: it darkens and tints the edges of the view a little but never hides
+// anything the fog of war shows. Each band's shadows take on its own colour (RGB).
+const LIGHT_TINTS = {
+  sage: "10, 8, 20",
+  crypt: "6, 8, 14",
+  ember_halls: "20, 6, 2",
+  fungal_depths: "3, 14, 6",
+  sunken_vault: "2, 10, 18",
+  necropolis: "16, 3, 14",
+  stitchworks: "16, 10, 3",
+  void_deep: "8, 5, 22",
+  abyssal_throne: "16, 3, 20",
+};
+const LIGHT_OUTER_DARKNESS = 0.38;
+const LIGHT_RADIUS_TILES = 8.5;
+const RARITY_RANK = { common: 0, uncommon: 1, rare: 2, boss: 3 };
+
+const reduceMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 const MINIMAP_COLORS = {
   panel: "rgba(8, 10, 13, 0.78)",
@@ -549,7 +570,6 @@ export class Renderer {
     this.npcDialog = document.getElementById("npc-dialog");
     this.npcDialogSpeaker = document.getElementById("npc-dialog-speaker");
     this.npcDialogText = document.getElementById("npc-dialog-text");
-    this.transitionBanner = document.getElementById("transition-banner");
     this.criticalFlash = document.getElementById("critical-flash");
     this.assets = null;
     this.lastOverlaySignature = null;
@@ -565,6 +585,8 @@ export class Renderer {
     this.pendingOverlayFocus = null;
     this.logFilter = "all";
     this.logKey = null;
+    // Cosmetic torch lighting (a setting, applied by main.js).
+    this.lighting = true;
     // Map tile under the mouse (set by main.js) and the geometry of the last drawn frame.
     this.hoverTile = null;
     this.mapView = null;
@@ -622,6 +644,7 @@ export class Renderer {
     this.renderHud();
     this.renderLog();
     this.renderToasts();
+    this.renderBossUi();
     this.renderOverlay();
     this.animateOverlayActors();
     this.renderNpcDialog();
@@ -669,6 +692,8 @@ export class Renderer {
     const firstY = Math.max(0, Math.floor(-offsetY / tileSize) - 1);
     const lastY = Math.min(currentFloor.height - 1, Math.ceil((this.canvas.height - offsetY) / tileSize) + 3);
 
+    // Rare floor loot gets sparkles drawn after the lighting, so they stay bright.
+    const sparkleTiles = [];
     for (let y = firstY; y <= lastY; y += 1) {
       for (let x = firstX; x <= lastX; x += 1) {
         const tile = currentFloor.map[y][x];
@@ -867,7 +892,12 @@ export class Renderer {
             ctx.restore();
           }
           if (tile.chestId && chestSprite) this.drawSprite(chestSprite, px, py, tileSize, tileSize, 1.2);
-          if (tile.itemIds.length && pickupSprite) this.drawSprite(pickupSprite, px, py, tileSize, tileSize, 1.1);
+          if (tile.itemIds.length && pickupSprite) {
+            const lootRarity = this.getTileLootRarity(tile.itemIds);
+            if (lootRarity !== "common") this.drawLootGlow(px, py, tileSize, lootRarity);
+            this.drawSprite(pickupSprite, px, py, tileSize, tileSize, 1.1);
+            if (RARITY_RANK[lootRarity] >= RARITY_RANK.rare) sparkleTiles.push({ px, py, rarity: lootRarity });
+          }
         }
 
         const trap = this.game.getTrapAt(x, y);
@@ -926,6 +956,9 @@ export class Renderer {
         Math.max(11, tileSize - 5)
       );
     }
+
+    if (this.lighting) this.drawLighting(currentFloor, player, offsetX, offsetY, tileSize);
+    for (const sparkle of sparkleTiles) this.drawLootSparkles(sparkle.px, sparkle.py, tileSize, sparkle.rarity);
 
     // Health bars go on top of every actor so a taller sprite standing below can't hide them.
     for (const enemy of currentFloor.enemies) {
@@ -1061,6 +1094,225 @@ export class Renderer {
     if (basin) this.drawSprite(basin, x, y, tileSize, tileSize, 1.2);
     if (mid) this.drawSprite(mid, x, y - Math.floor(tileSize * 0.35), tileSize, tileSize, 1.25);
     if (top) this.drawSprite(top, x, y - tileSize, tileSize, tileSize, 1.2);
+  }
+
+  getTileLootRarity(itemIds) {
+    let best = "common";
+    for (const itemId of itemIds) {
+      // Vault keys matter more than their price suggests.
+      const rarity = ITEMS[itemId]?.category === "quest" ? "rare" : this.game.getItemRarity(itemId);
+      if (RARITY_RANK[rarity] > RARITY_RANK[best]) best = rarity;
+    }
+    return best;
+  }
+
+  // A soft pool of light under uncommon-or-better floor loot; boss items also get a faint beam.
+  drawLootGlow(px, py, tileSize, rarity) {
+    const { ctx } = this;
+    const pulse = reduceMotion() ? 1 : 0.8 + Math.sin(performance.now() / 320) * 0.2;
+    const color = rarity === "uncommon" ? "120, 210, 120" : "242, 196, 107";
+    const strength = (rarity === "uncommon" ? 0.38 : rarity === "rare" ? 0.65 : 0.8) * pulse;
+    const cx = px + tileSize / 2;
+    const cy = py + tileSize * 0.7;
+    ctx.save();
+    const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, tileSize * 0.85);
+    glow.addColorStop(0, `rgba(${color}, ${strength.toFixed(3)})`);
+    glow.addColorStop(1, `rgba(${color}, 0)`);
+    ctx.fillStyle = glow;
+    ctx.fillRect(px - tileSize * 0.25, py - tileSize * 0.1, tileSize * 1.5, tileSize * 1.3);
+    if (rarity === "boss") {
+      const beam = ctx.createLinearGradient(0, py - tileSize * 1.6, 0, cy);
+      beam.addColorStop(0, `rgba(${color}, 0)`);
+      beam.addColorStop(1, `rgba(${color}, ${(0.55 * pulse).toFixed(3)})`);
+      ctx.fillStyle = beam;
+      ctx.fillRect(cx - tileSize * 0.14, py - tileSize * 1.6, tileSize * 0.28, cy - (py - tileSize * 1.6));
+    }
+    ctx.restore();
+  }
+
+  // Three little four-point glints that blink in turn around rare loot.
+  drawLootSparkles(px, py, tileSize, rarity) {
+    const { ctx } = this;
+    const pixel = Math.max(1, Math.floor(tileSize / 16));
+    const time = reduceMotion() ? 0 : performance.now();
+    const spots = [[0.2, 0.25], [0.78, 0.4], [0.45, 0.05]];
+    ctx.save();
+    ctx.fillStyle = rarity === "boss" ? "#fff2c2" : "#ffe7a3";
+    spots.forEach(([sx, sy], index) => {
+      const phase = ((time / 700) + index / spots.length) % 1;
+      if (!reduceMotion() && phase > 0.55) return;
+      const size = phase < 0.25 ? 2 : 1;
+      const x = Math.round(px + sx * tileSize);
+      const y = Math.round(py + sy * tileSize);
+      ctx.fillRect(x, y - pixel * size, pixel, pixel * (size * 2 + 1));
+      ctx.fillRect(x - pixel * size, y, pixel * (size * 2 + 1), pixel);
+    });
+    ctx.restore();
+  }
+
+  // Cosmetic torchlight: a band-tinted shadow that deepens toward the screen edges, a warm flickering
+  // glow around the player, and small glows at shrines and stairs. Fully visible tiles stay readable.
+  drawLighting(currentFloor, player, offsetX, offsetY, tileSize) {
+    const width = this.canvas.width;
+    const height = this.canvas.height;
+    if (!this.lightCanvas) this.lightCanvas = document.createElement("canvas");
+    const light = this.lightCanvas;
+    if (light.width !== width || light.height !== height) {
+      light.width = width;
+      light.height = height;
+    }
+    const now = performance.now();
+    const flicker = reduceMotion() ? 1 : 1 + Math.sin(now / 130) * 0.02 + Math.sin(now / 53) * 0.012;
+    const tint = LIGHT_TINTS[currentFloor.theme] ?? LIGHT_TINTS.crypt;
+    const lctx = light.getContext("2d");
+    const centre = (x, y) => ({ x: offsetX + (x + 0.5) * tileSize, y: offsetY + (y + 0.5) * tileSize });
+    const cut = (point, radius, stops) => {
+      const gradient = lctx.createRadialGradient(point.x, point.y, 0, point.x, point.y, radius);
+      for (const [offset, alpha] of stops) gradient.addColorStop(offset, `rgba(0, 0, 0, ${alpha})`);
+      lctx.fillStyle = gradient;
+      lctx.fillRect(point.x - radius, point.y - radius, radius * 2, radius * 2);
+    };
+
+    lctx.globalCompositeOperation = "source-over";
+    lctx.clearRect(0, 0, width, height);
+    lctx.fillStyle = `rgba(${tint}, ${LIGHT_OUTER_DARKNESS})`;
+    lctx.fillRect(0, 0, width, height);
+    lctx.globalCompositeOperation = "destination-out";
+    const playerPoint = centre(player.x, player.y);
+    const radius = tileSize * LIGHT_RADIUS_TILES * flicker;
+    cut(playerPoint, radius, [[0, 1], [0.5, 0.9], [0.8, 0.55], [1, 0]]);
+
+    const glows = [];
+    const shrine = currentFloor.shrine;
+    if (shrine && currentFloor.map[shrine.y]?.[shrine.x]?.explored) {
+      glows.push({ point: centre(shrine.x, shrine.y), radius: tileSize * 2.6, color: shrine.mode === "healing" ? "255, 90, 70" : "90, 150, 255", strength: shrine.used ? 0.06 : 0.16 });
+    }
+    currentFloor.map.forEach((row, y) => row.forEach((tile, x) => {
+      if (tile.stairs && tile.explored) glows.push({ point: centre(x, y), radius: tileSize * 1.8, color: "140, 220, 140", strength: 0.1 });
+    }));
+    for (const glow of glows) cut(glow.point, glow.radius, [[0, 0.8], [1, 0]]);
+
+    const ctx = this.ctx;
+    ctx.drawImage(light, 0, 0);
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    const warm = ctx.createRadialGradient(playerPoint.x, playerPoint.y, 0, playerPoint.x, playerPoint.y, radius * 0.55);
+    warm.addColorStop(0, "rgba(255, 170, 90, 0.1)");
+    warm.addColorStop(1, "rgba(255, 170, 90, 0)");
+    ctx.fillStyle = warm;
+    ctx.fillRect(playerPoint.x - radius, playerPoint.y - radius, radius * 2, radius * 2);
+    for (const glow of glows) {
+      const gradient = ctx.createRadialGradient(glow.point.x, glow.point.y, 0, glow.point.x, glow.point.y, glow.radius);
+      gradient.addColorStop(0, `rgba(${glow.color}, ${glow.strength})`);
+      gradient.addColorStop(1, `rgba(${glow.color}, 0)`);
+      ctx.fillStyle = gradient;
+      ctx.fillRect(glow.point.x - glow.radius, glow.point.y - glow.radius, glow.radius * 2, glow.radius * 2);
+    }
+    ctx.restore();
+  }
+
+  // The whole explored floor, scaled to fill the full-map overlay.
+  drawFullMap() {
+    const canvas = document.getElementById("full-map-canvas");
+    const run = this.game.state.run;
+    if (!canvas || !run) return;
+    const { currentFloor, player } = run;
+    const frame = canvas.parentElement;
+    const dpr = window.devicePixelRatio || 1;
+    const cell = Math.max(2, Math.floor(Math.min((frame.clientWidth * dpr) / currentFloor.width, (frame.clientHeight * dpr) / currentFloor.height)));
+    canvas.width = currentFloor.width * cell;
+    canvas.height = currentFloor.height * cell;
+    canvas.style.width = `${canvas.width / dpr}px`;
+    canvas.style.height = `${canvas.height / dpr}px`;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#07060a";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const dot = (x, y, color, scale = 0.7) => {
+      const size = Math.max(2, Math.round(cell * scale));
+      ctx.fillStyle = color;
+      ctx.fillRect(x * cell + Math.floor((cell - size) / 2), y * cell + Math.floor((cell - size) / 2), size, size);
+    };
+    currentFloor.map.forEach((row, y) => row.forEach((tile, x) => {
+      if (!tile.explored && !tile.visible) return;
+      ctx.fillStyle = tile.type === "wall" ? MINIMAP_COLORS.wall : tile.visible ? MINIMAP_COLORS.floorVisible : MINIMAP_COLORS.floor;
+      ctx.fillRect(x * cell, y * cell, cell, cell);
+    }));
+    currentFloor.map.forEach((row, y) => row.forEach((tile, x) => {
+      if (!tile.explored && !tile.visible) return;
+      if (tile.stairs) dot(x, y, MINIMAP_COLORS.stairs, 0.9);
+      if (tile.vendor) dot(x, y, MINIMAP_COLORS.vendor, 0.9);
+      if (tile.chestId) dot(x, y, MINIMAP_COLORS.chest, 0.8);
+      if (tile.itemIds?.length) dot(x, y, RARITY_RANK[this.getTileLootRarity(tile.itemIds)] >= RARITY_RANK.rare ? "#f2c46b" : "#7cc1ff", 0.5);
+    }));
+    const shrine = currentFloor.shrine;
+    if (shrine && currentFloor.map[shrine.y]?.[shrine.x]?.explored) dot(shrine.x, shrine.y, MINIMAP_COLORS.shrine, 0.9);
+    for (const enemy of currentFloor.enemies) {
+      if (enemy.disguised || !currentFloor.map[enemy.y][enemy.x].visible) continue;
+      dot(enemy.x, enemy.y, ENEMIES[enemy.templateId]?.behavior === "boss" ? MINIMAP_COLORS.boss : MINIMAP_COLORS.enemy, 0.8);
+    }
+    dot(player.x, player.y, MINIMAP_COLORS.player, 1.1);
+  }
+
+  // Boss name-plate introduction (fades on its own) and the boss HP bar along the bottom of the map.
+  renderBossUi() {
+    const { run, ui } = this.game.state;
+    const stage = document.querySelector(".map-stage");
+    const bar = document.getElementById("boss-bar");
+    const intro = document.getElementById("boss-intro");
+    if (!run || !bar || !intro) return;
+    const boss = run.currentFloor.enemies.find((enemy) => ENEMIES[enemy.templateId]?.behavior === "boss"
+      && enemy.hp > 0 && run.player.floorFlags?.[`${enemy.templateId}Seen`]);
+    bar.classList.toggle("hidden", !boss);
+    stage?.classList.toggle("has-boss-bar", Boolean(boss));
+    if (boss) {
+      const ratio = clamp(boss.hp / boss.maxHp, 0, 1);
+      document.getElementById("boss-bar-name").textContent = boss.name;
+      document.getElementById("boss-bar-hp").textContent = `${Math.max(0, boss.hp)} / ${boss.maxHp}`;
+      document.getElementById("boss-bar-fill").style.width = `${ratio * 100}%`;
+      document.getElementById("boss-bar-trail").style.width = `${ratio * 100}%`;
+      const isOverlord = boss.templateId === "abyssal_overlord";
+      document.getElementById("boss-bar-marker").classList.toggle("hidden", !isOverlord || boss.phaseTwo);
+      document.getElementById("boss-bar-phase").textContent = isOverlord ? (boss.phaseTwo ? "Phase 2" : "Phase 1") : "";
+      bar.classList.toggle("enraged", Boolean(boss.phaseTwo));
+    }
+
+    const introState = ui.bossIntro;
+    const elapsed = introState ? Date.now() - introState.startedAt : Infinity;
+    if (elapsed > BOSS_INTRO_MS) {
+      if (introState) ui.bossIntro = null;
+      intro.classList.add("hidden");
+      return;
+    }
+    if (intro.dataset.for !== introState.startedAt.toString()) {
+      intro.dataset.for = introState.startedAt.toString();
+      document.getElementById("boss-intro-name").textContent = introState.name;
+      document.getElementById("boss-intro-title").textContent = introState.title;
+    }
+    const spritePath = this.assets ? getActorSpriteFrame(this.assets.manifest, introState.templateId, Math.floor(performance.now() / 220)) : null;
+    const sprite = document.getElementById("boss-intro-sprite");
+    if (spritePath && sprite.getAttribute("src") !== spritePath) sprite.setAttribute("src", spritePath);
+    intro.classList.remove("hidden");
+    intro.classList.toggle("leaving", elapsed > BOSS_INTRO_MS - 500);
+  }
+
+  // A brief card over the map naming the floor and its band; it never blocks input.
+  showFloorCard(card) {
+    const element = document.getElementById("floor-card");
+    if (!element) return;
+    document.getElementById("floor-card-kicker").textContent = card.kicker;
+    document.getElementById("floor-card-title").textContent = card.title;
+    document.getElementById("floor-card-subtitle").textContent = card.subtitle ?? "";
+    element.classList.toggle("boss-floor", Boolean(card.boss));
+    // Restart the animation even if a card is already showing.
+    element.classList.remove("showing");
+    element.classList.remove("hidden");
+    void element.offsetWidth;
+    element.classList.add("showing");
+    window.clearTimeout(this.floorCardTimer);
+    this.floorCardTimer = window.setTimeout(() => {
+      element.classList.remove("showing");
+      element.classList.add("hidden");
+    }, FLOOR_CARD_MS);
   }
 
   // An actor dissolving away: fading and lifting slightly, shedding grey motes that drift upward.
@@ -1274,6 +1526,8 @@ export class Renderer {
     const hpGroup = document.getElementById("hud-hp-group");
     hpBar.style.width = `${(player.hp / derived.maxHp) * 100}%`;
     document.getElementById("hud-mana-bar").style.width = `${(player.mana / derived.maxMana) * 100}%`;
+    // The pale trail catches up after a moment, so a big hit shows how much it took.
+    document.getElementById("hud-hp-trail").style.width = hpBar.style.width;
     document.getElementById("hud-xp-bar").style.width = `${xpProgress * 100}%`;
     hpBar.classList.toggle("critical", isCriticalHp);
     hpGroup.classList.toggle("critical", isCriticalHp);
@@ -1410,7 +1664,7 @@ export class Renderer {
       const iconPath = ITEMS[entry] ? getItemSprite(this.assets?.manifest, entry) : null;
       const icon = iconPath
         ? `<img src="${iconPath}" alt="" class="slot-icon">`
-        : SPELLS[entry] ? `<span class="slot-icon slot-icon-spell" aria-hidden="true">&#10022;</span>` : "";
+        : SPELLS[entry] && getSpellIconUrl(entry) ? `<img src="${getSpellIconUrl(entry)}" alt="" class="slot-icon">` : "";
       const meta = slot.isSpell
         ? (slot.free ? `<span class="slot-meta free">Free</span>` : slot.cost ? `<span class="slot-meta mana">${slot.cost} MP</span>` : "")
         : `<span class="slot-meta count">&times;${slot.count}</span>`;
@@ -1577,6 +1831,7 @@ export class Renderer {
       this.overlayContent.innerHTML = overlay.html;
       // A variant restyles the whole overlay (e.g. the full-screen death and victory cards).
       this.overlay.className = `overlay overlay--${overlay.type ?? "panel"} ${overlay.variant ?? ""}`.trim();
+      if (overlay.type === "map") this.drawFullMap();
       this.lastOverlaySignature = signature;
       this.lastOverlayType = overlay.type;
       this.restoreOverlayFocus(wasOpenType !== overlay.type);
@@ -1630,11 +1885,7 @@ export class Renderer {
     this.npcDialog.classList.remove("hidden");
   }
 
-  showTransition(text) {
-    this.transitionBanner.textContent = text;
-    this.transitionBanner.classList.remove("hidden");
-    window.setTimeout(() => this.transitionBanner.classList.add("hidden"), 1300);
-  }
+
 
   triggerFlash(variant = "critical") {
     if (!this.criticalFlash) return;

@@ -1,6 +1,26 @@
 // Number of quick slots on the hotbar (keys 1-6). Class defaults below fill the first few.
 export const QUICK_SLOT_COUNT = 6;
 
+// Display names for each floor band's theme, shown on floor cards, the full map, and the Continue card.
+export const BAND_NAMES = {
+  sage: "The Sage's Chamber",
+  crypt: "The Crypt",
+  ember_halls: "Ember Halls",
+  fungal_depths: "Fungal Depths",
+  sunken_vault: "The Sunken Vault",
+  necropolis: "The Necropolis",
+  stitchworks: "The Stitchworks",
+  void_deep: "The Void Deep",
+  abyssal_throne: "The Abyssal Throne",
+};
+
+// Epithets for the boss introduction card.
+export const BOSS_TITLES = {
+  bone_captain: "Warden of the First Seal",
+  patches: "Keeper of the Stitching Pit",
+  abyssal_overlord: "Sovereign of the Abyssal Throne",
+};
+
 export const CLASSES = {
   warrior: {
     id: "warrior",

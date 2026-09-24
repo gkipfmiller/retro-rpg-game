@@ -59,6 +59,7 @@
             <p><strong>Character:</strong> C</p>
             <p><strong>Skills:</strong> K</p>
             <p><strong>Minimap:</strong> M (toggle)</p>
+            <p><strong>Full Map:</strong> Tab</p>
             <p><strong>Inspect:</strong> hover the map for enemy odds and what's on a tile</p>
             <p><strong>Quick Slots:</strong> 1-6 (manage from Character screen)</p>
             <p><strong>Settings:</strong> O</p>
@@ -135,12 +136,12 @@
             <button id="hud-skill-points" class="hud-alert hidden" type="button"></button>
             <button id="hud-new-items" class="hud-alert hud-alert--quiet hidden" type="button"></button>
             <div id="hud-hp-group" class="meter-group">
-              <label>HP</label>
-              <div class="meter"><div id="hud-hp-bar" class="meter-fill hp"></div></div>
+              <label><img class="meter-icon" src="./RPG Art Assets/frames/ui_heart_full.png" alt="">HP</label>
+              <div class="meter"><div id="hud-hp-trail" class="meter-trail"></div><div id="hud-hp-bar" class="meter-fill hp"></div></div>
               <span id="hud-hp-text"></span>
             </div>
             <div class="meter-group">
-              <label>Mana</label>
+              <label><img class="meter-icon" src="./RPG Art Assets/Assets/UI/mana.png" alt="">Mana</label>
               <div class="meter"><div id="hud-mana-bar" class="meter-fill mana"></div></div>
               <span id="hud-mana-text"></span>
             </div>
@@ -180,6 +181,31 @@
             <div class="map-stage">
               <canvas id="game-canvas" width="768" height="576"></canvas>
               <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
+              <div id="floor-card" class="floor-card hidden" aria-live="polite">
+                <span id="floor-card-kicker" class="floor-card-kicker"></span>
+                <strong id="floor-card-title" class="floor-card-title"></strong>
+                <span id="floor-card-subtitle" class="floor-card-subtitle"></span>
+              </div>
+              <div id="boss-intro" class="boss-intro hidden" aria-live="assertive">
+                <img id="boss-intro-sprite" class="boss-intro-sprite" alt="">
+                <div class="boss-intro-text">
+                  <span class="boss-intro-kicker">A guardian stirs</span>
+                  <strong id="boss-intro-name" class="boss-intro-name"></strong>
+                  <span id="boss-intro-title" class="boss-intro-title"></span>
+                </div>
+              </div>
+              <div id="boss-bar" class="boss-bar hidden">
+                <div class="boss-bar-head">
+                  <span id="boss-bar-name" class="boss-bar-name"></span>
+                  <span id="boss-bar-phase" class="boss-bar-phase"></span>
+                  <span id="boss-bar-hp" class="boss-bar-hp"></span>
+                </div>
+                <div class="boss-meter">
+                  <div id="boss-bar-trail" class="meter-trail"></div>
+                  <div id="boss-bar-fill" class="boss-meter-fill"></div>
+                  <span id="boss-bar-marker" class="boss-meter-marker hidden" title="Phase 2 at half health"></span>
+                </div>
+              </div>
               <div id="npc-dialog" class="npc-dialog hidden">
                 <div id="npc-dialog-speaker" class="npc-dialog-speaker"></div>
                 <div id="npc-dialog-text" class="npc-dialog-text"></div>
@@ -219,7 +245,7 @@
               <span>Wait: Space</span>
               <span>Fire: F</span>
               <span>Menus: I C K</span>
-              <span>Map: M</span>
+              <span>Map: M / Tab</span>
               <span>Settings: O</span>
             </div>
           </div>
@@ -235,7 +261,6 @@
           </div>
         </div>
 
-        <div id="transition-banner" class="transition-banner hidden"></div>
         <div id="ui-tooltip" class="ui-tooltip hidden"></div>
 
         <div id="mobile-hud" class="mobile-hud hidden">
@@ -248,7 +273,7 @@
           <div class="mobile-hud-meters">
             <div class="mobile-meter">
               <label>HP</label>
-              <div class="meter"><div id="mobile-hp-bar" class="meter-fill hp"></div></div>
+              <div class="meter"><div id="mobile-hp-trail" class="meter-trail"></div><div id="mobile-hp-bar" class="meter-fill hp"></div></div>
               <span id="mobile-hp-text"></span>
             </div>
             <div class="mobile-meter">

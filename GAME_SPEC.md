@@ -857,6 +857,14 @@ Current visual identity:
 - status effects use 8x8 pixel-art icons (`src/pixelIcons.js`) in HUD and target badges (with a turn-count chip) and as pips above actors on the map; the player's effects have their own HUD row
 - death is a full-screen epitaph: an animated portrait of what killed you (enemy sprite, trap sprite, or poison icon) on a carved headstone with the hero's name, class, level, boon, where they fell, and a floor-band epitaph line, beside a run recap (floor, level, kills, turns, damage dealt and taken, gold, score, finest possession carried), the high-score save, and the leaderboard; lingering statuses are cleared on death
 - victory uses the same layout as a gilded throne-room card with the hero's portrait
+- cosmetic torch lighting on the map (toggle in Settings): a band-tinted shadow deepens toward the edge of the view while everything the fog of war shows stays readable, a warm flickering glow surrounds the player, and explored shrines and stairs give off small coloured glows; it never reduces sight range
+- bosses get a name-plate introduction over the map when they first see you (animated sprite, "A guardian stirs", name, epithet) and a boss HP bar along the bottom of the map with a damage trail; the Abyssal Overlord's bar shows its phase and marks the half-health threshold, then turns violet in phase 2
+- every spell and ability has an 8x8 pixel icon (hotbar, touch row, loadout, class cards), and each skill-tree branch has one too
+- Tab opens a full-screen map of the explored floor (stairs, chests, items with rare loot in gold, vendor, shrine, enemies in view, boss, you) with a legend and exploration %; Tab or Esc closes it, and the touch Map button opens it
+- each new floor shows a brief card over the map ("12 of 30 · Floor 12 · Fungal Depths"; boss floors show their lair name in red) that fades on its own and never blocks input
+- uncommon-or-better floor loot sits in a soft pulsing glow (green for uncommon, gold for rare and boss, plus a light beam for boss items), and rare loot twinkles; vault keys count as rare
+- the skill tree shows branch icons, per-branch progress pips (e.g. 2/5), and connector lines between tiers that light up gold as the path is unlocked
+- HP, mana, and XP bars are pixel-styled (square frame, highlight stripe, 10% tick marks, heart and flask icons), and HP bars keep a pale damage trail that drains after a hit
 
 Other current UI details:
 - class select now uses animated class sprites

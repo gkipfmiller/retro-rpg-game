@@ -3,6 +3,7 @@ import { Renderer } from "./render.js";
 import { SoundPlayer } from "./sound.js";
 import { getActorSpriteFrame, getItemSprite, loadAssets } from "./assets.js";
 import { MenuScene } from "./menuScene.js";
+import { getSpellIconUrl } from "./pixelIcons.js";
 import { SPELLS, ITEMS, CLASSES, BOONS, QUICK_SLOT_COUNT } from "./data.js";
 import { loadSettings, renderSettingsControls, saveSettings } from "./settings.js";
 import { logText } from "./log.js";
@@ -19,6 +20,7 @@ function applySettings() {
   soundPlayer.setMasterVolume(settings.muted ? 0 : settings.volume);
   renderer.showMinimap = settings.minimap;
   renderer.logFilter = settings.logFilter;
+  renderer.lighting = settings.lighting;
 }
 
 // Keeps every copy of the settings controls (menu card and in-game panel) in step with the stored values.
@@ -109,7 +111,7 @@ function renderClassStats() {
       return icon ? `<img class="kit-icon" src="${icon}" alt="${ITEMS[itemId].name}" data-tooltip="${tooltip}">` : "";
     }).join("");
     const abilities = classDef.abilities
-      .map((spellId) => `<span class="ability-chip" data-tooltip="${game.escapeTooltip(game.getSpellTooltip(spellId))}">${SPELLS[spellId]?.name ?? spellId}</span>`)
+      .map((spellId) => `<span class="ability-chip" data-tooltip="${game.escapeTooltip(game.getSpellTooltip(spellId))}"><img class="ability-icon" src="${getSpellIconUrl(spellId) ?? ""}" alt="">${SPELLS[spellId]?.name ?? spellId}</span>`)
       .join("");
     slot.innerHTML = `
       <span class="class-vitals">
@@ -204,6 +206,7 @@ function syncMobileControls() {
     document.getElementById("mobile-hud-gold").textContent = `${player.gold}g`;
 
     document.getElementById("mobile-hp-bar").style.width = `${(player.hp / derived.maxHp) * 100}%`;
+    document.getElementById("mobile-hp-trail").style.width = `${(player.hp / derived.maxHp) * 100}%`;
     document.getElementById("mobile-hp-text").textContent = `${player.hp}/${derived.maxHp}`;
     document.getElementById("mobile-mana-bar").style.width = `${(player.mana / derived.maxMana) * 100}%`;
     document.getElementById("mobile-mana-text").textContent = `${player.mana}/${derived.maxMana}`;
@@ -526,6 +529,12 @@ function handleOverlayKey(event) {
     refresh();
     return;
   }
+  if (event.key === "Tab" && game.state.ui.overlay?.type === "map") {
+    event.preventDefault();
+    game.closeOverlay();
+    refresh();
+    return;
+  }
   if ((event.key === "o" || event.key === "O") && game.state.ui.overlay?.type === "settings") {
     game.closeOverlay();
     refresh();
@@ -600,6 +609,9 @@ window.addEventListener("keydown", (event) => {
     updateSetting("minimap", !settings.minimap);
   } else if (key === "o") {
     openSettingsOverlay();
+  } else if (event.key === "Tab") {
+    event.preventDefault();
+    game.openFullMap();
   } else if (/^[1-9]$/.test(key) && Number(key) <= QUICK_SLOT_COUNT) {
     game.useQuickSlot(Number(key) - 1);
   }
@@ -654,7 +666,7 @@ if (mobileControls) {
       if (action === "inventory") game.openInventory();
       else if (action === "character") game.openCharacter();
       else if (action === "skills") game.openSkills();
-      else if (action === "map") updateSetting("minimap", !settings.minimap);
+      else if (action === "map") game.openFullMap();
       else if (action === "settings") openSettingsOverlay();
       refresh();
     }, { passive: false });

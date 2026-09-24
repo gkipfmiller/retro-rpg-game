@@ -1,7 +1,7 @@
-import { BOONS, BOSS_REWARDS, CHEST_TABLE, CLASSES, ENEMIES, ITEMS, QUICK_SLOT_COUNT, SKILL_TREES, SPELLS, STATUS_DEFINITIONS, TRAPS } from "./data.js";
+import { BAND_NAMES, BOONS, BOSS_REWARDS, BOSS_TITLES, CHEST_TABLE, CLASSES, ENEMIES, ITEMS, QUICK_SLOT_COUNT, SKILL_TREES, SPELLS, STATUS_DEFINITIONS, TRAPS } from "./data.js";
 import { attachVaultFeaturesToFloor, generateFloor, getDropForEnemy } from "./generator.js";
 import { getActorSpriteFrame, getEnemySpriteId, getItemSprite } from "./assets.js";
-import { getStatusIconUrl } from "./pixelIcons.js";
+import { getBranchIconUrl, getSpellIconUrl, getStatusIconUrl } from "./pixelIcons.js";
 import { clamp, createRng, deepClone, hashSeed, manhattan, toKey } from "./utils.js";
 import { MAX_LOG_ENTRIES, logText, normalizeLogs } from "./log.js";
 
@@ -128,14 +128,17 @@ export class Game {
     this.state.mode = mode;
   }
 
-  getFloorTransitionBanner(floorNumber) {
-    const bossFloorTitles = {
-      0: "The Sage Waits",
-      10: "Floor 10 - Super Skeletor's Lair",
-      20: "Floor 20 - The Stitching Pit",
-      30: "Floor 30 - Abyssal Throne",
+  // What the floor-transition card shows: a small kicker, the big title, and the band beneath.
+  getFloorCard(floorNumber) {
+    const band = BAND_NAMES[this.state.run?.currentFloor?.theme] ?? "";
+    const bossFloors = {
+      10: "Super Skeletor's Lair",
+      20: "The Stitching Pit",
+      30: "The Abyssal Throne",
     };
-    return bossFloorTitles[floorNumber] ?? `Floor ${floorNumber}`;
+    if (floorNumber === 0) return { kicker: "Prelude", title: "The Sage Waits", subtitle: "Choose a gift before the descent", boss: false };
+    if (bossFloors[floorNumber]) return { kicker: `Floor ${floorNumber}`, title: bossFloors[floorNumber], subtitle: band, boss: true };
+    return { kicker: `${floorNumber} of 30`, title: `Floor ${floorNumber}`, subtitle: band, boss: false };
   }
 
   getBossFloorEntryLine(floorNumber) {
@@ -603,24 +606,13 @@ export class Game {
       const run = payload?.run;
       if (payload?.version !== 1 || !run?.player) return null;
       const { player } = run;
-      const bandNames = {
-        sage: "The Sage's Chamber",
-        crypt: "The Crypt",
-        ember_halls: "Ember Halls",
-        fungal_depths: "Fungal Depths",
-        sunken_vault: "The Sunken Vault",
-        necropolis: "The Necropolis",
-        stitchworks: "The Stitchworks",
-        void_deep: "The Void Deep",
-        abyssal_throne: "The Abyssal Throne",
-      };
       return {
         classId: player.classId,
         heroName: CLASSES[player.classId]?.heroName ?? "",
         className: CLASSES[player.classId]?.name ?? player.classId,
         level: player.level,
         floor: run.floorNumber,
-        band: bandNames[run.currentFloor?.theme] ?? "",
+        band: BAND_NAMES[run.currentFloor?.theme] ?? "",
         boonName: BOONS[player.boonId]?.name ?? null,
         gold: player.gold,
         hp: player.hp,
@@ -647,7 +639,7 @@ export class Game {
       this.state.mode = "in_game";
       this.state.ui = { overlay: null, selectedId: null, npcDialog: null };
       this.updateVisibility();
-      this.renderer?.showTransition(this.getFloorTransitionBanner(this.state.run.floorNumber));
+      this.renderer?.showFloorCard(this.getFloorCard(this.state.run.floorNumber));
       return true;
     } catch {
       return false;
@@ -856,7 +848,7 @@ export class Game {
     );
     this.state.ui.overlay = null;
     this.state.mode = "in_game";
-    this.renderer?.showTransition(this.getFloorTransitionBanner(0));
+    this.renderer?.showFloorCard(this.getFloorCard(0));
   }
 
   recordDamage(direction, amount) {
@@ -2526,7 +2518,7 @@ export class Game {
     this.markFloorStart();
     this.soundPlayer?.play('stairs');
     this.log(`You descend to Floor ${nextFloor}.`);
-    this.renderer?.showTransition(this.getFloorTransitionBanner(nextFloor));
+    this.renderer?.showFloorCard(this.getFloorCard(nextFloor));
     const bossEntryLine = this.getBossFloorEntryLine(nextFloor);
     if (bossEntryLine) {
       this.showNpcDialog(this.sageName, bossEntryLine, 3400);
@@ -2794,6 +2786,34 @@ export class Game {
     };
   }
 
+  // Full-screen map of the explored floor; the renderer draws it into the overlay's canvas.
+  openFullMap() {
+    const run = this.state.run;
+    const legend = [
+      ["you", "You"],
+      ["stairs", "Stairs"],
+      ["enemy", "Enemy in view"],
+      ["boss", "Boss"],
+      ["chest", "Unopened chest"],
+      ["loot", "Item"],
+      ["vendor", "Vendor"],
+      ["shrine", "Shrine"],
+    ];
+    const summary = this.getFloorSummary();
+    this.state.ui.overlay = {
+      type: "map",
+      variant: "map-view",
+      title: run.floorNumber === 0 ? "The Sage's Chamber" : `Floor ${run.floorNumber} · ${BAND_NAMES[run.currentFloor.theme] ?? ""}`,
+      html: `
+        <div class="full-map-frame"><canvas id="full-map-canvas" class="full-map-canvas"></canvas></div>
+        <div class="full-map-footer">
+          <div class="full-map-legend">${legend.map(([key, label]) => `<span class="legend-item"><span class="legend-swatch legend-${key}"></span>${label}</span>`).join("")}</div>
+          <span class="muted">${summary.explored}% explored · Tab or Esc to close</span>
+        </div>
+      `,
+    };
+  }
+
   openLoadout() {
     const { player } = this.state.run;
     const learnedSpells = [...new Set(player.learnedSpells)]
@@ -2811,7 +2831,9 @@ export class Game {
       }));
     const options = [...learnedSpells, ...consumables];
     const entryName = (entryId) => SPELLS[entryId]?.name ?? ITEMS[entryId]?.name ?? entryId;
-    const entryIcon = (entryId) => (ITEMS[entryId] ? this.renderItemIcon(entryId, "loadout-icon") : `<span class="loadout-icon loadout-icon-spell" aria-hidden="true">&#10022;</span>`);
+    const entryIcon = (entryId) => (ITEMS[entryId]
+      ? this.renderItemIcon(entryId, "loadout-icon")
+      : `<img class="loadout-icon" src="${getSpellIconUrl(entryId) ?? ""}" alt="">`);
     const html = `
       <p class="muted loadout-hint">Click a number to put an entry in that slot, or hover an entry and press 1-${QUICK_SLOT_COUNT}.</p>
       <div class="overlay-grid">
@@ -2858,20 +2880,38 @@ export class Game {
   }
 
   openSkills() {
-    const branches = SKILL_TREES[this.state.run.player.classId];
+    const player = this.state.run.player;
+    const branches = SKILL_TREES[player.classId];
+    const points = player.skillPoints;
     const html = `
-      <p>Unspent Skill Points: <strong>${this.state.run.player.skillPoints}</strong></p>
+      <p class="skill-points ${points ? "has-points" : ""}">${points
+        ? `<strong>${points}</strong> skill point${points === 1 ? "" : "s"} to spend. Each branch unlocks top to bottom.`
+        : "No skill points to spend. You earn one each level."}</p>
       <div class="skill-grid">
-        ${branches.map((branch) => `
+        ${branches.map((branch) => {
+          const unlockedCount = branch.skills.filter((skill) => player.unlockedSkills.includes(skill.id)).length;
+          const icon = getBranchIconUrl(branch.id);
+          return `
           <div class="skill-branch">
-            <h3>${branch.name}</h3>
+            <div class="skill-branch-head">
+              ${icon ? `<span class="skill-branch-icon"><img src="${icon}" alt=""></span>` : ""}
+              <div>
+                <h3>${branch.name}</h3>
+                <span class="skill-branch-progress" aria-label="${unlockedCount} of ${branch.skills.length} unlocked">
+                  ${branch.skills.map((_, index) => `<span class="skill-pip${index < unlockedCount ? " filled" : ""}"></span>`).join("")}
+                  <span class="muted">${unlockedCount}/${branch.skills.length}</span>
+                </span>
+              </div>
+            </div>
             ${branch.skills.map((skill, index) => {
-              const unlocked = this.state.run.player.unlockedSkills.includes(skill.id);
+              const unlocked = player.unlockedSkills.includes(skill.id);
               const previousId = index > 0 ? branch.skills[index - 1].id : null;
-              const available = !unlocked && this.state.run.player.skillPoints > 0 && (!previousId || this.state.run.player.unlockedSkills.includes(previousId));
+              const available = !unlocked && points > 0 && (!previousId || player.unlockedSkills.includes(previousId));
               const state = unlocked ? "unlocked" : available ? "available" : "locked";
+              // The connector above a card lights up once the path reaches it.
+              const reached = unlocked || (previousId && player.unlockedSkills.includes(previousId));
               return `
-                <div class="skill-card ${state}" data-tooltip="${this.escapeTooltip(this.getSkillTooltip(skill, branch.name, unlocked, available))}">
+                <div class="skill-card ${state}${index > 0 ? " has-connector" : ""}${reached ? " reached" : ""}" data-tooltip="${this.escapeTooltip(this.getSkillTooltip(skill, branch.name, unlocked, available))}">
                   <span class="skill-tier" aria-hidden="true">${unlocked ? "&#10003;" : index + 1}</span>
                   <strong>${skill.name}</strong>
                   <p>${skill.description}</p>
@@ -2880,7 +2920,8 @@ export class Game {
               `;
             }).join("")}
           </div>
-        `).join("")}
+        `;
+        }).join("")}
       </div>
     `;
     this.state.ui.overlay = { type: "skills", title: "Skill Tree", html };
@@ -3253,6 +3294,8 @@ export class Game {
         const sightKey = `${enemy.templateId}Seen`;
         if (!player.floorFlags[sightKey]) {
           player.floorFlags[sightKey] = true;
+          // Name-plate introduction over the map; the renderer fades it out on its own.
+          this.state.ui.bossIntro = { templateId: enemy.templateId, name: enemy.name, title: BOSS_TITLES[enemy.templateId] ?? "", startedAt: Date.now() };
           const sightLine = this.getBossSightLine(enemy.templateId);
           if (sightLine) {
             this.showNpcDialog(enemy.name, sightLine, 3400);

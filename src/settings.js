@@ -5,6 +5,7 @@ const DEFAULT_SETTINGS = {
   volume: 0.8,
   minimap: true,
   logFilter: "all",
+  lighting: true,
 };
 
 export function loadSettings() {
@@ -39,6 +40,9 @@ export function renderSettingsControls(settings) {
     </div>
     <div class="setting-row">
       <label><input type="checkbox" data-setting="minimap" ${settings.minimap ? "checked" : ""}> Show minimap <span class="muted">(M)</span></label>
+    </div>
+    <div class="setting-row">
+      <label><input type="checkbox" data-setting="lighting" ${settings.lighting ? "checked" : ""}> Torch lighting on the map</label>
     </div>
   `;
 }
