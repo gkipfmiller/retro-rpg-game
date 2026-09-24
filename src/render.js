@@ -973,6 +973,7 @@ export class Renderer {
 
     if (this.lighting) this.drawLighting(currentFloor, player, offsetX, offsetY, tileSize);
     for (const sparkle of sparkleTiles) this.drawLootSparkles(sparkle.px, sparkle.py, tileSize, sparkle.rarity);
+    this.drawTelegraphs(currentFloor, player, offsetX, offsetY, tileSize);
 
     // Health bars go on top of every actor so a taller sprite standing below can't hide them.
     for (const enemy of currentFloor.enemies) {
@@ -1299,8 +1300,13 @@ export class Renderer {
     }
     if (intro.dataset.for !== introState.startedAt.toString()) {
       intro.dataset.for = introState.startedAt.toString();
+      document.getElementById("boss-intro-kicker").textContent = introState.kicker ?? "A guardian stirs";
       document.getElementById("boss-intro-name").textContent = introState.name;
       document.getElementById("boss-intro-title").textContent = introState.title;
+      intro.classList.toggle("phase", Boolean(introState.phase));
+      // Re-run the entrance animation for a second plate (the phase change) in the same fight.
+      intro.classList.add("hidden");
+      void intro.offsetWidth;
     }
     const spritePath = this.assets ? getActorSpriteFrame(this.assets.manifest, introState.templateId, Math.floor(performance.now() / 220)) : null;
     const sprite = document.getElementById("boss-intro-sprite");
@@ -1352,6 +1358,74 @@ export class Renderer {
       );
     }
     ctx.restore();
+  }
+
+  // Where a warned boss attack will land next turn: red tiles within the boss's reach for melee,
+  // a target over the player (with a faint line from the boss) for bolts. Drawn above the lighting.
+  drawTelegraphs(currentFloor, player, offsetX, offsetY, tileSize) {
+    const { ctx } = this;
+    const pulse = reduceMotion() ? 0.75 : 0.6 + Math.sin(performance.now() / 160) * 0.25;
+    const line = Math.max(1, Math.floor(tileSize / 16));
+    for (const enemy of currentFloor.enemies) {
+      const telegraph = enemy.telegraph;
+      if (!telegraph || telegraph.landsOnTurn <= enemy.turnCounter) continue;
+      if (!currentFloor.map[enemy.y]?.[enemy.x]?.visible) continue;
+      ctx.save();
+      if (telegraph.kind === "melee") {
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const tile = currentFloor.map[enemy.y + dy]?.[enemy.x + dx];
+          if (!tile || tile.type !== "floor") continue;
+          const px = offsetX + (enemy.x + dx) * tileSize;
+          const py = offsetY + (enemy.y + dy) * tileSize;
+          ctx.fillStyle = `rgba(224, 60, 45, ${(0.28 * pulse).toFixed(3)})`;
+          ctx.fillRect(px, py, tileSize, tileSize);
+          ctx.strokeStyle = `rgba(255, 110, 90, ${(0.9 * pulse).toFixed(3)})`;
+          ctx.lineWidth = line;
+          ctx.strokeRect(px + line / 2 + line, py + line / 2 + line, tileSize - line * 3, tileSize - line * 3);
+        }
+      } else {
+        const cx = offsetX + (player.x + 0.5) * tileSize;
+        const cy = offsetY + (player.y + 0.5) * tileSize;
+        const ex = offsetX + (enemy.x + 0.5) * tileSize;
+        const ey = offsetY + (enemy.y + 0.5) * tileSize;
+        ctx.strokeStyle = `rgba(255, 110, 90, ${(0.35 * pulse).toFixed(3)})`;
+        ctx.lineWidth = line;
+        ctx.setLineDash([line * 3, line * 3]);
+        ctx.beginPath();
+        ctx.moveTo(ex, ey);
+        ctx.lineTo(cx, cy);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // Corner brackets around the player's tile, plus a centre dot.
+        const half = tileSize / 2;
+        const arm = Math.round(tileSize * 0.28);
+        ctx.strokeStyle = `rgba(255, 90, 70, ${pulse.toFixed(3)})`;
+        ctx.lineWidth = line * 2;
+        for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+          const x = cx + sx * half;
+          const y = cy + sy * half;
+          ctx.beginPath();
+          ctx.moveTo(x - sx * arm, y);
+          ctx.lineTo(x, y);
+          ctx.lineTo(x, y - sy * arm);
+          ctx.stroke();
+        }
+        ctx.fillStyle = `rgba(255, 90, 70, ${pulse.toFixed(3)})`;
+        ctx.fillRect(Math.round(cx - line), Math.round(cy - line), line * 2, line * 2);
+      }
+      ctx.restore();
+    }
+  }
+
+  // A short jolt of the map for big moments (skipped under reduced motion).
+  shake() {
+    const stage = document.querySelector(".map-stage");
+    if (!stage || reduceMotion()) return;
+    stage.classList.remove("shaking");
+    void stage.offsetWidth;
+    stage.classList.add("shaking");
+    window.clearTimeout(this.shakeTimer);
+    this.shakeTimer = window.setTimeout(() => stage.classList.remove("shaking"), 500);
   }
 
   // Stairs sealed by a living boss: darkened, barred with iron, and pulsing with a red ward.

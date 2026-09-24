@@ -109,6 +109,7 @@ export class Game {
     this.renderer = null;
     this.highScoreStorageKey = "dungeon30_high_scores";
     this.saveStorageKey = "dungeon30_save";
+    this.bossMemoryStorageKey = "dungeon30_boss_memory";
     this.blockedNameTerms = [
       "fuck", "shit", "bitch", "cunt", "nigger", "nigga", "fag", "faggot", "slut",
       "whore", "asshole", "motherfucker", "dick", "cock", "pussy", "penis", "vagina",
@@ -150,13 +151,51 @@ export class Game {
     return lines[floorNumber] ?? null;
   }
 
-  getBossSightLine(templateId) {
+  // lastOutcome is how your previous meeting with this boss ended (in any earlier run): "killed" if it
+  // killed you, "defeated" if you beat it. Each has its own line; first meetings use the default.
+  getBossSightLine(templateId, lastOutcome = null) {
+    const rematchLines = {
+      killed: {
+        bone_captain: "Super Skeletor's sockets narrow. He has buried you once already, and the grave remembers its guests.",
+        patches: "Patches grins through a mouthful of stitches. A few of them look familiar. They came from you.",
+        abyssal_overlord: "The Abyssal Overlord does not rise this time. It simply waits, as it did before, for you to kneel.",
+      },
+      defeated: {
+        bone_captain: "Super Skeletor rises again, bones knitting back together. He remembers the last delver who broke him.",
+        patches: "Patches has been sewn back together, badly. The newest seams run exactly where you cut.",
+        abyssal_overlord: "The Abyssal Overlord sits the throne again. Whatever you ended last time, the dungeon has already replaced.",
+      },
+    };
+    if (lastOutcome && rematchLines[lastOutcome]?.[templateId]) return rematchLines[lastOutcome][templateId];
     const lines = {
       bone_captain: "Super Skeletor turns, as if he had been expecting someone worthy to descend this far.",
       patches: "Patches lurches forward from the stitched dark, guarding the next threshold like a butchered sentinel.",
       abyssal_overlord: "The Abyssal Overlord rises before the throne. For a moment, it is unclear whether it bars your path or judges your claim.",
     };
     return lines[templateId] ?? null;
+  }
+
+  // How each boss's last encounter ended, kept per browser across runs (separate from the run save).
+  getBossMemory() {
+    try {
+      return JSON.parse(window.localStorage.getItem(this.bossMemoryStorageKey) ?? "{}") ?? {};
+    } catch {
+      return {};
+    }
+  }
+
+  recordBossOutcome(templateId, outcome) {
+    const memory = this.getBossMemory();
+    const entry = memory[templateId] ?? { kills: 0, defeats: 0 };
+    if (outcome === "killed") entry.kills += 1;
+    if (outcome === "defeated") entry.defeats += 1;
+    entry.lastOutcome = outcome;
+    memory[templateId] = entry;
+    try {
+      window.localStorage.setItem(this.bossMemoryStorageKey, JSON.stringify(memory));
+    } catch {
+      // Storage unavailable; the boss simply won't remember.
+    }
   }
 
   getBoonDefinition(boonId) {
@@ -2015,7 +2054,10 @@ export class Game {
     this.dismissSummons(enemy);
     const defeatLine = this.getBossDefeatLine(enemy.templateId);
     if (defeatLine) this.log(defeatLine);
-    if (ENEMIES[enemy.templateId]?.behavior === "boss") this.renderer?.triggerFlash("seal");
+    if (ENEMIES[enemy.templateId]?.behavior === "boss") {
+      this.renderer?.triggerFlash("seal");
+      this.recordBossOutcome(enemy.templateId, "defeated");
+    }
     const playerSnapshot = this.getPlayerCombatSnapshot();
     if (playerSnapshot.killMomentum) {
       this.state.run.player.turnFlags.killMomentum = playerSnapshot.killMomentum;
@@ -3303,6 +3345,12 @@ export class Game {
     }
   }
 
+  // Marks a boss attack due next turn, so the renderer can show where it lands: "melee" reddens the
+  // tiles the boss can reach, "bolt" puts a target on the player. Expires once that turn has passed.
+  setTelegraph(enemy, kind) {
+    enemy.telegraph = { kind, landsOnTurn: enemy.turnCounter + 1 };
+  }
+
   isInsideRoom(point, room) {
     return point.x >= room.x && point.x < room.x + room.width && point.y >= room.y && point.y < room.y + room.height;
   }
@@ -3339,8 +3387,15 @@ export class Game {
         if (!player.floorFlags[sightKey]) {
           player.floorFlags[sightKey] = true;
           // Name-plate introduction over the map; the renderer fades it out on its own.
-          this.state.ui.bossIntro = { templateId: enemy.templateId, name: enemy.name, title: BOSS_TITLES[enemy.templateId] ?? "", startedAt: Date.now() };
-          const sightLine = this.getBossSightLine(enemy.templateId);
+          const memory = this.getBossMemory()[enemy.templateId];
+          this.state.ui.bossIntro = {
+            templateId: enemy.templateId,
+            name: enemy.name,
+            kicker: memory?.lastOutcome ? "It remembers you" : "A guardian stirs",
+            title: BOSS_TITLES[enemy.templateId] ?? "",
+            startedAt: Date.now(),
+          };
+          const sightLine = this.getBossSightLine(enemy.templateId, memory?.lastOutcome);
           if (sightLine) {
             // Sight lines describe the boss in the third person, so they're narration too.
             this.showNpcDialog(null, sightLine, 3400);
@@ -3354,6 +3409,9 @@ export class Game {
         enemy.phaseTwo = true;
         this.log("The Abyssal Overlord erupts in shadowflame.");
         this.renderer?.triggerFlash("void");
+        this.renderer?.shake();
+        // A second name plate marks the turn in the fight.
+        this.state.ui.bossIntro = { templateId: enemy.templateId, name: enemy.name, kicker: "The throne answers", title: "Phase two: shadowflame", phase: true, startedAt: Date.now() };
         let summons = 0;
         while (summons < 2) {
           const summonTile = this.findAdjacentOpen(enemy.x, enemy.y);
@@ -3383,8 +3441,10 @@ export class Game {
       if (enemy.templateId === "abyssal_overlord" && canSee && enemy.turnCounter % 3 === 2) {
         if (distance === 1) {
           this.log("The Abyssal Overlord draws back for a sweeping cleave.");
+          this.setTelegraph(enemy, "melee");
         } else if (distance <= (template.range ?? 6) + 1) {
           this.log("The Abyssal Overlord gathers abyssal fire.");
+          this.setTelegraph(enemy, "bolt");
         }
       }
 
@@ -3394,16 +3454,20 @@ export class Game {
       if (enemy.templateId === "bone_captain" && canSee && nextTurn % 3 === 0) {
         if (distance === 1) {
           this.log("Super Skeletor raises a bony hand for a crushing strike.");
+          this.setTelegraph(enemy, "melee");
         } else if (distance <= (template.range ?? 5)) {
           this.log("Super Skeletor gathers a bolt of gravefire.");
+          this.setTelegraph(enemy, "bolt");
         }
       }
 
       if (enemy.templateId === "patches" && canSee && distance <= 2) {
         if (nextTurn % 4 === 0) {
           this.log("Patches lifts both fists for a brutal smash.");
+          this.setTelegraph(enemy, "melee");
         } else if (nextTurn % 3 === 0) {
           this.log("Patches heaves back for a crushing blow.");
+          this.setTelegraph(enemy, "melee");
         }
       }
 
@@ -3664,6 +3728,10 @@ export class Game {
     // Lingering effects shouldn't keep ticking or show on the fallen hero.
     this.state.run.player.statuses = [];
     this.state.run.endInfo = { result: "death", cause: message.replace(/^(Slain|Killed) by /, "").replace(/\.$/, ""), source };
+    // Dying during a boss fight counts as a loss to that boss, however the final blow landed.
+    const bossInFight = this.state.run.currentFloor.enemies.find((enemy) => ENEMIES[enemy.templateId]?.behavior === "boss"
+      && this.state.run.player.floorFlags?.[`${enemy.templateId}Seen`]);
+    if (bossInFight) this.recordBossOutcome(bossInFight.templateId, "killed");
     this.state.mode = "in_game";
     this.openRunEnd();
   }
