@@ -242,7 +242,7 @@ export class Game {
     vault.keyCollected = true;
     this.log(`You uncover the ${ITEMS[itemId].name}.`);
     this.notify({ kind: "item", itemId, verb: "Found" });
-    this.showNpcDialog("Hidden Cache", `${ITEMS[itemId].name} found. Somewhere below, ${vault.label.toLowerCase()} can now be opened.`, 2600);
+    this.showNpcDialog(null, `${ITEMS[itemId].name} found. Somewhere below, ${vault.label.toLowerCase()} can now be opened.`, 2600);
   }
 
   getVendorGreeting(vendor, runSeed, floorNumber) {
@@ -1919,6 +1919,8 @@ export class Game {
 
     enemy.hp -= damage;
     this.recordDamage("dealt", damage);
+    // A guard struck from outside its room comes for you instead of standing there.
+    this.wakeGuard(enemy);
     this.soundPlayer?.play('player_hit_enemy');
     this.renderer?.queueDamagePopup({ x: enemy.x, y: enemy.y, damage, type: "enemy", critical: criticalHit });
     this.log(`You ${criticalHit ? "critically strike" : "hit"} ${enemy.name} for ${damage} damage.`);
@@ -2002,12 +2004,18 @@ export class Game {
 
   killEnemy(enemy) {
     const floor = this.state.run.currentFloor;
+    // Already removed (e.g. a summon that crumbled when its master fell earlier this action).
+    if (!floor.enemies.includes(enemy)) return;
     floor.map[enemy.y][enemy.x].occupant = null;
     floor.enemies = floor.enemies.filter((entry) => entry.id !== enemy.id);
     this.soundPlayer?.play('enemy_death');
     const enemyStats = this.getEnemyCombatStats(enemy);
     this.log(`${enemy.name} falls.`);
     this.state.run.runStats.kills += 1;
+    this.dismissSummons(enemy);
+    const defeatLine = this.getBossDefeatLine(enemy.templateId);
+    if (defeatLine) this.log(defeatLine);
+    if (ENEMIES[enemy.templateId]?.behavior === "boss") this.renderer?.triggerFlash("seal");
     const playerSnapshot = this.getPlayerCombatSnapshot();
     if (playerSnapshot.killMomentum) {
       this.state.run.player.turnFlags.killMomentum = playerSnapshot.killMomentum;
@@ -2035,6 +2043,29 @@ export class Game {
       floor.map[enemy.y][enemy.x].itemIds.push(itemId);
       this.log(`${ITEMS[itemId].name} drops to the floor.`);
     }
+  }
+
+  // A summoner's minions don't outlive it: they vanish without XP or drops.
+  dismissSummons(master) {
+    const floor = this.state.run.currentFloor;
+    const summons = floor.enemies.filter((entry) => entry.summonedBy === master.id);
+    if (!summons.length) return;
+    for (const summon of summons) floor.map[summon.y][summon.x].occupant = null;
+    floor.enemies = floor.enemies.filter((entry) => entry.summonedBy !== master.id);
+    const kind = summons[0].templateId;
+    this.log(kind === "skeleton"
+      ? `${summons.length === 1 ? "The last skeleton crumbles" : "The skeletons crumble"} to dust.`
+      : kind === "infernal_imp"
+        ? `${summons.length === 1 ? "The imp is" : "The imps are"} dragged back into the void.`
+        : `${master.name}'s servants fade.`);
+  }
+
+  getBossDefeatLine(templateId) {
+    const lines = {
+      bone_captain: "Super Skeletor is defeated. The first seal breaks, and the deeper halls open.",
+      patches: "Patches collapses. The second threshold is broken, and the abyss opens below.",
+    };
+    return lines[templateId] ?? null;
   }
 
   gainXp(amount) {
@@ -2521,7 +2552,8 @@ export class Game {
     this.renderer?.showFloorCard(this.getFloorCard(nextFloor));
     const bossEntryLine = this.getBossFloorEntryLine(nextFloor);
     if (bossEntryLine) {
-      this.showNpcDialog(this.sageName, bossEntryLine, 3400);
+      // Floor-entry lines are narration, not the Grey Witness (who is gone by Floor 1).
+      this.showNpcDialog(null, bossEntryLine, 3400);
       this.log(bossEntryLine);
     }
     this.saveRun();
@@ -3209,14 +3241,6 @@ export class Game {
     }
     this.updateVisibility();
     if (this.state.run.player.hp <= 0) return;
-    if (this.state.run.floorNumber === 10 && !this.state.run.currentFloor.enemies.length && !this.state.run.player.floorFlags.boneCaptainDefeatedLogged) {
-      this.state.run.player.floorFlags.boneCaptainDefeatedLogged = true;
-      this.log("Super Skeletor is defeated. The first seal breaks, and the deeper halls open.");
-    }
-    if (this.state.run.floorNumber === 20 && !this.state.run.currentFloor.enemies.length && !this.state.run.player.floorFlags.patchesDefeatedLogged) {
-      this.state.run.player.floorFlags.patchesDefeatedLogged = true;
-      this.log("Patches collapses. The second threshold is broken, and the abyss opens below.");
-    }
   }
 
   processStatuses() {
@@ -3246,6 +3270,8 @@ export class Game {
       return;
     }
     for (const enemy of [...this.state.run.currentFloor.enemies]) {
+      // Skip anything removed earlier in this loop (a summon whose master just died).
+      if (!this.state.run.currentFloor.enemies.includes(enemy)) continue;
       const previousStatuses = [...enemy.statuses];
       let poisonDamage = 0;
       enemy.statuses = enemy.statuses
@@ -3277,10 +3303,28 @@ export class Game {
     }
   }
 
+  isInsideRoom(point, room) {
+    return point.x >= room.x && point.x < room.x + room.width && point.y >= room.y && point.y < room.y + room.height;
+  }
+
+  wakeGuard(enemy) {
+    if (!enemy.holdRoom || enemy.roomTriggered) return;
+    const { player } = this.state.run;
+    enemy.roomTriggered = true;
+    enemy.alerted = true;
+    enemy.lastKnownPlayerPosition = { x: player.x, y: player.y };
+  }
+
   takeEnemyTurns() {
     const { currentFloor, player } = this.state.run;
     for (const enemy of [...currentFloor.enemies]) {
       if (enemy.disguised) continue;
+      // Guards (bosses and the final sentries) hold their room until the player steps inside or
+      // strikes them. Their attack rhythm starts from that moment, so every fight opens the same way.
+      if (enemy.holdRoom && !enemy.roomTriggered) {
+        if (!this.isInsideRoom(player, enemy.holdRoom)) continue;
+        this.wakeGuard(enemy);
+      }
       enemy.turnCounter += 1;
       const template = this.getEnemyCombatStats(enemy);
       const distance = manhattan(enemy, player);
@@ -3290,7 +3334,7 @@ export class Game {
         enemy.alerted = true;
         enemy.lastKnownPlayerPosition = { x: player.x, y: player.y };
       }
-      if (canSee && ENEMIES[enemy.templateId]?.behavior === "boss") {
+      if ((canSee || enemy.roomTriggered) && ENEMIES[enemy.templateId]?.behavior === "boss") {
         const sightKey = `${enemy.templateId}Seen`;
         if (!player.floorFlags[sightKey]) {
           player.floorFlags[sightKey] = true;
@@ -3298,7 +3342,8 @@ export class Game {
           this.state.ui.bossIntro = { templateId: enemy.templateId, name: enemy.name, title: BOSS_TITLES[enemy.templateId] ?? "", startedAt: Date.now() };
           const sightLine = this.getBossSightLine(enemy.templateId);
           if (sightLine) {
-            this.showNpcDialog(enemy.name, sightLine, 3400);
+            // Sight lines describe the boss in the third person, so they're narration too.
+            this.showNpcDialog(null, sightLine, 3400);
             this.log(sightLine);
           }
         }
@@ -3308,6 +3353,7 @@ export class Game {
       if (enemy.templateId === "abyssal_overlord" && !enemy.phaseTwo && enemy.hp <= enemy.maxHp / 2) {
         enemy.phaseTwo = true;
         this.log("The Abyssal Overlord erupts in shadowflame.");
+        this.renderer?.triggerFlash("void");
         let summons = 0;
         while (summons < 2) {
           const summonTile = this.findAdjacentOpen(enemy.x, enemy.y);
@@ -3328,6 +3374,7 @@ export class Game {
           if (summonTile) {
             this.summonEnemy("infernal_imp", summonTile.x, summonTile.y, { summonedBy: enemy.id });
             this.log(`The Overlord rends the void and calls another Infernal Imp (${activeImps + 1}/2).`);
+            this.renderer?.triggerFlash("void");
             continue;
           }
         }
@@ -3341,16 +3388,23 @@ export class Game {
         }
       }
 
-      if (enemy.templateId === "bone_captain" && canSee) {
-        if (distance > 1 && distance <= (template.range ?? 5) && enemy.turnCounter % 3 === 2) {
-          this.log("Super Skeletor hurls a bolt of gravefire.");
-        } else if (distance === 1 && enemy.turnCounter % 4 === 0) {
+      // Warnings fire one turn before the attack they name, matching the timings below:
+      // gravefire and the boss cleave land on turns divisible by 3, Patches' smash on turns divisible by 4.
+      const nextTurn = enemy.turnCounter + 1;
+      if (enemy.templateId === "bone_captain" && canSee && nextTurn % 3 === 0) {
+        if (distance === 1) {
           this.log("Super Skeletor raises a bony hand for a crushing strike.");
+        } else if (distance <= (template.range ?? 5)) {
+          this.log("Super Skeletor gathers a bolt of gravefire.");
         }
       }
 
-      if (enemy.templateId === "patches" && canSee && distance === 1 && enemy.turnCounter % 4 === 0) {
-        this.log("Patches lifts both fists for a brutal smash.");
+      if (enemy.templateId === "patches" && canSee && distance <= 2) {
+        if (nextTurn % 4 === 0) {
+          this.log("Patches lifts both fists for a brutal smash.");
+        } else if (nextTurn % 3 === 0) {
+          this.log("Patches heaves back for a crushing blow.");
+        }
       }
 
       if (enemy.templateId === "abyssal_overlord" && distance > 1 && canSee && distance <= (template.range ?? 6) && enemy.turnCounter % 3 === 0) {

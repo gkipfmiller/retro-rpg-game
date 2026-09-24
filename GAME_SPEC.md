@@ -767,6 +767,19 @@ Implemented final boss:
   - clearer combat log telegraphs
   - target panel phase labeling
 
+## Boss Encounter Rules
+
+These apply to all three bosses (Super Skeletor, Patches, Abyssal Overlord):
+- each boss waits in its arena until the player steps inside (the Floor 30 sentries likewise hold the antechamber); striking a guard from outside wakes it immediately
+- a boss's attack rhythm starts when it wakes, so every fight opens the same way; the intro plate and boss HP bar appear at that moment
+- every telegraph in the log fires exactly one turn before the attack it names: Super Skeletor's "raises a bony hand" (cleave) and "gathers a bolt of gravefire" (ranged), Patches' "heaves back" (cleave) and "lifts both fists" (slam, which takes priority when both are due), and the Overlord's "draws back" (cleave) and "gathers abyssal fire" (bolt)
+- summoned minions (Super Skeletor's skeletons, the Overlord's imps) vanish when their summoner dies, without XP or drops
+- the defeat line ("The first seal breaks...", "The second threshold is broken...") is logged the moment the boss dies
+- boss-floor stairs are visibly sealed (iron bars over a pulsing red ward) while the boss lives, and open the moment it dies
+- each boss's reward chest is named and drawn in its own palette, with a matching glow: Reliquary of the First Seal (bone, Floor 10), The Stitched Hoard (crimson, Floor 20), Tribute of the Abyssal Throne (abyssal violet, Floor 30); the palettes are load-time recolours of the standard chest's wood, keeping its gold trim
+- screen flashes: Super Skeletor's summons (necrotic), Patches' slam (amber), the Overlord's phase change and imp summons (void violet), and every boss defeat (a gold "seal" burst)
+- boss sighting lines, boss-floor entry lines, and hidden-cache discoveries are narration: the dialogue box shows them in italics with no speaker (named speakers are kept for the Grey Witness and vendors)
+
 ## Save and Continue
 
 - the run is saved to local browser storage after the boon choice and on every descent

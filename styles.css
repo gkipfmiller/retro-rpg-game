@@ -166,6 +166,15 @@ input:focus-visible {
   background: radial-gradient(circle at center, rgba(214, 150, 74, 0.26), rgba(120, 72, 22, 0.16) 42%, transparent 74%);
 }
 
+.critical-flash.void {
+  background: radial-gradient(circle at center, rgba(150, 90, 255, 0.28), rgba(70, 30, 140, 0.16) 42%, transparent 74%);
+}
+
+/* A boss falls: a bright gold burst, the seal breaking. */
+.critical-flash.seal {
+  background: radial-gradient(circle at center, rgba(255, 230, 160, 0.34), rgba(215, 165, 77, 0.16) 45%, transparent 76%);
+}
+
 .critical-flash.active {
   animation: critical-flash 360ms ease-out;
 }
@@ -3517,3 +3526,14 @@ button.danger {
 }
 
 .legend-loot { background: #7cc1ff; }
+
+/* Narration (no speaker): no name plate, italic, a quieter border. */
+.npc-dialog.narration {
+  border-color: rgba(184, 169, 143, 0.35);
+  text-align: center;
+}
+
+.npc-dialog.narration .npc-dialog-text {
+  font-style: italic;
+  color: #e6dac2;
+}

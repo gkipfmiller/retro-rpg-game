@@ -850,7 +850,9 @@ export function generateBossFloor(runSeed, floorNumber, playerClass) {
     y: arena.center.y,
     hp: ENEMIES.bone_captain.hp,
     maxHp: ENEMIES.bone_captain.hp,
-    alerted: true,
+    alerted: false,
+    // Holds the arena until the player steps inside (see Game.takeEnemyTurns).
+    holdRoom: { x: arena.x, y: arena.y, width: arena.width, height: arena.height },
     lastKnownPlayerPosition: { ...spawn },
     statuses: [],
     elite: false,
@@ -863,6 +865,10 @@ export function generateBossFloor(runSeed, floorNumber, playerClass) {
   const chests = [
     {
       id: "boss-reward",
+      // Boss reward: named, and drawn with the boss's chest palette (see CHEST_RECOLORS).
+      label: "Reliquary of the First Seal",
+      variant: "bone",
+      bossReward: true,
       x: 28,
       y: 11,
       opened: false,
@@ -929,7 +935,9 @@ export function generateFloor20BossFloor(runSeed, floorNumber, playerClass) {
     y: arena.center.y,
     hp: ENEMIES.patches.hp,
     maxHp: ENEMIES.patches.hp,
-    alerted: true,
+    alerted: false,
+    // Holds the arena until the player steps inside (see Game.takeEnemyTurns).
+    holdRoom: { x: arena.x, y: arena.y, width: arena.width, height: arena.height },
     lastKnownPlayerPosition: { ...spawn },
     statuses: [],
     elite: false,
@@ -941,6 +949,10 @@ export function generateFloor20BossFloor(runSeed, floorNumber, playerClass) {
   const chests = [
     {
       id: "floor20-boss-reward",
+      // Boss reward: named, and drawn with the boss's chest palette (see CHEST_RECOLORS).
+      label: "The Stitched Hoard",
+      variant: "crimson",
+      bossReward: true,
       x: 30,
       y: 12,
       opened: false,
@@ -996,7 +1008,8 @@ export function generateFinalBossFloor(runSeed, floorNumber, playerClass) {
       y: antechamber.center.y,
       hp: ENEMIES.void_stalker.hp,
       maxHp: ENEMIES.void_stalker.hp,
-      alerted: true,
+      alerted: false,
+      holdRoom: { x: antechamber.x, y: antechamber.y, width: antechamber.width, height: antechamber.height },
       lastKnownPlayerPosition: { ...spawn },
       statuses: [],
       elite: false,
@@ -1011,7 +1024,8 @@ export function generateFinalBossFloor(runSeed, floorNumber, playerClass) {
       y: antechamber.center.y,
       hp: ENEMIES.infernal_imp.hp,
       maxHp: ENEMIES.infernal_imp.hp,
-      alerted: true,
+      alerted: false,
+      holdRoom: { x: antechamber.x, y: antechamber.y, width: antechamber.width, height: antechamber.height },
       lastKnownPlayerPosition: { ...spawn },
       statuses: [],
       elite: false,
@@ -1031,7 +1045,9 @@ export function generateFinalBossFloor(runSeed, floorNumber, playerClass) {
     y: arena.center.y,
     hp: ENEMIES.abyssal_overlord.hp,
     maxHp: ENEMIES.abyssal_overlord.hp,
-    alerted: true,
+    alerted: false,
+    // Holds the arena until the player steps inside (see Game.takeEnemyTurns).
+    holdRoom: { x: arena.x, y: arena.y, width: arena.width, height: arena.height },
     lastKnownPlayerPosition: { ...spawn },
     statuses: [],
     elite: false,
@@ -1046,6 +1062,10 @@ export function generateFinalBossFloor(runSeed, floorNumber, playerClass) {
   const bonusRewardPool = CHEST_TABLE.endgame.filter((itemId) => itemId !== rewardItem);
   const rewardChest = {
     id: "final-boss-reward",
+    // Boss reward: named, and drawn with the boss's chest palette (see CHEST_RECOLORS).
+    label: "Tribute of the Abyssal Throne",
+    variant: "void",
+    bossReward: true,
     x: 31,
     y: 12,
     opened: false,

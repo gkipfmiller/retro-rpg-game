@@ -61,6 +61,16 @@ const LIGHT_TINTS = {
 const LIGHT_OUTER_DARKNESS = 0.38;
 const LIGHT_RADIUS_TILES = 8.5;
 const RARITY_RANK = { common: 0, uncommon: 1, rare: 2, boss: 3 };
+// Glow under each boss's reward chest, matching its palette.
+const CHEST_AURAS = {
+  bone: "rgba(214, 222, 170, 0.26)",
+  crimson: "rgba(200, 60, 50, 0.28)",
+  void: "rgba(160, 100, 255, 0.3)",
+};
+
+// Screen flashes: low HP (critical) and boss moments. Summons flash (necro for Super Skeletor, void
+// for the Overlord), as do the Overlord's phase change (void), Patches' slam, and every boss defeat (seal).
+const FLASH_VARIANTS = ["critical", "necro", "slam", "void", "seal"];
 
 const reduceMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
@@ -694,6 +704,8 @@ export class Renderer {
 
     // Rare floor loot gets sparkles drawn after the lighting, so they stay bright.
     const sparkleTiles = [];
+    const chestsById = new Map((currentFloor.chests ?? []).map((chest) => [chest.id, chest]));
+    const bossAlive = currentFloor.enemies.some((enemy) => ENEMIES[enemy.templateId]?.behavior === "boss");
     for (let y = firstY; y <= lastY; y += 1) {
       for (let x = firstX; x <= lastX; x += 1) {
         const tile = currentFloor.map[y][x];
@@ -858,7 +870,9 @@ export class Renderer {
             ? getActorSpriteFrame(this.assets.manifest, sage.actorId ?? "sage", animationFrame)
             : null;
           const sageSprite = sageSpritePath ? this.assets?.images[sageSpritePath] : null;
-          const chestSprite = this.assets?.images[tile.chestId ? this.assets.manifest.chestClosed : ""];
+          const chest = tile.chestId ? chestsById.get(tile.chestId) : null;
+          const chestPath = tile.chestId ? (this.assets?.manifest.chestVariants?.[chest?.variant] ?? this.assets?.manifest.chestClosed) : null;
+          const chestSprite = chestPath ? this.assets?.images[chestPath] : null;
           const pickupSpritePath = tile.itemIds.length ? getItemSprite(this.assets?.manifest, getPickupSpriteId(tile.itemIds)) : null;
           const pickupSprite = pickupSpritePath ? this.assets?.images[pickupSpritePath] : null;
           if (tile.stairs) {
@@ -877,15 +891,15 @@ export class Renderer {
             ctx.restore();
           }
           if (tile.stairs && stairsSprite) ctx.drawImage(stairsSprite, px, py, tileSize, tileSize);
+          if (tile.stairs && bossAlive) this.drawSealedStairs(px, py, tileSize);
           if (tile.shrineId) this.drawShrineStructure(currentFloor.theme, tile, px, py, tileSize);
           if (tile.vendor && vendorSprite) this.drawActor(vendorSprite, px, py, tileSize);
           if (sageSprite && sageFade >= 1) this.drawActor(sageSprite, px, py, tileSize);
           else if (sageSprite) this.drawFadingActor(sageSprite, px, py, tileSize, sageFade);
-          if (tile.chestId && (currentFloor.theme === "sunken_vault" || floorNumber === 20)) {
+          const chestAura = chest?.variant ? CHEST_AURAS[chest.variant] : currentFloor.theme === "sunken_vault" ? "rgba(58, 108, 98, 0.22)" : null;
+          if (tile.chestId && chestAura) {
             ctx.save();
-            ctx.fillStyle = currentFloor.theme === "sunken_vault"
-              ? "rgba(58, 108, 98, 0.22)"
-              : "rgba(82, 118, 88, 0.2)";
+            ctx.fillStyle = chestAura;
             ctx.beginPath();
             ctx.arc(px + tileSize / 2, py + tileSize * 0.72, tileSize * 0.3, 0, Math.PI * 2);
             ctx.fill();
@@ -1336,6 +1350,37 @@ export class Renderer {
         mote,
         mote,
       );
+    }
+    ctx.restore();
+  }
+
+  // Stairs sealed by a living boss: darkened, barred with iron, and pulsing with a red ward.
+  drawSealedStairs(px, py, tileSize) {
+    const { ctx } = this;
+    const pixel = Math.max(1, Math.floor(tileSize / 16));
+    const pulse = reduceMotion() ? 0.5 : 0.5 + Math.sin(performance.now() / 420) * 0.25;
+    ctx.save();
+    ctx.fillStyle = "rgba(6, 4, 4, 0.55)";
+    ctx.fillRect(px, py, tileSize, tileSize);
+    const ward = ctx.createRadialGradient(px + tileSize / 2, py + tileSize / 2, 0, px + tileSize / 2, py + tileSize / 2, tileSize * 0.7);
+    ward.addColorStop(0, `rgba(224, 70, 55, ${(0.35 * pulse).toFixed(3)})`);
+    ward.addColorStop(1, "rgba(224, 70, 55, 0)");
+    ctx.fillStyle = ward;
+    ctx.fillRect(px - tileSize * 0.2, py - tileSize * 0.2, tileSize * 1.4, tileSize * 1.4);
+    // Four iron bars and two crossbands, each with a one-pixel highlight.
+    for (let bar = 0; bar < 4; bar += 1) {
+      const x = px + Math.round(tileSize * (0.16 + bar * 0.22));
+      ctx.fillStyle = "#1c1f24";
+      ctx.fillRect(x, py + pixel, pixel * 2, tileSize - pixel * 2);
+      ctx.fillStyle = "#5b636e";
+      ctx.fillRect(x, py + pixel, pixel, tileSize - pixel * 2);
+    }
+    for (const band of [0.28, 0.68]) {
+      const y = py + Math.round(tileSize * band);
+      ctx.fillStyle = "#1c1f24";
+      ctx.fillRect(px + pixel, y, tileSize - pixel * 2, pixel * 2);
+      ctx.fillStyle = "#5b636e";
+      ctx.fillRect(px + pixel, y, tileSize - pixel * 2, pixel);
     }
     ctx.restore();
   }
@@ -1880,16 +1925,17 @@ export class Renderer {
       this.npcDialog.classList.add("hidden");
       return;
     }
-    this.npcDialogSpeaker.textContent = dialog.speaker;
+    // No speaker means narration: no name plate, set in italics.
+    this.npcDialogSpeaker.textContent = dialog.speaker ?? "";
+    this.npcDialogSpeaker.classList.toggle("hidden", !dialog.speaker);
+    this.npcDialog.classList.toggle("narration", !dialog.speaker);
     this.npcDialogText.textContent = dialog.text;
     this.npcDialog.classList.remove("hidden");
   }
 
-
-
   triggerFlash(variant = "critical") {
     if (!this.criticalFlash) return;
-    this.criticalFlash.classList.remove("critical", "necro", "slam");
+    this.criticalFlash.classList.remove(...FLASH_VARIANTS);
     this.criticalFlash.classList.add(variant);
     this.criticalFlash.classList.remove("hidden");
     this.criticalFlash.classList.remove("active");
@@ -1897,7 +1943,7 @@ export class Renderer {
     this.criticalFlash.classList.add("active");
     window.setTimeout(() => {
       this.criticalFlash?.classList.remove("active");
-      this.criticalFlash?.classList.remove("critical", "necro", "slam");
+      this.criticalFlash?.classList.remove(...FLASH_VARIANTS);
       this.criticalFlash?.classList.add("hidden");
     }, 380);
   }

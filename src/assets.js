@@ -34,6 +34,15 @@ const ACTOR_RECOLORS = {
   vendor_ember_factor: { source: frameSet("dwarf_m_idle_anim_f"), palette: { hueShift: 0.93, satMul: 1.2 } },
 };
 
+// Boss reward chests, recoloured from the standard chest (wood only; the gold trim is kept):
+// bone for Super Skeletor, crimson for Patches, abyssal violet for the Overlord.
+const CHEST_WOOD_HUES = [0.9, 0.1];
+const CHEST_RECOLORS = {
+  bone: { hue: 0.1, satMul: 0.25, valMul: 1.25, hueRange: CHEST_WOOD_HUES },
+  crimson: { hue: 0, satMul: 1.1, valMul: 0.9, hueRange: CHEST_WOOD_HUES },
+  void: { hue: 0.77, satMul: 0.95, valMul: 0.85, hueRange: CHEST_WOOD_HUES },
+};
+
 // Elites get a blood-red palette; enemies that are already red get gold instead so the swap still reads.
 const ELITE_PALETTE = { hue: 0, satMul: 1.2 };
 const ELITE_PALETTE_FOR_RED = { hue: 0.12, satMul: 1.2 };
@@ -383,12 +392,19 @@ function isMostlyRed(image) {
   return saturated > 0 && red / saturated > 0.4;
 }
 
-function recolorImage(image, { hue = null, hueShift = null, satMul = 1, valMul = 1, minSat = 0.25 }) {
+// hueRange: [from, to] limits the swap to pixels whose hue falls in that band (it may wrap past 1),
+// so e.g. a chest's wood can change colour while its gold trim stays gold.
+function recolorImage(image, { hue = null, hueShift = null, satMul = 1, valMul = 1, minSat = 0.25, hueRange = null }) {
   const { canvas, ctx, data } = readPixels(image);
   const pixels = data.data;
   for (let index = 0; index < pixels.length; index += 4) {
     if (!pixels[index + 3]) continue;
     let [h, s, v] = rgbToHsv(pixels[index] / 255, pixels[index + 1] / 255, pixels[index + 2] / 255);
+    if (hueRange) {
+      const [from, to] = hueRange;
+      const inside = from <= to ? h >= from && h <= to : h >= from || h <= to;
+      if (!inside) continue;
+    }
     if (s >= minSat) {
       if (hue !== null) h = hue;
       if (hueShift !== null) h = (h + hueShift) % 1;
@@ -419,6 +435,11 @@ async function recolorFrames(images, framePaths, palette) {
 }
 
 async function buildRecoloredActors(images) {
+  assetManifest.chestVariants = {};
+  for (const [variant, palette] of Object.entries(CHEST_RECOLORS)) {
+    const frames = await recolorFrames(images, [assetManifest.chestClosed], palette);
+    if (frames) assetManifest.chestVariants[variant] = frames[0];
+  }
   for (const [actorId, entry] of Object.entries(ACTOR_RECOLORS)) {
     const frames = await recolorFrames(images, entry.source, entry.palette);
     if (frames) assetManifest.actors[actorId] = frames;
