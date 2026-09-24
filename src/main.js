@@ -3,7 +3,7 @@ import { Renderer } from "./render.js";
 import { SoundPlayer } from "./sound.js";
 import { getActorSpriteFrame, getItemSprite, loadAssets } from "./assets.js";
 import { MenuScene } from "./menuScene.js";
-import { SPELLS, ITEMS, CLASSES, BOONS } from "./data.js";
+import { SPELLS, ITEMS, CLASSES, BOONS, QUICK_SLOT_COUNT } from "./data.js";
 import { loadSettings, renderSettingsControls, saveSettings } from "./settings.js";
 import { logText } from "./log.js";
 
@@ -123,6 +123,45 @@ function renderClassStats() {
   }
 }
 
+function formatSavedAgo(savedAt) {
+  if (!savedAt) return "";
+  const minutes = Math.round((Date.now() - savedAt) / 60000);
+  if (minutes < 1) return "saved just now";
+  if (minutes < 60) return `saved ${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `saved ${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.round(hours / 24);
+  return `saved ${days} day${days === 1 ? "" : "s"} ago`;
+}
+
+// The main menu's summary of the saved run: who, where, how healthy, and when it was saved.
+function renderContinueCard() {
+  const card = document.getElementById("continue-card");
+  const save = game.getSaveSummary();
+  card.classList.toggle("hidden", !save);
+  document.getElementById("new-run-confirm").classList.add("hidden");
+  // With a run to resume, Continue is the main action and New Run steps back.
+  document.getElementById("new-run-button").classList.toggle("primary", !save);
+  if (!save) return;
+  card.dataset.actorId = save.classId;
+  document.getElementById("continue-name").textContent = save.heroName;
+  document.getElementById("continue-detail").textContent = [`${save.className} · Level ${save.level}`, save.boonName].filter(Boolean).join(" · ");
+  document.getElementById("continue-where").textContent = save.floor === 0 ? "The Sage's Chamber" : `Floor ${save.floor}${save.band ? ` · ${save.band}` : ""}`;
+  const hpBar = document.getElementById("continue-hp-bar");
+  hpBar.style.width = save.maxHp ? `${Math.max(0, Math.min(100, (save.hp / save.maxHp) * 100))}%` : "100%";
+  document.getElementById("continue-hp-text").textContent = save.maxHp ? `${save.hp}/${save.maxHp} HP` : `${save.hp} HP`;
+  document.getElementById("continue-meta").textContent = [`${save.kills} kills`, `${save.gold}g`, formatSavedAgo(save.savedAt)].filter(Boolean).join(" · ");
+  syncContinuePortrait(0);
+}
+
+function syncContinuePortrait(frameIndex) {
+  const card = document.getElementById("continue-card");
+  const image = document.getElementById("continue-sprite");
+  if (!loadedAssets || !card.dataset.actorId) return;
+  const path = getActorSpriteFrame(loadedAssets.manifest, card.dataset.actorId, frameIndex);
+  if (path && image.getAttribute("src") !== path) image.setAttribute("src", path);
+}
+
 function syncScreens() {
   Object.values(screens).forEach((screen) => screen.classList.remove("visible"));
   if (game.state.mode === "menu") screens.menu.classList.add("visible");
@@ -130,8 +169,7 @@ function syncScreens() {
   else if (game.state.mode === "scores") screens.scores.classList.add("visible");
   else screens.game.classList.add("visible");
   menuScene.setActive(game.state.mode !== "in_game");
-  const continueBtn = document.getElementById("continue-run-button");
-  if (continueBtn) continueBtn.classList.toggle("hidden", !game.hasSave());
+  if (game.state.mode === "menu") renderContinueCard();
   renderer.render();
 }
 
@@ -184,17 +222,6 @@ function syncMobileControls() {
     const recent = game.state.logs.slice(-3);
     mobileLog.innerHTML = recent.map((entry) => `<div>${logText(entry)}</div>`).join("");
   }
-
-  // Quick slot labels
-  const slots = player.quickSlots;
-  if (slots) {
-    const qsBtns = mobileControls.querySelectorAll(".mobile-menu-qs");
-    qsBtns.forEach((btn, i) => {
-      const entry = slots[i];
-      const label = entry ? (SPELLS[entry]?.name ?? ITEMS[entry]?.name ?? entry) : "Empty";
-      btn.textContent = label;
-    });
-  }
 }
 
 function refresh() {
@@ -243,6 +270,9 @@ function frame() {
   if (game.state.mode === "class") {
     syncClassPortraits(Math.floor(performance.now() / 220));
   }
+  if (game.state.mode === "menu") {
+    syncContinuePortrait(Math.floor(performance.now() / 220));
+  }
   renderer.render();
   // Re-check every frame: enemies move under a still cursor, and the camera glides after each step.
   if (mapHoverPoint || mapHoverText) updateMapHover();
@@ -253,8 +283,32 @@ document.getElementById("continue-run-button").addEventListener("click", () => {
   if (game.loadSavedRun()) refresh();
 });
 
+// Starting over replaces the saved run, so with a save present it asks once first.
 document.getElementById("new-run-button").addEventListener("click", () => {
+  const save = game.getSaveSummary();
+  if (save) {
+    document.getElementById("new-run-confirm-text").textContent = `Starting a new run abandons ${save.heroName}'s run on ${save.floor === 0 ? "the Sage's Chamber" : `Floor ${save.floor}`}.`;
+    document.getElementById("new-run-confirm").classList.remove("hidden");
+    document.getElementById("new-run-confirm-no").focus();
+    return;
+  }
   game.setMode("class");
+  refresh();
+});
+
+document.getElementById("new-run-confirm-yes").addEventListener("click", () => {
+  game.clearSave();
+  game.setMode("class");
+  refresh();
+});
+
+document.getElementById("new-run-confirm-no").addEventListener("click", () => {
+  document.getElementById("new-run-confirm").classList.add("hidden");
+  document.getElementById("continue-run-button").focus();
+});
+
+document.getElementById("hud-new-items").addEventListener("click", () => {
+  game.openInventory();
   refresh();
 });
 
@@ -319,9 +373,9 @@ for (const card of document.querySelectorAll(".class-card")) {
   });
 }
 
-document.getElementById("quick-slot-1").addEventListener("click", () => { game.useQuickSlot(0); refresh(); });
-document.getElementById("quick-slot-2").addEventListener("click", () => { game.useQuickSlot(1); refresh(); });
-document.getElementById("quick-slot-3").addEventListener("click", () => { game.useQuickSlot(2); refresh(); });
+for (let index = 0; index < QUICK_SLOT_COUNT; index += 1) {
+  document.getElementById(`quick-slot-${index + 1}`)?.addEventListener("click", () => { game.useQuickSlot(index); refresh(); });
+}
 document.getElementById("overlay-close-button").addEventListener("click", () => {
   game.closeOverlay();
   refresh();
@@ -477,6 +531,17 @@ function handleOverlayKey(event) {
     refresh();
     return;
   }
+  // In the loadout, a number key puts the hovered (or focused) entry into that slot.
+  if (game.state.ui.overlay?.type === "loadout" && /^[1-9]$/.test(event.key) && Number(event.key) <= QUICK_SLOT_COUNT) {
+    const entry = document.querySelector("#overlay-content .loadout-entry:hover") ?? active?.closest?.(".loadout-entry");
+    if (entry) {
+      event.preventDefault();
+      renderer.pendingOverlayFocus = { action: "assign-slot", slotIndex: String(Number(event.key) - 1), entryId: entry.dataset.entryId };
+      game.assignQuickSlot(Number(event.key) - 1, entry.dataset.entryId);
+      refresh();
+    }
+    return;
+  }
   if (ARROW_DIRECTIONS[event.key]) {
     // Sliders and text fields keep their own arrow-key behaviour.
     if (active?.matches?.('input[type="range"], input[type="text"]') && (event.key === "ArrowLeft" || event.key === "ArrowRight")) return;
@@ -535,12 +600,8 @@ window.addEventListener("keydown", (event) => {
     updateSetting("minimap", !settings.minimap);
   } else if (key === "o") {
     openSettingsOverlay();
-  } else if (key === "1") {
-    game.useQuickSlot(0);
-  } else if (key === "2") {
-    game.useQuickSlot(1);
-  } else if (key === "3") {
-    game.useQuickSlot(2);
+  } else if (/^[1-9]$/.test(key) && Number(key) <= QUICK_SLOT_COUNT) {
+    game.useQuickSlot(Number(key) - 1);
   }
   refresh();
 });
@@ -593,9 +654,17 @@ if (mobileControls) {
       if (action === "inventory") game.openInventory();
       else if (action === "character") game.openCharacter();
       else if (action === "skills") game.openSkills();
-      else if (action === "quick1") game.useQuickSlot(0);
-      else if (action === "quick2") game.useQuickSlot(1);
-      else if (action === "quick3") game.useQuickSlot(2);
+      else if (action === "map") updateSetting("minimap", !settings.minimap);
+      else if (action === "settings") openSettingsOverlay();
+      refresh();
+    }, { passive: false });
+  }
+
+  for (const btn of mobileControls.querySelectorAll(".mobile-qs")) {
+    btn.addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      if (game.state.mode !== "in_game" || game.state.ui.overlay) return;
+      game.useQuickSlot(Number(btn.dataset.slot));
       refresh();
     }, { passive: false });
   }

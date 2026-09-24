@@ -621,6 +621,7 @@ export class Renderer {
     this.renderMap();
     this.renderHud();
     this.renderLog();
+    this.renderToasts();
     this.renderOverlay();
     this.animateOverlayActors();
     this.renderNpcDialog();
@@ -1351,36 +1352,36 @@ export class Renderer {
     powerLine.textContent = `Power: ${derived.meleeBonus}/${derived.spellBonus}`;
     // Rewritten only on change so a hovered badge keeps its tooltip.
     const statusMarkup = player.statuses.length ? renderStatusBadges(player.statuses) : "";
-    const statusRow = document.getElementById("hud-statuses");
-    if (statusRow && statusRow.dataset.markup !== statusMarkup) {
+    for (const statusRow of [document.getElementById("hud-statuses"), document.getElementById("mobile-hud-statuses")]) {
+      if (!statusRow || statusRow.dataset.markup === statusMarkup) continue;
       statusRow.innerHTML = statusMarkup;
       statusRow.dataset.markup = statusMarkup;
       statusRow.classList.toggle("hidden", !statusMarkup);
     }
     powerLine.dataset.tooltip = "Power\nFirst value is melee power.\nSecond value is spell power.";
 
-    const quickButtons = [
-      document.getElementById("quick-slot-1"),
-      document.getElementById("quick-slot-2"),
-      document.getElementById("quick-slot-3"),
-    ];
+    // Desktop hotbar and the touch quick-slot row share the same slot rendering.
     player.quickSlots.forEach((entry, index) => {
-      const button = quickButtons[index];
-      if (!entry) {
-        button.innerHTML = `<span class="slot-key">${index + 1}</span><span class="slot-label muted">Empty</span>`;
-        button.disabled = true;
-        button.removeAttribute("data-tooltip");
-        return;
-      }
-      const label = SPELLS[entry]?.name ?? ITEMS[entry]?.name ?? entry;
-      const iconPath = ITEMS[entry] ? getItemSprite(this.assets?.manifest, entry) : null;
-      const icon = iconPath ? `<img src="${iconPath}" alt="" class="slot-icon">` : "";
-      const markup = `<span class="slot-key">${index + 1}</span>${icon}<span class="slot-label">${label}</span>`;
-      // Only rewrite when it changes, so a click in progress isn't interrupted by the per-frame render.
-      if (button.innerHTML !== markup) button.innerHTML = markup;
-      button.disabled = false;
-      button.dataset.tooltip = formatEntryTooltip(entry);
+      this.renderQuickSlotButton(document.getElementById(`quick-slot-${index + 1}`), index);
+      this.renderQuickSlotButton(document.getElementById(`mobile-qs-${index + 1}`), index);
     });
+
+    const newItems = this.game.getNewItemCount();
+    const newItemsButton = document.getElementById("hud-new-items");
+    if (newItemsButton) {
+      newItemsButton.classList.toggle("hidden", newItems === 0);
+      newItemsButton.textContent = `${newItems} new item${newItems === 1 ? "" : "s"} in your pack (I)`;
+    }
+    const mobileInventoryBadge = document.getElementById("mobile-inv-badge");
+    if (mobileInventoryBadge) {
+      mobileInventoryBadge.textContent = String(newItems);
+      mobileInventoryBadge.classList.toggle("hidden", newItems === 0);
+    }
+    const mobileSkillBadge = document.getElementById("mobile-skill-badge");
+    if (mobileSkillBadge) {
+      mobileSkillBadge.textContent = String(player.skillPoints);
+      mobileSkillBadge.classList.toggle("hidden", !player.skillPoints);
+    }
 
     const panel = document.getElementById("target-panel");
     const { enemy: target, nearest } = this.game.getPanelTarget();
@@ -1393,6 +1394,98 @@ export class Renderer {
     const sprite = panel.querySelector(".target-sprite");
     const spritePath = target && this.assets ? getActorSpriteFrame(this.assets.manifest, getEnemySpriteId(this.assets.manifest, target), animationFrame) : null;
     if (sprite && spritePath && sprite.getAttribute("src") !== spritePath) sprite.setAttribute("src", spritePath);
+  }
+
+  // One quick-slot button: key, icon, name, and mana cost or remaining count; dimmed (with the
+  // reason in its tooltip) when it can't be used right now. Still clickable, so the log explains why.
+  renderQuickSlotButton(button, index) {
+    if (!button) return;
+    const slot = this.game.getQuickSlotState(index);
+    let markup;
+    if (!slot.entryId) {
+      markup = `<span class="slot-key">${index + 1}</span><span class="slot-label muted">Empty</span>`;
+    } else {
+      const entry = slot.entryId;
+      const label = SPELLS[entry]?.name ?? ITEMS[entry]?.name ?? entry;
+      const iconPath = ITEMS[entry] ? getItemSprite(this.assets?.manifest, entry) : null;
+      const icon = iconPath
+        ? `<img src="${iconPath}" alt="" class="slot-icon">`
+        : SPELLS[entry] ? `<span class="slot-icon slot-icon-spell" aria-hidden="true">&#10022;</span>` : "";
+      const meta = slot.isSpell
+        ? (slot.free ? `<span class="slot-meta free">Free</span>` : slot.cost ? `<span class="slot-meta mana">${slot.cost} MP</span>` : "")
+        : `<span class="slot-meta count">&times;${slot.count}</span>`;
+      markup = `<span class="slot-key">${index + 1}</span>${icon}<span class="slot-label">${label}</span>${meta}`;
+    }
+    // Only rewrite when it changes, so a click in progress isn't interrupted by the per-frame render.
+    if (button.dataset.markup !== markup) {
+      button.innerHTML = markup;
+      button.dataset.markup = markup;
+    }
+    button.disabled = !slot.entryId;
+    button.classList.toggle("unusable", Boolean(slot.entryId) && !slot.usable);
+    if (slot.entryId) {
+      button.dataset.tooltip = `${formatEntryTooltip(slot.entryId)}${slot.reason ? `\n${slot.reason}` : ""}`;
+    } else {
+      button.removeAttribute("data-tooltip");
+    }
+  }
+
+  // Pickup, gold, warning and floor-summary notices stacked over the top-left of the map.
+  renderToasts() {
+    const stack = document.getElementById("toast-stack");
+    if (!stack) return;
+    const now = Date.now();
+    const toasts = (this.game.state.ui.toasts ?? []).filter((toast) => toast.until > now);
+    this.game.state.ui.toasts = toasts;
+    // Keyed update: existing notices keep their element (so the entrance animation plays once),
+    // content changes in place (merged gold), and expired ones are removed.
+    const alive = new Set();
+    for (const toast of toasts) {
+      alive.add(toast.id);
+      let element = stack.querySelector(`[data-id="${toast.id}"]`);
+      if (!element) {
+        element = document.createElement("div");
+        element.dataset.id = toast.id;
+        stack.appendChild(element);
+      }
+      const inner = this.renderToastContent(toast);
+      if (element.dataset.markup !== inner) {
+        element.innerHTML = inner;
+        element.dataset.markup = inner;
+      }
+      const rarity = toast.kind === "item" ? ` rarity-${this.game.getItemRarity(toast.itemId)}` : "";
+      element.className = `toast toast--${toast.kind}${rarity}${toast.until - now < 350 ? " leaving" : ""}`;
+    }
+    for (const element of [...stack.children]) {
+      if (!alive.has(element.dataset.id)) element.remove();
+    }
+  }
+
+  renderToastContent(toast) {
+    if (toast.kind === "gold") {
+      const coin = this.assets?.manifest.coin;
+      return `${coin ? `<img class="toast-icon" src="${coin}" alt="">` : ""}<strong>+${toast.amount} gold</strong>`;
+    }
+    if (toast.kind === "item") {
+      const item = ITEMS[toast.itemId];
+      const icon = getItemSprite(this.assets?.manifest, toast.itemId);
+      return `${icon ? `<img class="toast-icon" src="${icon}" alt="">` : ""}<span class="toast-verb">${toast.verb}</span><strong>${item?.name ?? toast.itemId}</strong>`;
+    }
+    if (toast.kind === "warning") return toast.text;
+    if (toast.kind === "floor") {
+      const summary = toast.summary;
+      const stat = (value, label) => `<span><strong>${value}</strong> ${label}</span>`;
+      return `
+        <span class="toast-title">Floor ${summary.floor} complete</span>
+        <span class="toast-stats">
+          ${stat(summary.kills, summary.kills === 1 ? "kill" : "kills")}
+          ${stat(summary.items, summary.items === 1 ? "item" : "items")}
+          ${stat(`+${summary.gold}`, "gold")}
+          ${stat(`${summary.explored}%`, "explored")}
+          ${stat(summary.turns, "turns")}
+        </span>`;
+    }
+    return "";
   }
 
   renderTargetPanel(target, nearest) {

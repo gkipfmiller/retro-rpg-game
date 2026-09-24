@@ -1,3 +1,6 @@
+// Number of quick slots on the hotbar (keys 1-6). Class defaults below fill the first few.
+export const QUICK_SLOT_COUNT = 6;
+
 export const CLASSES = {
   warrior: {
     id: "warrior",

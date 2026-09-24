@@ -827,7 +827,13 @@ Implemented critical health feedback:
 - persistent HP meter highlight below 20% HP
 
 Current HUD and input layout:
-- quick slots sit in a hotbar directly under the map, with the map capped by window height so the hotbar is always visible
+- six quick slots (keys 1-6) sit in a hotbar directly under the map, with the map capped by window height so the hotbar is always visible; each class starts with its first three filled, learned tomes drop into the first empty slot, and saves from the three-slot era are padded on load
+- hotbar buttons show mana cost (or "Free" when a discount or Sage's Echo applies) and consumable counts in their top corners, and dim with the reason in the tooltip ("Needs 3 mana", "None left", "Needs a ranged weapon") when they can't be used; the touch quick-slot row shares the same rendering
+- pickups, chest loot, vault keys, and gold show short notices over the top-left of the map (item icon and rarity colour; consecutive gold merges into one "+N gold"); found items are marked new with a dot in the inventory until it's closed, and the HUD shows "N new items in your pack (I)" (a badge on the touch Inv button)
+- taking the stairs shows a self-dismissing floor summary (kills, items, gold found, % explored, turns) that never blocks play; if you've seen an unopened chest you can open, or walked past an unvisited vendor, the first Enter on the stairs shows a one-line reminder and the second descends (once per floor, and nothing hidden is revealed)
+- the main menu shows a Continue card for a saved run (animated hero, name, class, level, boon, floor and band, HP bar, kills, gold, and how long ago it was saved); New Run steps back to a secondary button and asks before abandoning the saved run
+- touch layout: a full-width row of six quick slots above the d-pad, Inv / Char / Skills / Map / Opt buttons (badges for new items and unspent skill points; Map toggles the minimap, Opt opens settings), the player's status effects in the mobile HUD, pixel type, and a compact notice stack showing the newest three
+- the Quick Slot Loadout lists all six slots with icons and a Clear button each; every assignable spell or consumable has a row of numbered buttons (its current slot highlighted), and hovering or focusing an entry then pressing 1-6 assigns it
 - the HUD shows a highlighted "skill points to spend (K)" prompt whenever skill points are unspent; clicking it opens the skill tree
 - the skill tree shows all three branches side by side, with unlocked, available, and locked skills visually distinct
 - a Settings panel (main menu button, or O in game) holds mute, master volume, and the minimap toggle, remembered per browser

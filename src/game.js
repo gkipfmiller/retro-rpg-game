@@ -1,4 +1,4 @@
-import { BOONS, BOSS_REWARDS, CHEST_TABLE, CLASSES, ENEMIES, ITEMS, SKILL_TREES, SPELLS, STATUS_DEFINITIONS, TRAPS } from "./data.js";
+import { BOONS, BOSS_REWARDS, CHEST_TABLE, CLASSES, ENEMIES, ITEMS, QUICK_SLOT_COUNT, SKILL_TREES, SPELLS, STATUS_DEFINITIONS, TRAPS } from "./data.js";
 import { attachVaultFeaturesToFloor, generateFloor, getDropForEnemy } from "./generator.js";
 import { getActorSpriteFrame, getEnemySpriteId, getItemSprite } from "./assets.js";
 import { getStatusIconUrl } from "./pixelIcons.js";
@@ -238,6 +238,7 @@ export class Game {
     if (!vault || vault.keyCollected) return;
     vault.keyCollected = true;
     this.log(`You uncover the ${ITEMS[itemId].name}.`);
+    this.notify({ kind: "item", itemId, verb: "Found" });
     this.showNpcDialog("Hidden Cache", `${ITEMS[itemId].name} found. Somewhere below, ${vault.label.toLowerCase()} can now be opened.`, 2600);
   }
 
@@ -484,6 +485,44 @@ export class Game {
     return logText(this.lastLogText());
   }
 
+  // Short-lived notices over the map (pickups, gold, floor summaries). Not saved.
+  // Gold notices merge while one is still showing, so a run of kills reads "+23 gold", not five lines.
+  notify(toast) {
+    const now = Date.now();
+    const toasts = (this.state.ui.toasts ?? []).filter((entry) => entry.until > now);
+    const duration = toast.duration ?? 2600;
+    const open = toasts.find((entry) => entry.kind === "gold" && toast.kind === "gold");
+    if (open) {
+      open.amount += toast.amount;
+      open.until = now + duration;
+    } else {
+      toasts.push({ ...toast, id: `${now}-${Math.random().toString(36).slice(2, 7)}`, until: now + duration });
+    }
+    // Keep the newest few so a big chest can't bury the map.
+    this.state.ui.toasts = toasts.slice(-5);
+  }
+
+  // Adds an item to the pack. Found items are marked new (a dot in the inventory until it's closed)
+  // and announced, unless quiet is set (starting kit, unequipped gear).
+  addToInventory(itemId, { quiet = false, verb = "Picked up" } = {}) {
+    const player = this.state.run.player;
+    player.inventory.push({ id: `inv-${Date.now()}-${itemId}-${Math.random().toString(36).slice(2, 7)}`, itemId, isNew: !quiet });
+    if (quiet) return;
+    this.state.run.runStats.itemsFound = (this.state.run.runStats.itemsFound ?? 0) + 1;
+    this.notify({ kind: "item", itemId, verb });
+  }
+
+  addGold(amount) {
+    if (!(amount > 0)) return;
+    this.state.run.player.gold += amount;
+    this.state.run.runStats.goldFound = (this.state.run.runStats.goldFound ?? 0) + amount;
+    this.notify({ kind: "gold", amount });
+  }
+
+  getNewItemCount() {
+    return this.state.run?.player.inventory.filter((entry) => entry.isNew).length ?? 0;
+  }
+
   // Several lines in a row from one speaker, each shown long enough to read.
   showNpcDialogSequence(speaker, lines) {
     const [first, ...rest] = lines;
@@ -544,13 +583,54 @@ export class Game {
     run.player.turnFlags = {};
     run.currentTargetId = null;
     try {
+      const derived = this.getDerivedStats(this.state.run.player);
       window.localStorage.setItem(this.saveStorageKey, JSON.stringify({
         version: 1,
         run,
         logs: this.state.logs.slice(-30),
+        // Read by the main menu's Continue card without loading the whole run.
+        meta: { savedAt: Date.now(), maxHp: derived.maxHp, maxMana: derived.maxMana },
       }));
     } catch {
       // Storage full or unavailable — run continues unaffected.
+    }
+  }
+
+  // A light summary of the saved run for the Continue card, or null when there's no usable save.
+  getSaveSummary() {
+    try {
+      const payload = JSON.parse(window.localStorage.getItem(this.saveStorageKey) ?? "null");
+      const run = payload?.run;
+      if (payload?.version !== 1 || !run?.player) return null;
+      const { player } = run;
+      const bandNames = {
+        sage: "The Sage's Chamber",
+        crypt: "The Crypt",
+        ember_halls: "Ember Halls",
+        fungal_depths: "Fungal Depths",
+        sunken_vault: "The Sunken Vault",
+        necropolis: "The Necropolis",
+        stitchworks: "The Stitchworks",
+        void_deep: "The Void Deep",
+        abyssal_throne: "The Abyssal Throne",
+      };
+      return {
+        classId: player.classId,
+        heroName: CLASSES[player.classId]?.heroName ?? "",
+        className: CLASSES[player.classId]?.name ?? player.classId,
+        level: player.level,
+        floor: run.floorNumber,
+        band: bandNames[run.currentFloor?.theme] ?? "",
+        boonName: BOONS[player.boonId]?.name ?? null,
+        gold: player.gold,
+        hp: player.hp,
+        maxHp: payload.meta?.maxHp ?? null,
+        kills: run.runStats?.kills ?? 0,
+        turn: run.turn,
+        savedAt: payload.meta?.savedAt ?? null,
+      };
+    } catch {
+      return null;
     }
   }
 
@@ -561,6 +641,8 @@ export class Game {
       const payload = JSON.parse(raw);
       if (payload.version !== 1 || !payload.run) return false;
       this.state.run = payload.run;
+      // Saves from before the hotbar grew to six slots have three.
+      this.state.run.player.quickSlots = this.padQuickSlots(this.state.run.player.quickSlots);
       this.state.logs = normalizeLogs(payload.logs ?? []);
       this.state.mode = "in_game";
       this.state.ui = { overlay: null, selectedId: null, npcDialog: null };
@@ -713,7 +795,7 @@ export class Game {
       inventory,
       learnedSpells: [],
       unlockedSkills: [],
-      quickSlots: [...definition.quickSlots],
+      quickSlots: this.padQuickSlots(definition.quickSlots),
       x: 0,
       y: 0,
       floorFlags: {},
@@ -763,9 +845,10 @@ export class Game {
       player,
       vaultPlan: this.createVaultPlan(runSeed),
       currentFloor: floorData,
-      runStats: { kills: 0, damageDealt: 0, damageTaken: 0 },
+      runStats: { kills: 0, damageDealt: 0, damageTaken: 0, goldFound: 0, itemsFound: 0 },
       currentTargetId: null,
     };
+    this.markFloorStart();
     this.updateVisibility();
     this.resetLogs(
       `${this.sageName} waits before the first descent.`,
@@ -1239,7 +1322,7 @@ export class Game {
         this.collectVaultKey(itemId);
         continue;
       }
-      this.state.run.player.inventory.push({ id: `inv-${Date.now()}-${itemId}-${Math.random()}`, itemId });
+      this.addToInventory(itemId);
       this.log(`Picked up ${ITEMS[itemId].name}.`);
     }
     tile.itemIds = [];
@@ -1954,7 +2037,7 @@ export class Game {
     this.gainXp(enemyStats.xp);
     const rng = createRng(hashSeed(this.state.run.runSeed, this.state.run.turn, enemy.id, "drop"));
     const drop = getDropForEnemy(enemy, rng, this.state.run.player.classId);
-    this.state.run.player.gold += drop.gold;
+    this.addGold(drop.gold);
     if (drop.gold) this.log(`You gather ${drop.gold} gold.`);
     for (const itemId of drop.items) {
       floor.map[enemy.y][enemy.x].itemIds.push(itemId);
@@ -1982,6 +2065,10 @@ export class Game {
     }
   }
 
+  padQuickSlots(slots = []) {
+    return Array.from({ length: QUICK_SLOT_COUNT }, (_, index) => slots[index] ?? null);
+  }
+
   useQuickSlot(index) {
     const entry = this.state.run?.player.quickSlots[index];
     if (!entry) return;
@@ -1992,17 +2079,42 @@ export class Game {
     this.useItemById(entry);
   }
 
+  // What casting would cost right now, after discounts and free casts (Sage's Echo, free utility).
+  getSpellCost(spellId) {
+    const player = this.state.run.player;
+    const derived = this.getPlayerCombatSnapshot();
+    const spell = SPELLS[spellId];
+    const sageEchoCount = player.boonState?.sageEchoCount ?? 0;
+    const sageEchoFree = spell.type === "spell" && player.boonId === "sages_echo" && (sageEchoCount + 1) % 3 === 0;
+    const utilitySpell = spellId === "arcane_shield" || spellId === "blink";
+    const utilityDiscount = utilitySpell ? derived.utilityDiscount : 0;
+    const freeUtility = utilitySpell && derived.freeUtility && !player.turnFlags.freeUtilityUsed;
+    const free = freeUtility || sageEchoFree;
+    return { cost: free ? 0 : Math.max(0, spell.cost - utilityDiscount), free, freeUtility, sageEchoCount };
+  }
+
+  // Everything the hotbar needs to draw one slot: what's in it, its cost or count, and whether it
+  // can be used right now (with the reason when it can't).
+  getQuickSlotState(index) {
+    const player = this.state.run.player;
+    const entryId = player.quickSlots[index];
+    if (!entryId) return { entryId: null, usable: false };
+    if (SPELLS[entryId]) {
+      const { cost, free } = this.getSpellCost(entryId);
+      const needsBow = entryId === "aimed_shot" && !ITEMS[player.equipment.weapon]?.range;
+      const reason = needsBow ? "Needs a ranged weapon" : player.mana < cost ? `Needs ${cost} mana` : null;
+      return { entryId, isSpell: true, cost, free, usable: !reason, reason };
+    }
+    const count = player.inventory.filter((entry) => entry.itemId === entryId).length;
+    return { entryId, isSpell: false, count, usable: count > 0, reason: count > 0 ? null : "None left" };
+  }
+
   castAbility(spellId) {
     if (this.state.ui.overlay) return;
     const player = this.state.run.player;
     const derived = this.getPlayerCombatSnapshot();
     const spell = SPELLS[spellId];
-    const sageEchoCount = player.boonState.sageEchoCount ?? 0;
-    const sageEchoFree = spell.type === "spell" && player.boonId === "sages_echo" && (sageEchoCount + 1) % 3 === 0;
-    const utilitySpell = spellId === "arcane_shield" || spellId === "blink";
-    const utilityDiscount = utilitySpell ? derived.utilityDiscount : 0;
-    const freeUtility = utilitySpell && derived.freeUtility && !player.turnFlags.freeUtilityUsed;
-    const cost = (freeUtility || sageEchoFree) ? 0 : Math.max(0, spell.cost - utilityDiscount);
+    const { cost, freeUtility, sageEchoCount } = this.getSpellCost(spellId);
     if (player.mana < cost) {
       this.log("Not enough mana.");
       return;
@@ -2271,6 +2383,15 @@ export class Game {
       return;
     }
     if (tile.stairs) {
+      const leftBehind = this.getLeftBehind();
+      if (leftBehind.length && !currentFloor.leaveWarned) {
+        // One reminder per floor; pressing Enter again descends.
+        currentFloor.leaveWarned = true;
+        const text = `${leftBehind.join(" and ")}. Press Enter again to descend.`;
+        this.notify({ kind: "warning", text, duration: 3200 });
+        this.log(`Left behind: ${leftBehind.join(" and ")}.`);
+        return;
+      }
       this.descend();
       return;
     }
@@ -2295,10 +2416,10 @@ export class Game {
         if (vault) vault.opened = true;
       }
       currentFloor.map[player.y][player.x].chestId = null;
-      player.gold += chest.gold;
+      this.addGold(chest.gold);
       this.log(`${chest.label ?? "Chest"} opened. You collect ${chest.gold} gold.`);
       for (const itemId of chest.loot) {
-        player.inventory.push({ id: `inv-${Date.now()}-${itemId}-${Math.random()}`, itemId });
+        this.addToInventory(itemId, { verb: "Found" });
         this.log(`Found ${ITEMS[itemId].name}.`);
       }
       return;
@@ -2329,10 +2450,63 @@ export class Game {
     }
   }
 
+  // Loot you've actually seen on this floor but not taken: explored, unopened chests you can open,
+  // and a vendor you walked past. Hidden or locked things aren't mentioned, so nothing is spoiled.
+  getLeftBehind() {
+    const { currentFloor } = this.state.run;
+    const chests = (currentFloor.chests ?? []).filter((chest) => !chest.opened
+      && currentFloor.map[chest.y]?.[chest.x]?.explored
+      && (!chest.locked || this.hasVaultKey(chest.keyItemId)));
+    const notes = [];
+    if (chests.length) notes.push(`${chests.length} unopened chest${chests.length === 1 ? "" : "s"}`);
+    const vendor = currentFloor.vendor;
+    if (vendor && !vendor.visited && currentFloor.map[vendor.y]?.[vendor.x]?.explored) notes.push(`${vendor.name ?? "a vendor"} not visited`);
+    return notes;
+  }
+
+  // Snapshot of run totals when a floor starts, so the floor summary can show what changed.
+  markFloorStart() {
+    const run = this.state.run;
+    run.floorStart = {
+      kills: run.runStats.kills,
+      goldFound: run.runStats.goldFound ?? 0,
+      itemsFound: run.runStats.itemsFound ?? 0,
+      turn: run.turn,
+    };
+  }
+
+  getFloorSummary() {
+    const run = this.state.run;
+    const start = run.floorStart ?? { kills: 0, goldFound: 0, itemsFound: 0, turn: 0 };
+    let floorTiles = 0;
+    let exploredTiles = 0;
+    for (const row of run.currentFloor.map) {
+      for (const tile of row) {
+        if (tile.type !== "floor") continue;
+        floorTiles += 1;
+        if (tile.explored) exploredTiles += 1;
+      }
+    }
+    return {
+      floor: run.floorNumber,
+      kills: run.runStats.kills - start.kills,
+      gold: (run.runStats.goldFound ?? 0) - start.goldFound,
+      items: (run.runStats.itemsFound ?? 0) - start.itemsFound,
+      turns: run.turn - start.turn,
+      explored: floorTiles ? Math.round((exploredTiles / floorTiles) * 100) : 0,
+    };
+  }
+
   descend() {
     if (this.state.run.currentFloor.enemies.some((enemy) => ENEMIES[enemy.templateId]?.behavior === "boss")) {
       this.log("A boss blocks the way.");
       return;
+    }
+    // A glanceable recap of the floor just left; it fades on its own and never blocks play.
+    if (this.state.run.floorNumber > 0) {
+      const summary = this.getFloorSummary();
+      this.notify({ kind: "floor", summary, duration: 4200 });
+      this.log(`Floor ${summary.floor}: ${summary.kills} kills, ${summary.items} items, ${summary.gold} gold, ${summary.explored}% explored in ${summary.turns} turns.`);
     }
     const nextFloor = this.state.run.floorNumber + 1;
     if (nextFloor > 30) {
@@ -2349,6 +2523,7 @@ export class Game {
     this.state.run.player.x = this.state.run.currentFloor.spawn.x;
     this.state.run.player.y = this.state.run.currentFloor.spawn.y;
     this.updateVisibility();
+    this.markFloorStart();
     this.soundPlayer?.play('stairs');
     this.log(`You descend to Floor ${nextFloor}.`);
     this.renderer?.showTransition(this.getFloorTransitionBanner(nextFloor));
@@ -2451,6 +2626,7 @@ export class Game {
           data-tooltip="${this.escapeTooltip(this.getItemTooltip(stack.itemId, { stackCount: stack.count, includeCompare: true, includeValue: true }))}"
         >
           ${this.renderGearVerdict(stack.itemId)}
+          ${stack.indices.some((index) => player.inventory[index]?.isNew) ? `<span class="new-dot" aria-label="New"></span>` : ""}
           ${this.renderItemIcon(stack.itemId)}
           ${stack.count > 1 ? `<span class="inventory-stack-count">x${stack.count}</span>` : ""}
           <span class="inventory-tile-name">${stack.item.name}</span>
@@ -2510,7 +2686,7 @@ export class Game {
     if (!itemId) return;
     const previousDerived = this.getDerivedStats(player);
     player.equipment[slot] = null;
-    player.inventory.push({ id: `inv-${Date.now()}-${itemId}`, itemId });
+    this.addToInventory(itemId, { quiet: true });
     this.applyResourceCapDelta(player, previousDerived, this.getDerivedStats(player));
     this.soundPlayer?.play('equip_item');
     this.log(`Unequipped ${ITEMS[itemId].name}.`);
@@ -2620,7 +2796,7 @@ export class Game {
 
   openLoadout() {
     const { player } = this.state.run;
-    const learnedSpells = player.learnedSpells
+    const learnedSpells = [...new Set(player.learnedSpells)]
       .filter((spellId) => SPELLS[spellId])
       .map((spellId) => ({
         id: spellId,
@@ -2634,27 +2810,31 @@ export class Game {
         label: `${ITEMS[itemId].name} x${player.inventory.filter((entry) => entry.itemId === itemId).length}`,
       }));
     const options = [...learnedSpells, ...consumables];
+    const entryName = (entryId) => SPELLS[entryId]?.name ?? ITEMS[entryId]?.name ?? entryId;
+    const entryIcon = (entryId) => (ITEMS[entryId] ? this.renderItemIcon(entryId, "loadout-icon") : `<span class="loadout-icon loadout-icon-spell" aria-hidden="true">&#10022;</span>`);
     const html = `
+      <p class="muted loadout-hint">Click a number to put an entry in that slot, or hover an entry and press 1-${QUICK_SLOT_COUNT}.</p>
       <div class="overlay-grid">
         <div>
           <h3>Quick Slots</h3>
-          ${player.quickSlots.map((entry, index) => `
-            <div class="list-card">
-              <strong>Slot ${index + 1}</strong>
-              <p class="muted">${entry ? (SPELLS[entry]?.name ?? ITEMS[entry]?.name ?? entry) : "Empty"}</p>
-              <button data-action="clear-slot" data-slot-index="${index}" ${entry ? "" : "disabled"}>Clear</button>
-            </div>
-          `).join("")}
+          <div class="loadout-slots">
+            ${player.quickSlots.map((entry, index) => `
+              <div class="loadout-slot ${entry ? "" : "empty"}">
+                <span class="slot-key">${index + 1}</span>
+                ${entry ? entryIcon(entry) : ""}
+                <span class="loadout-slot-name ${entry ? "" : "muted"}">${entry ? entryName(entry) : "Empty"}</span>
+                <button data-action="clear-slot" data-slot-index="${index}" ${entry ? "" : "disabled"} aria-label="Clear slot ${index + 1}">Clear</button>
+              </div>
+            `).join("")}
+          </div>
         </div>
         <div>
           <h3>Assignable</h3>
           ${options.map((option) => `
-            <div class="list-card" data-tooltip="${this.escapeTooltip(SPELLS[option.id] ? this.getSpellTooltip(option.id) : this.getItemTooltip(option.id, { includeValue: true }))}">
-              <strong>${option.label}</strong>
-              <div class="loadout-assign-row">
-                <button data-action="assign-slot" data-slot-index="0" data-entry-id="${option.id}">Slot 1</button>
-                <button data-action="assign-slot" data-slot-index="1" data-entry-id="${option.id}">Slot 2</button>
-                <button data-action="assign-slot" data-slot-index="2" data-entry-id="${option.id}">Slot 3</button>
+            <div class="list-card loadout-entry" data-entry-id="${option.id}" data-tooltip="${this.escapeTooltip(SPELLS[option.id] ? this.getSpellTooltip(option.id) : this.getItemTooltip(option.id, { includeValue: true }))}">
+              <div class="loadout-entry-name">${entryIcon(option.id)}<strong>${option.label}</strong></div>
+              <div class="loadout-assign-row" role="group" aria-label="Assign ${entryName(option.id)} to a slot">
+                ${player.quickSlots.map((entry, index) => `<button class="${entry === option.id ? "active" : ""}" data-action="assign-slot" data-slot-index="${index}" data-entry-id="${option.id}" aria-label="Slot ${index + 1}" aria-pressed="${entry === option.id}">${index + 1}</button>`).join("")}
               </div>
             </div>
           `).join("") || "<p>No learned spells or consumables available.</p>"}
@@ -2743,7 +2923,7 @@ export class Game {
     const previous = player.equipment[item.slot];
     player.equipment[item.slot] = entry.itemId;
     if (previous) {
-      player.inventory.push({ id: `inv-${Date.now()}-${previous}`, itemId: previous });
+      this.addToInventory(previous, { quiet: true });
     }
     player.inventory.splice(entryIndex, 1);
     const derived = this.getDerivedStats(player);
@@ -2773,6 +2953,7 @@ export class Game {
   openVendor(selectedIndex = 0) {
     const vendor = this.state.run.currentFloor.vendor;
     if (!vendor) return;
+    vendor.visited = true;
     const player = this.state.run.player;
     const confirm = this.state.ui.vendorConfirm ?? null;
     const vendorStacks = this.getVendorStacks();
@@ -2901,7 +3082,8 @@ export class Game {
       return;
     }
     this.state.run.player.gold -= price;
-    this.state.run.player.inventory.push({ id: `inv-${Date.now()}-${itemId}`, itemId });
+    this.addToInventory(itemId, { quiet: true });
+    this.state.run.player.inventory[this.state.run.player.inventory.length - 1].isNew = true;
     vendor.stock.splice(stockIndex, 1);
     this.soundPlayer?.play('buy_sell');
     this.log(`Bought ${item.name}.`);
@@ -3523,6 +3705,10 @@ export class Game {
 
   closeOverlay() {
     if (this.state.ui.overlay && this.state.ui.overlay.dismissible === false) return;
+    // Items count as seen once the inventory has been open.
+    if (this.state.ui.overlay?.type === "inventory") {
+      for (const entry of this.state.run?.player.inventory ?? []) delete entry.isNew;
+    }
     this.soundPlayer?.play('ui_cancel');
     this.state.ui.overlay = null;
     this.state.ui.vendorConfirm = null;

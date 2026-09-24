@@ -69,14 +69,14 @@ const assetManifest = {
   ladder: `${BASE}/floor_ladder.png`,
   chestClosed: `${BASE}/chest_empty_open_anim_f0.png`,
   chestOpen: `${BASE}/chest_full_open_anim_f2.png`,
-  coin: `${BASE}/coin_anim_f2.png`,
+  coin: `${BASE}/coin_anim_f0.png`,
   // One icon per Grey Witness boon, for the boon choice cards.
   boonIcons: {
     vicious_star: `${EXTRACTED}/amulet_spark.png`,
     ward_of_ash: `${EXTRACTED}/ring_white.png`,
     iron_remnant: `${EXTRACTED}/armor_iron_cuirass.png`,
     crimson_hunger: `${EXTRACTED}/amulet_crimson.png`,
-    fortunes_ledger: `${BASE}/coin_anim_f2.png`,
+    fortunes_ledger: `${BASE}/coin_anim_f0.png`,
     sages_echo: `${EXTRACTED}/tome_arcane_violet.png`,
     stoneblood: `${BASE}/ui_heart_full.png`,
     deep_wells: `${BASE}/flask_big_blue.png`,
