@@ -836,20 +836,14 @@ export class Renderer {
         const wallAtlasCoord = getThemeWallAtlasCoord(currentFloor.theme, currentFloor.map, x, y, { useExploredMask: true });
         const wallAtlas = wallAtlasCoord && atlasSet ? this.assets.images[atlasSet.walls] : null;
         const wallSpritePath = this.assets
-          ? getWallSprite(this.assets.manifest, currentFloor.map, x, y, { useExploredMask: true })
+          ? getWallSprite(this.assets.manifest, currentFloor.map, x, y)
           : null;
         const useThemeWalls = ATLAS_THEMES.has(currentFloor.theme);
         const wallSprite = wallAtlas ? null : (!useThemeWalls && wallSpritePath) ? this.assets?.images[wallSpritePath] : null;
-        const plainTopWallSprites = this.assets
-          ? new Set([
-            this.assets.manifest.walls.top,
-            this.assets.manifest.walls.topLeft,
-            this.assets.manifest.walls.topRight,
-            this.assets.manifest.walls.edgeTopLeft,
-            this.assets.manifest.walls.edgeTopRight,
-          ])
-          : null;
-        const skipWallBackdrop = (tile.type === "wall" && wallAtlas) || (tile.type === "wall" && !wallAtlas && wallSpritePath && plainTopWallSprites?.has(wallSpritePath));
+        // Partly transparent wall pieces (caps, side edges, outer corners) sit over black void, so the
+        // coloured wall backdrop would show through them as a solid block.
+        const skipWallBackdrop = (tile.type === "wall" && wallAtlas)
+          || (tile.type === "wall" && !wallAtlas && wallSpritePath && this.assets?.manifest.transparentWallSprites?.has(wallSpritePath));
         const wallPropPath = this.assets ? getWallPropPath(this.assets.manifest, currentFloor.theme, currentFloor.map, x, y) : null;
         const wallProp = wallPropPath ? this.assets?.images[wallPropPath] : null;
         const roomType = getRoomTypeAt(x, y);

@@ -470,7 +470,26 @@ async function recolorFrames(images, framePaths, palette) {
   return keys;
 }
 
+// Wall pieces with transparent areas (top caps, side edges, outer corners) are drawn over black void
+// in the tileset, not over a coloured wall backdrop; the renderer skips the backdrop for these.
+function findTransparentWallSprites(images) {
+  const transparent = new Set();
+  for (const path of Object.values(assetManifest.walls)) {
+    const image = images[path];
+    if (!image) continue;
+    const pixels = readPixels(image).data.data;
+    for (let index = 3; index < pixels.length; index += 4) {
+      if (pixels[index] < 255) {
+        transparent.add(path);
+        break;
+      }
+    }
+  }
+  return transparent;
+}
+
 async function buildRecoloredActors(images) {
+  assetManifest.transparentWallSprites = findTransparentWallSprites(images);
   // Themes drawn with the autotiled atlas walls, and the atlas images each one uses.
   assetManifest.themeAtlasSets = {
     sunken_vault: { walls: assetManifest.themeAtlases.sunkenVaultWalls, floor: assetManifest.themeAtlases.sunkenVaultFloor },
@@ -553,19 +572,17 @@ export function getFloorSprite(manifest, x, y, seed = 0) {
   return tiles[0];
 }
 
-export function getWallSprite(manifest, map, x, y, options = {}) {
-  const { useExploredMask = false } = options;
+// Picks the wall piece from the real map, ignoring fog of war, so a wall's shape never changes as you
+// explore. (Counting only explored floor made walls beside unexplored floor show narrow edge pieces
+// until the area was revealed.) The sewer atlas walls work the same way.
+export function getWallSprite(manifest, map, x, y) {
   const getTile = (tx, ty) => map[ty]?.[tx] ?? null;
   const isVisibleWall = (tx, ty) => {
     const tile = getTile(tx, ty);
     if (!tile || tile.type !== "wall") return false;
     return true;
   };
-  const isFloor = (tx, ty) => {
-    const tile = getTile(tx, ty);
-    if (!tile || tile.type !== "floor") return false;
-    return tile.explored || tile.visible;
-  };
+  const isFloor = (tx, ty) => getTile(tx, ty)?.type === "floor";
 
   const northWall = isVisibleWall(x, y - 1);
   const southWall = isVisibleWall(x, y + 1);
