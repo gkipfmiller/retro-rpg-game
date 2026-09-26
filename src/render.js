@@ -13,7 +13,8 @@ import {
 } from "./assets.js";
 import { clamp } from "./utils.js";
 import { LOG_FILTERS, logText, mergeLogEntries } from "./log.js";
-import { getSpellIconUrl, getStatusIconCanvas, getStatusIconUrl } from "./pixelIcons.js";
+import { getSpellIconUrl, getSpireCanvas, getStatusIconCanvas, getStatusIconUrl } from "./pixelIcons.js";
+import { SpellFx } from "./spellFx.js";
 
 const COLORS = {
   wall: "#26303d",
@@ -273,6 +274,12 @@ function getStatusColor(statusId) {
       return "#b06cff";
     case "arcane_shield":
       return "#7fb6ff";
+    case "mana_barrier":
+      return "#5aa8ff";
+    case "burning":
+      return "#ff8a2a";
+    case "frozen":
+      return "#9fe6ff";
     default:
       return "#d7a54d";
   }
@@ -641,35 +648,6 @@ function escapeTooltip(text) {
     .replaceAll("\n", "&#10;");
 }
 
-function getProjectileAppearance(projectile) {
-  switch (projectile.kind) {
-    case "magic_missile":
-      return { color: "#8bc6ff", trail: "#d6eeff", radius: 0.16 };
-    case "frost_shard":
-      return { color: "#8ff3ff", trail: "#d7fbff", radius: 0.18 };
-    case "chain_bolt":
-      return { color: "#ffd86a", trail: "#fff2b6", radius: 0.17 };
-    case "ice_shatter":
-      return { color: "#b9ecff", trail: "#eefcff", radius: 0.18 };
-    case "frailty_hex":
-      return { color: "#c58cff", trail: "#edd6ff", radius: 0.18 };
-    case "arcane_burst":
-      return { color: "#c78cff", trail: "#f0d2ff", radius: 0.2 };
-    case "shadow_bolt":
-      return { color: "#8e7cff", trail: "#d4c8ff", radius: 0.16 };
-    case "hexfire":
-      return { color: "#ff7b9c", trail: "#ffd0da", radius: 0.18 };
-    case "cinder_hex":
-      return { color: "#ff9b54", trail: "#ffe1b8", radius: 0.17 };
-    case "abyssal_bolt":
-      return { color: "#ff5f86", trail: "#ffd1dc", radius: 0.2 };
-    case "arrow":
-      return { color: "#d4a853", trail: "#8b6914", radius: 0.1 };
-    default:
-      return { color: "#d7a54d", trail: "#fff1c2", radius: 0.16 };
-  }
-}
-
 export class Renderer {
   constructor(game) {
     this.game = game;
@@ -686,7 +664,9 @@ export class Renderer {
     this.assets = null;
     this.lastOverlaySignature = null;
     this.wasCriticalHp = false;
-    this.projectiles = [];
+    // Spell projectiles, impacts, area effects, particles, and status auras (see spellFx.js).
+    this.fx = new SpellFx();
+    this.fx.locate = (id) => this.locateActor(id);
     this.damagePopups = [];
     this.camera = null;
     this.minimapCanvas = document.createElement("canvas");
@@ -776,6 +756,7 @@ export class Renderer {
 
   renderMap() {
     const { ctx } = this;
+    this.fx.beginFrame();
     const { currentFloor, player, floorNumber, runSeed } = this.game.state.run;
     const floorTileSeed = ((runSeed ?? 0) + floorNumber * 7919) | 0;
     const floorTheme = FLOOR_THEMES[currentFloor.theme] ?? FLOOR_THEMES.crypt;
@@ -1058,8 +1039,14 @@ export class Renderer {
       const spritePath = this.assets ? getActorSpriteFrame(this.assets.manifest, getEnemySpriteId(this.assets.manifest, enemy), animationFrame) : null;
       const sprite = spritePath ? this.assets?.images[spritePath] : null;
       if (sprite) {
-        this.drawActor(sprite, offsetX + enemy.x * tileSize, offsetY + enemy.y * tileSize, tileSize, ACTOR_SCALES[enemy.templateId] ?? 1);
-        this.drawStatusPips(offsetX + enemy.x * tileSize, offsetY + enemy.y * tileSize, tileSize, enemy.statuses);
+        const motion = this.fx.getMotion(enemy.id);
+        const px = offsetX + (enemy.x + motion.dx) * tileSize;
+        const py = offsetY + (enemy.y + motion.dy) * tileSize;
+        const scale = ACTOR_SCALES[enemy.templateId] ?? 1;
+        this.fx.drawAuraBehind(ctx, enemy, px, py, tileSize);
+        this.drawActor(sprite, px, py, tileSize, scale);
+        this.fx.drawAuraFront(ctx, enemy, sprite, this.actorRect(sprite, px, py, tileSize, scale, offsetX, offsetY), tileSize);
+        this.drawStatusPips(px, py, tileSize, enemy.statuses);
       } else {
         const template = ENEMIES[enemy.templateId];
         drawText(
@@ -1073,11 +1060,31 @@ export class Renderer {
       }
     }
 
+    for (const ally of currentFloor.allies ?? []) {
+      if (ally.kind === "spire" && currentFloor.map[ally.y]?.[ally.x]?.visible) this.drawSpire(ally, offsetX, offsetY, tileSize);
+    }
+
     const playerSpritePath = this.assets ? getActorSpriteFrame(this.assets.manifest, player.classId, animationFrame) : null;
     const playerSprite = playerSpritePath ? this.assets?.images[playerSpritePath] : null;
     if (playerSprite) {
-      this.drawActor(playerSprite, offsetX + player.x * tileSize, offsetY + player.y * tileSize, tileSize);
-      this.drawStatusPips(offsetX + player.x * tileSize, offsetY + player.y * tileSize, tileSize, player.statuses);
+      const motion = this.fx.getMotion("player");
+      const px = offsetX + (player.x + motion.dx) * tileSize;
+      const py = offsetY + (player.y + motion.dy) * tileSize;
+      // Evasive Step afterimages trail the leap.
+      for (const ghost of motion.ghosts) {
+        const rect = this.actorRect(playerSprite, offsetX + (player.x + ghost.dx) * tileSize, offsetY + (player.y + ghost.dy) * tileSize, tileSize);
+        ctx.save();
+        ctx.globalAlpha = ghost.alpha;
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(this.fx.getTint(playerSprite, motion.ghostColor), rect.x, rect.y, rect.width, rect.height);
+        ctx.restore();
+      }
+      this.fx.drawAuraBehind(ctx, player, px, py, tileSize);
+      this.drawActor(playerSprite, px, py, tileSize);
+      const playerRect = this.actorRect(playerSprite, px, py, tileSize, 1, offsetX, offsetY);
+      this.fx.drawAuraFront(ctx, player, playerSprite, playerRect, tileSize);
+      if (player.turnFlags?.killMomentum) this.fx.drawMomentum(ctx, playerRect, tileSize, player.classId);
+      this.drawStatusPips(px, py, tileSize, player.statuses);
     } else {
       drawText(
         ctx,
@@ -1089,16 +1096,25 @@ export class Renderer {
       );
     }
 
-    if (this.lighting) this.drawLighting(currentFloor, player, offsetX, offsetY, tileSize, torchLights);
+    if (this.lighting) this.drawLighting(currentFloor, player, offsetX, offsetY, tileSize, [...torchLights, ...this.fx.getLights()]);
     for (const sparkle of sparkleTiles) this.drawLootSparkles(sparkle.px, sparkle.py, tileSize, sparkle.rarity);
     for (const glowing of glowingDetails) this.drawFloorDetailGlow(glowing.detail, glowing.px, glowing.py, tileSize);
     this.updateAndDrawMotes(currentFloor, offsetX, offsetY, tileSize);
     this.drawTelegraphs(currentFloor, player, offsetX, offsetY, tileSize);
 
     // Health bars go on top of every actor so a taller sprite standing below can't hide them.
+    // With a bow drawn, mark the enemy F will shoot; with Deadeye, mark those low enough for its bonus.
+    const bow = ITEMS[player.equipment.weapon];
+    const shotTarget = bow?.range ? this.game.findNearestVisibleEnemy(bow.range) : null;
+    const deadeye = this.game.getDerivedStats(player).executioner > 0;
     for (const enemy of currentFloor.enemies) {
       if (enemy.disguised || !currentFloor.map[enemy.y][enemy.x].visible) continue;
-      this.drawHealthBar(offsetX + enemy.x * tileSize, offsetY + enemy.y * tileSize, tileSize, enemy);
+      const motion = this.fx.getMotion(enemy.id);
+      const ex = offsetX + (enemy.x + motion.dx) * tileSize;
+      const ey = offsetY + (enemy.y + motion.dy) * tileSize;
+      this.drawHealthBar(ex, ey, tileSize, enemy);
+      if (enemy === shotTarget) this.fx.drawTargetMarker(ctx, ex, ey, tileSize);
+      if (deadeye && enemy.hp > 0 && enemy.hp / enemy.maxHp <= 0.35) this.fx.drawDeadeye(ctx, ex, ey, tileSize);
     }
 
     this.mapView = { offsetX, offsetY, tileSize, floor: currentFloor };
@@ -1192,10 +1208,16 @@ export class Renderer {
 
   // Draws an actor bottom-aligned and horizontally centred on its tile, keeping the sprite's aspect ratio.
   drawActor(image, x, y, tileSize, scale = 1) {
+    const rect = this.actorRect(image, x, y, tileSize, scale);
+    this.ctx.imageSmoothingEnabled = false;
+    this.ctx.drawImage(image, rect.x, rect.y, rect.width, rect.height);
+  }
+
+  // Where drawActor puts a sprite: centred on the tile, standing on its bottom edge.
+  actorRect(image, x, y, tileSize, scale = 1, offsetX = 0, offsetY = 0) {
     const width = Math.round((image.naturalWidth || image.width) / 16 * tileSize * scale);
     const height = Math.round((image.naturalHeight || image.height) / 16 * tileSize * scale);
-    this.ctx.imageSmoothingEnabled = false;
-    this.ctx.drawImage(image, x + Math.round((tileSize - width) / 2), y + tileSize - height, width, height);
+    return { x: x + Math.round((tileSize - width) / 2), y: y + tileSize - height, width, height, offsetX, offsetY };
   }
 
   drawAtlasTile(image, coord, x, y, tileSize, sourceTileSize = 16) {
@@ -1860,60 +1882,84 @@ export class Renderer {
     ctx.restore();
   }
 
+  // The Arcane Spire: a soft violet glow, the pixel sprite (its crystal pulses), and one pip per turn left.
+  drawSpire(spire, offsetX, offsetY, tileSize) {
+    const { ctx } = this;
+    const px = offsetX + spire.x * tileSize;
+    const py = offsetY + spire.y * tileSize;
+    const now = performance.now();
+    const pulse = reduceMotion() ? 0.5 : 0.5 + Math.sin(now / 260) * 0.5;
+    ctx.save();
+    const glow = ctx.createRadialGradient(px + tileSize / 2, py + tileSize * 0.3, 1, px + tileSize / 2, py + tileSize * 0.3, tileSize * 0.9);
+    glow.addColorStop(0, `rgba(176, 108, 255, ${0.28 + pulse * 0.14})`);
+    glow.addColorStop(1, "rgba(176, 108, 255, 0)");
+    ctx.fillStyle = glow;
+    ctx.fillRect(px - tileSize / 2, py - tileSize / 2, tileSize * 2, tileSize * 2);
+    const sprite = getSpireCanvas(pulse > 0.6 ? 1 : 0);
+    if (sprite) {
+      // A little larger than a tile, anchored at its base, so it stands as tall as the actors.
+      const size = Math.round(tileSize * 1.25);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(sprite, px + Math.round((tileSize - size) / 2), py + tileSize - size, size, size);
+    }
+    const pip = Math.max(2, Math.round(tileSize / 12));
+    const gap = Math.max(1, Math.round(pip / 2));
+    const total = spire.turnsLeft * pip + (spire.turnsLeft - 1) * gap;
+    ctx.fillStyle = "#e2c8ff";
+    for (let index = 0; index < spire.turnsLeft; index += 1) {
+      ctx.fillRect(px + Math.round((tileSize - total) / 2) + index * (pip + gap), py + tileSize - pip - 1, pip, pip);
+    }
+    ctx.restore();
+  }
+
+  // Current tile of the player ("player") or a living enemy, by id.
+  locateActor(id) {
+    const run = this.game.state.run;
+    if (!run || !id) return null;
+    if (id === "player") return { x: run.player.x, y: run.player.y };
+    const enemy = run.currentFloor.enemies.find((entry) => entry.id === id);
+    return enemy ? { x: enemy.x, y: enemy.y } : null;
+  }
+
   queueProjectile(projectile) {
-    this.projectiles.push({
-      ...projectile,
-      createdAt: performance.now(),
-      duration: projectile.duration ?? 320,
-    });
+    this.fx.addProjectile(projectile);
+  }
+
+  // Area and cast effects: explosion, nova, pulse, blink, column, shieldUp (see spellFx.js).
+  queueEffect(effect) {
+    this.fx.addEffect(effect);
+  }
+
+  // Attackers lean into melee and recoil from shots: { id: enemy id or "player", toward, kind, delay }.
+  queueNudge(nudge) {
+    this.fx.addNudge(nudge);
+  }
+
+  // Evasive Step: the player arcs from one tile to the other with afterimages and dust.
+  queueLeap(leap) {
+    this.fx.addLeap(leap);
+  }
+
+  // How long a projectile of this kind takes to fly, so hits and numbers can wait for it.
+  getProjectileDuration(kind) {
+    return this.fx.getDuration(kind);
   }
 
   renderProjectiles(tileSize, offsetX, offsetY) {
-    if (!this.projectiles.length) return;
-    const now = performance.now();
-    this.projectiles = this.projectiles.filter((projectile) => now - projectile.createdAt < projectile.duration);
-
-    for (const projectile of this.projectiles) {
-      const progress = clamp((now - projectile.createdAt) / projectile.duration, 0, 1);
-      const eased = progress < 0.5
-        ? 2 * progress * progress
-        : 1 - ((-2 * progress + 2) ** 2) / 2;
-      const startX = offsetX + (projectile.from.x + 0.5) * tileSize;
-      const startY = offsetY + (projectile.from.y + 0.5) * tileSize;
-      const endX = offsetX + (projectile.to.x + 0.5) * tileSize;
-      const endY = offsetY + (projectile.to.y + 0.5) * tileSize;
-      const x = startX + (endX - startX) * eased;
-      const y = startY + (endY - startY) * eased;
-      const appearance = getProjectileAppearance(projectile);
-      const radius = Math.max(4, tileSize * appearance.radius);
-
-      this.ctx.save();
-      this.ctx.globalAlpha = 0.3;
-      this.ctx.strokeStyle = appearance.trail;
-      this.ctx.lineWidth = Math.max(2, tileSize * 0.08);
-      this.ctx.beginPath();
-      this.ctx.moveTo(startX, startY);
-      this.ctx.lineTo(x, y);
-      this.ctx.stroke();
-      this.ctx.globalAlpha = 1;
-      this.ctx.fillStyle = appearance.color;
-      this.ctx.beginPath();
-      this.ctx.arc(x, y, radius, 0, Math.PI * 2);
-      this.ctx.fill();
-      this.ctx.fillStyle = appearance.trail;
-      this.ctx.beginPath();
-      this.ctx.arc(x, y, Math.max(2, radius * 0.45), 0, Math.PI * 2);
-      this.ctx.fill();
-      this.ctx.restore();
-    }
+    this.fx.drawWorld(this.ctx, { offsetX, offsetY, tileSize });
   }
 
-  queueDamagePopup({ x, y, damage, type = "enemy", critical = false }) {
+  queueDamagePopup({ x, y, damage, type = "enemy", critical = false, delay = 0, targetId = null }) {
+    // Hits landing on the same actor together rise one after another, so "4" and "1" never read as "41".
+    const at = performance.now() + delay;
+    const sameSpot = (popup) => (targetId ? popup.targetId === targetId : popup.x === x && popup.y === y);
+    const stacked = this.damagePopups.filter((popup) => sameSpot(popup) && Math.abs(popup.createdAt - at) < 260).length;
     this.damagePopups.push({
-      x, y, damage, type, critical,
-      createdAt: performance.now(),
+      x, y, damage, type, critical, targetId,
+      createdAt: at + stacked * 170,
       duration: 800,
-      offsetX: (Math.random() - 0.5) * 0.4,
+      offsetX: stacked ? (stacked % 2 ? 0.34 : -0.34) : (Math.random() - 0.5) * 0.2,
+      offsetY: stacked * 0.3,
     });
   }
 
@@ -1923,10 +1969,18 @@ export class Renderer {
     this.damagePopups = this.damagePopups.filter((p) => now - p.createdAt < p.duration);
     for (const popup of this.damagePopups) {
       const progress = (now - popup.createdAt) / popup.duration;
+      // Waiting for its projectile to land.
+      if (progress < 0) continue;
+      // Appears over wherever the target stands when the hit lands.
+      if (!popup.anchored) {
+        popup.anchored = true;
+        const at = this.locateActor(popup.targetId);
+        if (at) Object.assign(popup, at);
+      }
       const alpha = progress < 0.7 ? 1 : 1 - (progress - 0.7) / 0.3;
       const rise = progress * tileSize * 1.2;
       const px = offsetX + (popup.x + 0.5 + popup.offsetX) * tileSize;
-      const py = offsetY + (popup.y + 0.2) * tileSize - rise;
+      const py = offsetY + (popup.y + 0.2 + (popup.offsetY ?? 0)) * tileSize - rise;
       const fontSize = popup.critical ? Math.max(13, tileSize * 0.7) : Math.max(11, tileSize * 0.55);
       const text = `${popup.damage}`;
       this.ctx.save();

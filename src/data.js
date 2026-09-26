@@ -46,8 +46,8 @@ export const CLASSES = {
     spellPowerBonus: 1,
     startingStats: { strength: 1, dexterity: 3, vitality: 3, intelligence: 7 },
     startingItems: ["apprentice_staff", "cloth_robe", "mana_potion", "healing_potion", "magic_missile_tome"],
-    quickSlots: ["magic_missile", "arcane_shield", "mana_potion"],
-    abilities: ["magic_missile", "arcane_shield"],
+    quickSlots: ["magic_missile", "arcane_spark", "arcane_shield", "mana_potion"],
+    abilities: ["magic_missile", "arcane_spark", "arcane_shield"],
   },
   ranger: {
     id: "ranger",
@@ -106,7 +106,7 @@ export const SKILL_TREES = {
       name: "Elemental Power",
       skills: [
         { id: "wizard_power_1", name: "Empowered Casting", description: "+10% spell damage.", effect: { stat: "spellDamagePct", value: 10 } },
-        { id: "wizard_power_2", name: "Focused Arcana", description: "+5 spell accuracy.", effect: { stat: "spellAccuracyFlat", value: 5 } },
+        { id: "wizard_power_2", name: "Fireball", description: "Learn Fireball: 7-11 damage to everything in a 3x3 area, and it burns for 3 turns.", effect: { grantSpell: "fireball" } },
         { id: "wizard_power_3", name: "Elemental Surge", description: "First spell in combat deals more damage.", effect: { stat: "firstSpellPct", value: 25 } },
         { id: "wizard_power_4", name: "Arcane Overflow", description: "20% chance for damage spells to cost 0 mana.", effect: { stat: "freeCastChance", value: 0.2 } },
         { id: "wizard_power_5", name: "Master Evocation", description: "Bonus damage to healthy or weak enemies.", effect: { stat: "evocationBonus", value: 20 } },
@@ -117,7 +117,7 @@ export const SKILL_TREES = {
       name: "Mystic Ward",
       skills: [
         { id: "wizard_ward_1", name: "Arcane Reserves", description: "+10 max mana.", effect: { stat: "maxManaFlat", value: 10 } },
-        { id: "wizard_ward_2", name: "Mana Shielding", description: "Above 50% mana, gain +1 defense.", effect: { stat: "manaShieldDefense", value: 1 } },
+        { id: "wizard_ward_2", name: "Mana Barrier", description: "Arcane Shield becomes a barrier that absorbs the next 10 damage (+1 per level) over 4 turns.", effect: { stat: "manaBarrier", value: 10 } },
         { id: "wizard_ward_3", name: "Steady Mind", description: "Utility spells cost 1 less mana.", effect: { stat: "utilityDiscount", value: 1 } },
         { id: "wizard_ward_4", name: "Reactive Ward", description: "The first time you are hit each floor, recover 6 HP.", effect: { stat: "reactiveWard", value: 6 } },
         { id: "wizard_ward_5", name: "Archmage's Barrier", description: "Emergency damage reduction once per floor.", effect: { stat: "archmageBarrier", value: 0.25 } },
@@ -127,10 +127,12 @@ export const SKILL_TREES = {
       id: "control_insight",
       name: "Control and Insight",
       skills: [
-        { id: "wizard_control_1", name: "Arcane Sight", description: "Reveal nearby traps sooner.", effect: { stat: "trapSense", value: 2 } },
+        // Array order is the unlock order. Ids stay with their skill (saves store them), so they no
+        // longer match the tier numbers after the reorder.
         { id: "wizard_control_2", name: "Lingering Hex", description: "Control effects last longer.", effect: { stat: "controlDuration", value: 1 } },
-        { id: "wizard_control_3", name: "Blink Adept", description: "Blink gains range.", effect: { stat: "blinkRange", value: 1 } },
+        { id: "wizard_control_1", name: "Frost Nova", description: "Learn Frost Nova: freeze every enemy around you for 2 turns and chill them.", effect: { grantSpell: "frost_nova" } },
         { id: "wizard_control_4", name: "Frailty Curse", description: "Control spells expose enemies.", effect: { stat: "frailtyCurse", value: 15 } },
+        { id: "wizard_control_3", name: "Summon Spire", description: "Learn Summon Spire: an arcane spire fires bolts at your foes for 5 turns.", effect: { grantSpell: "summon_spire" } },
         { id: "wizard_control_5", name: "Battlefield Savant", description: "First utility spell each fight is free.", effect: { stat: "freeUtility", value: 1 } },
       ],
     },
@@ -268,6 +270,49 @@ export const SPELLS = {
     damage: [8, 12],
     description: "Explosive arcane blast with heavy single-target damage.",
   },
+  // A free cantrip. It gains the percentage spell-damage bonus but not flat spell power, so it stays
+  // a fallback for when the mana runs dry rather than a free Magic Missile.
+  arcane_spark: {
+    id: "arcane_spark",
+    name: "Arcane Spark",
+    type: "spell",
+    cantrip: true,
+    cost: 0,
+    range: 3,
+    damage: [2, 4],
+    description: "A free flicker of arcane force. Weak, but it never runs dry.",
+  },
+  // The spells below are learned from the Sorceress's skill tree, never from tomes.
+  fireball: {
+    id: "fireball",
+    name: "Fireball",
+    type: "spell",
+    cost: 6,
+    range: 4,
+    damage: [7, 11],
+    radius: 1,
+    burn: { value: 2, turns: 3 },
+    description: "Explodes on the target, striking everything in a 3x3 area and setting it burning (2 damage a turn for 3 turns).",
+  },
+  frost_nova: {
+    id: "frost_nova",
+    name: "Frost Nova",
+    type: "spell",
+    utility: true,
+    cost: 5,
+    range: 0,
+    freezeTurns: 2,
+    description: "Freezes every enemy around you solid for 2 turns and chills them. Bosses are only chilled.",
+  },
+  summon_spire: {
+    id: "summon_spire",
+    name: "Summon Spire",
+    type: "spell",
+    cost: 7,
+    range: 0,
+    spire: { turns: 5, range: 4, damage: [4, 7] },
+    description: "Raises an arcane spire beside you that fires a bolt at the nearest foe each turn for 5 turns. Only one spire at a time.",
+  },
   aimed_shot: {
     id: "aimed_shot",
     name: "Aimed Shot",
@@ -282,7 +327,7 @@ export const SPELLS = {
     type: "utility",
     cost: 1,
     range: 0,
-    description: "Leap 2 tiles away from the nearest threat.",
+    description: "Leap 3 tiles away from the nearest threat.",
   },
 };
 
@@ -513,6 +558,9 @@ export const STATUS_DEFINITIONS = {
   hexed: { id: "hexed", name: "Hexed", icon: "H", description: "Defense is cursed downward, leaving the target exposed." },
   poisoned: { id: "poisoned", name: "Poisoned", icon: "P", description: "Lose 1 HP each action until the poison wears off. Waiting helps you recover faster." },
   arcane_shield: { id: "arcane_shield", name: "Arcane Shield", icon: "A", description: "A temporary magical ward grants bonus defense." },
+  mana_barrier: { id: "mana_barrier", name: "Mana Barrier", icon: "M", description: "A barrier soaks up incoming damage until it breaks or fades." },
+  burning: { id: "burning", name: "Burning", icon: "B", description: "Takes fire damage at the end of each turn." },
+  frozen: { id: "frozen", name: "Frozen", icon: "F", description: "Frozen solid: takes no turns until the ice melts." },
 };
 
 export const BOONS = {

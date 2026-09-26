@@ -18,6 +18,11 @@ const SOUND_MAP = {
   player_death:     "Sound Files/Death Screams/Human/sfx_deathscream_human1.wav",
   buy_sell:         "Sound Files/10_UI_Menu_SFX/079_Buy_sell_01.wav",
   enemy_death:      "Sound Files/General Sounds/Negative Sounds/sfx_sounds_damage3.wav",
+  // Sorceress skill-tree spells
+  fireball:         "Sound Files/8_Atk_Magic_SFX/04_Fire_explosion_04_medium.wav",
+  frost_nova:       "Sound Files/8_Atk_Magic_SFX/13_Ice_explosion_01.wav",
+  summon_spire:     "Sound Files/8_Atk_Magic_SFX/45_Charge_05.wav",
+  mana_barrier:     "Sound Files/8_Buffs_Heals_SFX/39_Absorb_04.wav",
 };
 
 export class SoundPlayer {

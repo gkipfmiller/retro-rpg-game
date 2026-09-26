@@ -80,6 +80,45 @@ const STATUS_ICONS = {
       "...kk...",
     ],
   },
+  mana_barrier: {
+    palette: { a: "#5aa8ff", b: "#d8ecff", k: "#10213d" },
+    grid: [
+      "..kkkk..",
+      ".kbbbbk.",
+      "kb.aa.bk",
+      "kbaaaabk",
+      "kbaaaabk",
+      "kb.aa.bk",
+      ".kbbbbk.",
+      "..kkkk..",
+    ],
+  },
+  burning: {
+    palette: { r: "#e8452c", o: "#ff9a3c", y: "#ffe07a", k: "#2a0e06" },
+    grid: [
+      "...r....",
+      "..rr..r.",
+      ".rorr.r.",
+      ".roorrr.",
+      "rooyoorr",
+      "royyyor.",
+      ".ryyyr..",
+      "..kkk...",
+    ],
+  },
+  frozen: {
+    palette: { a: "#9fe6ff", b: "#ffffff", d: "#3a8fc0", k: "#0e2a3a" },
+    grid: [
+      "kkkkkkkk",
+      "kbbaaadk",
+      "kbaaaadk",
+      "kaabaadk",
+      "kaaaabdk",
+      "kaaaaadk",
+      "kddddddk",
+      "kkkkkkkk",
+    ],
+  },
 };
 
 // One icon per spell or ability, used on the hotbar, loadout, and class cards.
@@ -129,6 +168,22 @@ const SPELL_ICONS = {
     palette: { o: "#f07a2a", y: "#ffc85a", w: "#fff4d0" },
     grid: ["...o....", "o..o..o.", ".o.y.o..", "..yyy...", "ooywyoo.", "..yyy...", ".o.y.o..", "o..o..o."],
   },
+  arcane_spark: {
+    palette: { p: "#c79bff", w: "#ffffff", d: "#7a4ad0" },
+    grid: ["........", "...p....", "...pp...", ".ppwwp..", "..pwwpp.", "...pp...", "....p...", "..d...d."],
+  },
+  fireball: {
+    palette: { r: "#d8401f", o: "#ff8a2a", y: "#ffd25a", w: "#fff6d8" },
+    grid: ["....r...", "..r.rr..", ".rroorr.", "rooyyoor", "royywyor", "rooyyoor", ".rroorr.", "..rrrr.."],
+  },
+  frost_nova: {
+    palette: { w: "#ffffff", b: "#8fdcff", d: "#3a8fc0" },
+    grid: ["b..d..b.", ".b.d.b..", "..bwb...", "ddwwwdd.", "..bwb...", ".b.d.b..", "b..d..b.", "........"],
+  },
+  summon_spire: {
+    palette: { p: "#b06cff", v: "#e2c8ff", w: "#ffffff", s: "#5b5470", k: "#2a2438" },
+    grid: ["...w....", "..pvp...", "...p....", "..svs...", "..sps...", "..sps...", ".sssss..", "kkkkkkk."],
+  },
   aimed_shot: {
     palette: { s: "#dfe6ea", h: "#a0703a", f: "#e05a4b" },
     grid: ["........", ".....s..", "f....ss.", "fhhhhsss", "f....ss.", ".....s..", "........", "........"],
@@ -173,6 +228,48 @@ const BRANCH_ICONS = {
   },
 };
 
+// The Arcane Spire on the map (16x16): a stone pillar with a floating crystal. Frame 1 brightens the
+// crystal for a slow pulse.
+const SPIRE_PALETTE = { w: "#ffffff", v: "#e2c8ff", p: "#b06cff", d: "#6a3bb0", s: "#8a84a0", t: "#5b5470", k: "#221d30" };
+const SPIRE_FRAMES = [
+  [
+    "................",
+    ".......pp.......",
+    "......pvvp......",
+    ".....pvwvpd.....",
+    "......pvpd......",
+    ".......pd.......",
+    "................",
+    "......kkkk......",
+    "......kstk......",
+    "......kspk......",
+    "......kstk......",
+    ".....kkspkk.....",
+    ".....ksstttk....",
+    "....ksssttttk...",
+    "....kkkkkkkkk...",
+    "................",
+  ],
+  [
+    ".......ww.......",
+    "......wvvw......",
+    ".....wvwwvw.....",
+    ".....vwwwvp.....",
+    "......vwvp......",
+    ".......vp.......",
+    "................",
+    "......kkkk......",
+    "......kstk......",
+    "......kvtk......",
+    "......kstk......",
+    ".....kkspkk.....",
+    ".....ksstttk....",
+    "....ksssttttk...",
+    "....kkkkkkkkk...",
+    "................",
+  ],
+];
+
 const canvasCache = new Map();
 const urlCache = new Map();
 
@@ -213,6 +310,14 @@ export function getStatusIconCanvas(statusId) {
   if (!spec || typeof document === "undefined") return null;
   if (!canvasCache.has(statusId)) canvasCache.set(statusId, drawIcon(spec));
   return canvasCache.get(statusId);
+}
+
+// The spire's map sprite for animation frame 0 or 1 (scale it up with smoothing off).
+export function getSpireCanvas(frame = 0) {
+  if (typeof document === "undefined") return null;
+  const key = `spire:${frame % SPIRE_FRAMES.length}`;
+  if (!canvasCache.has(key)) canvasCache.set(key, drawIcon({ palette: SPIRE_PALETTE, grid: SPIRE_FRAMES[frame % SPIRE_FRAMES.length] }));
+  return canvasCache.get(key);
 }
 
 // A data URL for <img> tags in the HUD.

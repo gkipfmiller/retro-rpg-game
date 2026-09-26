@@ -269,17 +269,26 @@ Starting kit:
 - Healing Potion
 - Tome of Magic Missile
 - Magic Missile
+- Arcane Spark (free cantrip, hotbar slot 2)
 - Arcane Shield
 
 Implemented Wizard build traits:
 - class-level spell damage bonus
 - class-level flat spell power bonus
 - spell damage scaling
-- spell accuracy scaling
 - longer control effects
 - free utility casting at encounter start
-- mana-based defensive scaling
 - bonus spell damage against controlled or high/low-health targets
+
+Skill tree branches (each teaches or upgrades a spell; Control and Insight holds its two spells deeper, as they're its power spikes):
+- Elemental Power: Empowered Casting (+10% spell damage), **Fireball** (learn), Elemental Surge, Arcane Overflow, Master Evocation
+- Mystic Ward: Arcane Reserves (+10 max mana), **Mana Barrier** (Arcane Shield upgrade), Steady Mind, Reactive Ward, Archmage's Barrier
+- Control and Insight: Lingering Hex, **Frost Nova** (learn), Frailty Curse, **Summon Spire** (learn), Battlefield Savant
+
+Skill-granted spells:
+- a skill with `effect.grantSpell` teaches that spell when unlocked and puts it on the first free hotbar slot
+- these spells come only from the skill tree, never from tomes
+- loading a save re-syncs granted spells, so older saves that had the replaced skills (Focused Arcana, Mana Shielding, Arcane Sight, Blink Adept) get the new spells in their place
 
 ### Ranger
 
@@ -395,8 +404,33 @@ Player actions:
 - Magic Missile
   - reliable low-cost ranged damage
 
+- Arcane Spark (starting spell)
+  - free cantrip: 0 mana, range 3, 2-4 damage
+  - gains the percentage spell-damage bonus but not flat spell power, the first-spell bonus, spell enchantments, or mana refunds
+  - never counts toward Sage's Echo or Arcane Overflow
+  - the Sorceress's fallback when her mana runs dry, instead of staff melee
+
 - Arcane Shield
-  - defensive utility spell
+  - defensive utility spell: +2 defense for 3 turns
+  - with Mana Barrier (Mystic Ward tier 2) it instead absorbs the next 10 + level damage over 4 turns; a hit it fully absorbs carries no side effects
+
+- Fireball (Elemental Power tier 2)
+  - 6 mana, range 4, aimed at the nearest visible enemy
+  - 7-11 spell damage to every enemy in the 3x3 area around the target (each rolls its own hit), never the caster
+  - everything hit burns for 2 damage a turn for 3 turns
+
+- Frost Nova (Control and Insight tier 2)
+  - utility spell, 5 mana (Steady Mind and Battlefield Savant apply)
+  - every enemy in the 8 tiles around the Sorceress is Frozen for 2 turns: it doesn't answer the cast, then stays frozen through her next 2 actions (3 enemy turns lost in all)
+  - frozen enemies are also Chilled, and the chill outlasts the freeze by a turn so Ice Shatter can still use it
+  - taking damage doesn't break the freeze
+  - bosses are only Chilled; Lingering Hex extends the chill, never the freeze
+
+- Summon Spire (Control and Insight tier 4)
+  - 7 mana; raises an Arcane Spire on the open tile next to the Sorceress that can shoot the most enemies
+  - the spire fires one bolt at the nearest enemy it can see within 4 tiles at the start of each of her turns, 5 turns in all, then crumbles
+  - bolt damage: Magic Missile's 4-7 roll plus half her flat spell power, scaled by her spell damage %; hit chance 90% minus evasion
+  - one spire at a time (recasting replaces it); it blocks enemies like a pillar and enemies ignore it; walking into it swaps places
 
 - Frost Shard
   - stronger ranged damage
@@ -433,28 +467,67 @@ Player actions:
   - gains range and armor penetration through skill investment
 
 - Evasive Step
-  - leaps 2 tiles away from the nearest threat
+  - leaps 3 tiles away from the nearest threat
   - gains range through skill investment
 
-## Projectile Spell Presentation
+## Spell Presentation
 
-Projectile-style spells now use visible travel animations instead of resolving invisibly.
+All spell visuals live in `src/spellFx.js` (cosmetic only; nothing there touches game rules). The renderer owns one `SpellFx` and forwards `queueProjectile`, `queueEffect`, and a per-frame draw to it.
 
-Implemented projectile animation coverage:
-- Magic Missile
-- Frost Shard
-- Arcane Burst
-- Cultist Shadow Bolt
-- Shaman Hexfire
-- Infernal Imp Cinder Hex
-- Abyssal Bolt
-- arrows (ranged weapon attacks, Aimed Shot, Phantom Quiver)
+Projectiles (each spell and enemy spell has its own look):
+- orbs with a bright core and additive glow: Magic Missile, Spire bolts, Arcane Burst and Abyssal Bolt (both pulse), Arcane Pulse, Cultist Shadow Bolt (dark core, smoke trail)
+- Arcane Spark: a small spinning star
+- ice shards oriented along their flight: Frost Shard, Ice Shatter
+- Chain Bolt: jagged, flickering lightning that lingers briefly after it lands
+- rotating hex runes: Frailty Hex, Shaman Hexfire
+- flickering layered fire: Fireball, Infernal Imp Cinder Hex, Fireball splash
+- arrows (Ranger shots): see Ranger Presentation below
+- in-flight particle trails (sparkles, frost, embers, smoke, wisps), and each projectile lights the dark around it while the lighting setting is on
 
-Presentation rules:
-- projectiles travel across the grid
-- travel duration is intentionally slowed enough to read
-- spell misses still show the projectile
-- projectile colors differ by spell type
+Impacts and area effects:
+- impact bursts per spell: ring and sparkles, ice shards, a white shatter, lightning sparks, an arcane blast, a hex rune on the ground
+- Fireball: after the ball lands, a white-hot explosion fills the 3x3, splash embers fly to each other enemy caught, and smoke rises from the rim
+- Frost Nova: an expanding ring of ice spikes; frozen enemies stay tinted icy blue while the freeze lasts
+- Arcane Pulse: an expanding violet ring
+- Blink: sparkles implode at the start and burst at the destination
+- Summon Spire: a shaft of violet light where the spire rises
+- Arcane Shield / Mana Barrier: the bubble pops into place
+- a brief casting glyph under the caster for every spell (player and enemy)
+
+Timing rules:
+- the game resolves a turn instantly, so projectiles, impacts, explosions, and damage numbers follow their target to wherever it stands when the hit is drawn
+- damage numbers appear when the projectile lands, not when it leaves; chained and splash hits wait for the first hit
+- numbers landing on the same actor together are staggered so they never merge (for example "4" and "1" never read as "41")
+
+Status auras on actors:
+- Burning: flames at the feet and rising embers
+- Frozen: an icy tint over the sprite
+- Chilled: drifting frost motes
+- Poisoned: rising green bubbles
+- Hexed: a slowly turning rune circle underfoot
+- Arcane Shield and Mana Barrier: a shimmering bubble (the barrier glows brighter the more it can still absorb)
+
+Reduced motion (the OS setting) keeps projectiles and rings but cuts particles to a third and stops flicker and spin.
+
+## Ranger Presentation
+
+Also in `src/spellFx.js`; cosmetic only.
+
+- normal shots arc toward the target with a shadow on the floor, and land with a few wood splinters; misses fly and vanish without an impact
+- Aimed Shot: a red sight line and a closing reticle settle on the target for about 140 ms, then a longer, glowing arrow flies flat and fast with speed lines and punches through (a flash and sparks carrying past the target)
+  - Piercing Shot: the target's armour cracks (white fractures and grey plates)
+  - Windshot: pale gusts stream off the arrow
+- special bows tint the arrowhead and fletching and add a trail and impact: Venomstrike (green drips, green splat), Galeforce (gusts), Voidpiercer (violet void smoke, dark burst), Stormstring (gold sparks), Hawk (drifting feathers)
+- Phantom Quiver: the bonus arrow is a translucent cyan ghost with two echoes behind it
+- a shot that poisons (Venomtip, Venomstrike) bursts into a green splash when it lands
+- Evasive Step: the Ranger leaps in an arc with two afterimages and dust at take-off and landing; with Shadow Step the dust becomes violet smoke and the afterimages darken
+- target marker: while a bow is equipped, pulsing corner brackets mark the enemy F will shoot (the nearest visible enemy in range; disguised mimics are never targeted)
+- Deadeye: a turning red crosshair marks each enemy at or below 35% HP (where Deadeye's bonus applies)
+- Quick Nock: after a kill, a glowing arrow hovers at the Ranger's side until the momentum is spent
+
+Attack nudges (all classes and enemies):
+- melee attackers lunge toward their target; archers and casters recoil slightly
+- enemies act a beat (about 130 ms) after the player, so their lunges, bolts, and damage numbers read as a response
 
 ## Status Effects
 
@@ -473,6 +546,12 @@ Implemented statuses:
   - for the player, waiting burns through the status faster than taking normal actions
 - Arcane Shield
   - temporary defensive ward
+- Mana Barrier
+  - absorbs incoming damage until it breaks or its 4 turns run out
+- Burning
+  - enemies only (from Fireball): 2 damage per turn; a kill counts as a player kill
+- Frozen
+  - enemies only (from Frost Nova): takes no turns while it lasts; bosses are immune
 
 Status UX:
 - status badges in HUD and target panel
@@ -578,6 +657,7 @@ Current drop direction:
 - potions are intentionally easier to find than gear
 - gear is meant to feel more meaningful and less constant
 - enemy drops, mimic drops, chests, vaults, and boss rewards all use class-specific pools for each of the three classes
+- mimics: from Floor 3, each treasure chest has a 5% chance to be a mimic; its HP grows 8% per floor past Floor 3 and its damage by +1 per 6 floors past Floor 3 (5-9 on Floor 3, 7-11 on Floor 15, 9-13 on Floor 27); it always drops one class-suited item from a depth-tiered pool, has a 35% chance of a potion, and drops 12-20 gold plus a depth bonus
 
 Implemented vault reward layer:
 - one locked treasure vault exists somewhere in Floors 1-9

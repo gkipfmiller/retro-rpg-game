@@ -18,6 +18,9 @@ const XP_THRESHOLDS = {
   10: 7000,
 };
 
+// Enemies act a beat after the player, so their lunges and bolts read as a response.
+const ENEMY_BEAT_MS = 130;
+
 function occupiedByEnemy(floor, x, y) {
   return floor.enemies.find((enemy) => enemy.x === x && enemy.y === y && !enemy.disguised);
 }
@@ -676,6 +679,11 @@ export class Game {
       this.state.run = payload.run;
       // Saves from before the hotbar grew to six slots have three.
       this.state.run.player.quickSlots = this.padQuickSlots(this.state.run.player.quickSlots);
+      // Saves from before spells were granted by skills (or before Arcane Spark) learn them now.
+      this.syncSkillSpells(this.state.run.player);
+      for (const abilityId of CLASSES[this.state.run.player.classId].abilities) {
+        if (!this.state.run.player.learnedSpells.includes(abilityId)) this.state.run.player.learnedSpells.push(abilityId);
+      }
       this.state.logs = normalizeLogs(payload.logs ?? []);
       this.state.mode = "in_game";
       this.state.ui = { overlay: null, selectedId: null, npcDialog: null };
@@ -947,7 +955,8 @@ export class Game {
     }
 
     for (const bonus of skillBonuses) {
-      stats[bonus.stat] = (stats[bonus.stat] ?? 0) + bonus.value;
+      // Spell-granting skills have no stat; syncSkillSpells teaches their spell.
+      if (bonus.stat) stats[bonus.stat] = (stats[bonus.stat] ?? 0) + bonus.value;
     }
 
     switch (player.boonId) {
@@ -995,6 +1004,21 @@ export class Game {
     return handsId ? ITEMS[handsId] : null;
   }
 
+  // Skills that teach a spell: make sure each unlocked one is learned and, when newly learned, put on
+  // the first free hotbar slot. Also run on load, so older saves pick up spells their skills now grant.
+  syncSkillSpells(player = this.state.run.player) {
+    const learned = [];
+    for (const skillId of player.unlockedSkills) {
+      const spellId = this.findSkill(skillId)?.effect?.grantSpell;
+      if (!spellId || player.learnedSpells.includes(spellId)) continue;
+      player.learnedSpells.push(spellId);
+      const freeSlot = player.quickSlots.findIndex((entry) => !entry);
+      if (freeSlot >= 0 && !player.quickSlots.includes(spellId)) player.quickSlots[freeSlot] = spellId;
+      learned.push(spellId);
+    }
+    return learned;
+  }
+
   findSkill(skillId) {
     for (const branch of SKILL_TREES[this.state.run.player.classId]) {
       const skill = branch.skills.find((entry) => entry.id === skillId);
@@ -1034,6 +1058,11 @@ export class Game {
         lines.push(`Status: ${intel.statuses.map((status) => `${STATUS_DEFINITIONS[status.id]?.name ?? status.id}${status.turns ? ` (${status.turns})` : ""}`).join(", ")}`);
       }
       sections.push(lines.join("\n"));
+    }
+
+    const spire = tile.visible ? this.getSpire(currentFloor) : null;
+    if (spire && spire.x === x && spire.y === y) {
+      sections.push(`Arcane Spire\nFires at the nearest foe within ${SPELLS.summon_spire.spire.range}. ${spire.turnsLeft} turn${spire.turnsLeft === 1 ? "" : "s"} left.\nWalk into it to swap places.`);
     }
 
     if (tile.stairs) {
@@ -1138,14 +1167,17 @@ export class Game {
     const phaseAccuracyBonus = enemy.templateId === "abyssal_overlord" && enemy.phaseTwo ? 4 : 0;
     const phaseDefenseBonus = enemy.templateId === "abyssal_overlord" && enemy.phaseTwo ? 2 : 0;
     const phaseDamageBonus = enemy.templateId === "abyssal_overlord" && enemy.phaseTwo ? 2 : 0;
+    // Mimics hit harder the deeper they're found: +1 damage per 6 floors past Floor 3 (their HP already
+    // scales in the generator), so a deep mimic stays a real threat rather than free loot.
+    const depthDamageBonus = enemy.templateId === "mimic" ? Math.max(0, Math.floor(((enemy.floorNumber ?? 3) - 3) / 6)) : 0;
     return {
       ...template,
       accuracy: template.accuracy + (enemy.elite ? 3 : 0) + phaseAccuracyBonus - (chilled ? 6 : 0),
       defense: Math.max(0, template.defense + (enemy.elite ? 1 : 0) + phaseDefenseBonus - sundered - hexedPenalty),
       damage: weakened
-        ? [Math.max(1, (template.damage[0] + eliteDamageBonus + phaseDamageBonus) - 2), Math.max(1, (template.damage[1] + eliteDamageBonus + phaseDamageBonus) - 2)]
-        : enemy.elite || phaseDamageBonus
-          ? [template.damage[0] + eliteDamageBonus + phaseDamageBonus, template.damage[1] + eliteDamageBonus + phaseDamageBonus]
+        ? [Math.max(1, (template.damage[0] + eliteDamageBonus + phaseDamageBonus + depthDamageBonus) - 2), Math.max(1, (template.damage[1] + eliteDamageBonus + phaseDamageBonus + depthDamageBonus) - 2)]
+        : enemy.elite || phaseDamageBonus || depthDamageBonus
+          ? [template.damage[0] + eliteDamageBonus + phaseDamageBonus + depthDamageBonus, template.damage[1] + eliteDamageBonus + phaseDamageBonus + depthDamageBonus]
           : template.damage,
       range: (template.range ?? 1) + (enemy.elite && template.behavior === "caster" ? 1 : 0) + (enemy.templateId === "abyssal_overlord" && enemy.phaseTwo ? 1 : 0),
       xp: template.xp + (enemy.elite ? Math.floor(template.xp * 0.45) : 0),
@@ -1171,7 +1203,7 @@ export class Game {
     const weaponRoll = weapon?.damage ?? [1, 2];
 
     const spellId = [...player.quickSlots, ...player.learnedSpells]
-      .find((entryId) => SPELLS[entryId]?.type === "spell" && SPELLS[entryId].damage);
+      .find((entryId) => SPELLS[entryId]?.type === "spell" && SPELLS[entryId].damage && !SPELLS[entryId].cantrip);
     const spell = spellId ? SPELLS[spellId] : null;
     const spellEnchant = weapon?.enchantment?.type === "spellBonusDamage" ? weapon.enchantment.value : 0;
     const spellHit = (roll) => Math.max(1, Math.floor((roll + derived.spellBonus) * (1 + derived.spellDamagePct / 100)) - stats.defense) + spellEnchant;
@@ -1329,6 +1361,15 @@ export class Game {
     if (enemy) {
       this.performPlayerAttack(enemy, { type: "melee" });
       return;
+    }
+
+    // Walking into the spire swaps places with it, so it can never wall you into a corridor.
+    const spire = this.getSpire();
+    if (spire && spire.x === targetX && spire.y === targetY) {
+      run.currentFloor.map[spire.y][spire.x].occupant = null;
+      spire.x = run.player.x;
+      spire.y = run.player.y;
+      run.currentFloor.map[spire.y][spire.x].occupant = spire.id;
     }
 
     const sage = run.currentFloor.sage;
@@ -1593,7 +1634,11 @@ export class Game {
     const spell = SPELLS[entryId];
     if (!spell) return "";
     const parts = [spell.name, spell.description];
-    if (typeof spell.cost === "number") parts.push(`Cost: ${spell.cost} mana`);
+    const player = this.state.run?.player;
+    const barrier = entryId === "arcane_shield" && player ? this.getDerivedStats(player).manaBarrier : 0;
+    if (barrier) parts[1] = `Mana Barrier: absorbs the next ${barrier + player.level} damage over 4 turns.`;
+    if (spell.cantrip) parts.push("Free. Gains your spell damage % but not flat spell power.");
+    if (typeof spell.cost === "number" && !spell.cantrip) parts.push(`Cost: ${spell.cost} mana`);
     if (typeof spell.range === "number") parts.push(`Range: ${spell.range === 0 ? "Self" : spell.range}`);
     if (spell.damage) parts.push(`Damage: ${spell.damage[0]}-${spell.damage[1]}`);
     return parts.join("\n");
@@ -1869,7 +1914,9 @@ export class Game {
   }
 
   performPlayerAttack(enemy, mode, options = {}) {
-    const { endTurn = true, damageMultiplier = 1, projectileFrom = null } = options;
+    // projectileDelay/projectileKind are cosmetic: a splash or chained hit can wait for the first
+    // projectile to land, and use its own look.
+    const { endTurn = true, damageMultiplier = 1, projectileFrom = null, projectileFromId = null, projectileDelay = 0, projectileKind = null } = options;
     const player = this.state.run.player;
     const derived = this.getPlayerCombatSnapshot();
     const weapon = ITEMS[player.equipment.weapon];
@@ -1877,12 +1924,32 @@ export class Game {
     const rng = createRng(hashSeed(this.state.run.runSeed, this.state.run.turn, enemy.id, mode.type));
     const enchantment = weapon?.enchantment ?? null;
     const hitChance = clamp((mode.type === "spell" ? 90 + (derived.spellAccuracyFlat ?? 0) : derived.accuracy) - (enemyStats.evasion ?? 0), 10, 95);
+    // Cosmetic: how the shot looks (Aimed Shot flies straight and fast; special bows have their own trails).
+    const ranged = mode.type === "ranged" || mode.type === "ranged_ability";
+    const arrowKind = mode.abilityId === "aimed_shot" ? "aimed_arrow" : "arrow";
+    const arrowLook = {
+      kind: arrowKind,
+      from: projectileFrom ?? { x: player.x, y: player.y },
+      to: { x: enemy.x, y: enemy.y },
+      targetId: enemy.id,
+      delay: projectileDelay,
+      bow: weapon?.id ?? null,
+      piercing: mode.abilityId === "aimed_shot" && Boolean(derived.aimedShotArmorPen),
+      windshot: mode.abilityId === "aimed_shot" && Boolean(derived.aimedShotRange),
+    };
+    // Attackers lean into melee and recoil from a shot (spells have their casting glyph instead).
+    if (mode.type === "melee" || mode.type === "ability") this.renderer?.queueNudge({ id: "player", toward: enemy, kind: "lunge" });
+    if (ranged) this.renderer?.queueNudge({ id: "player", toward: enemy, kind: "recoil", delay: projectileDelay });
     if (!rng.chance(hitChance / 100)) {
+      if (ranged) this.renderer?.queueProjectile({ ...arrowLook, missed: true });
       if (mode.type === "spell") {
         this.renderer?.queueProjectile({
-          kind: mode.spellId,
+          kind: projectileKind ?? mode.spellId,
           from: projectileFrom ?? { x: player.x, y: player.y },
           to: { x: enemy.x, y: enemy.y },
+          delay: projectileDelay,
+          targetId: enemy.id,
+          fromId: projectileFromId,
         });
       }
       this.soundPlayer?.play('miss');
@@ -1910,11 +1977,7 @@ export class Game {
       }
     } else if (mode.type === "ranged" || mode.type === "ranged_ability") {
       this.soundPlayer?.play('ranged_attack');
-      this.renderer?.queueProjectile({
-        kind: "arrow",
-        from: projectileFrom ?? { x: player.x, y: player.y },
-        to: { x: enemy.x, y: enemy.y },
-      });
+      this.renderer?.queueProjectile(arrowLook);
       const momentumBonus = player.turnFlags.killMomentum ?? 0;
       const boonBattleTrance = player.turnFlags.boonBattleTrance ?? 0;
       const movedIntoPressureBonus = player.lastAction === "move" && derived.advanceDamagePct ? derived.advanceDamagePct / 100 : 0;
@@ -1935,18 +1998,24 @@ export class Game {
         if (rng.chance(Math.min(poisonChance, 0.5))) {
           const turns = enchantment?.type === "rangedPoisonProc" ? enchantment.turns : 3;
           this.upsertStatus(enemy, { id: "poisoned", turns, value: 1 });
+          this.renderer?.queueEffect({ kind: "poisonSplash", x: enemy.x, y: enemy.y, targetId: enemy.id, delay: projectileDelay + (this.renderer?.getProjectileDuration?.(arrowKind) ?? 0) });
           this.log(`${enemy.name} is poisoned.`);
         }
       }
     } else if (mode.type === "spell") {
       const spell = SPELLS[mode.spellId];
       this.renderer?.queueProjectile({
-        kind: mode.spellId,
+        kind: projectileKind ?? mode.spellId,
         from: projectileFrom ?? { x: player.x, y: player.y },
         to: { x: enemy.x, y: enemy.y },
+        delay: projectileDelay,
+        targetId: enemy.id,
+        fromId: projectileFromId,
       });
-      const firstSpellBonus = !enemy.firstSpellHitTaken && derived.firstSpellPct ? derived.firstSpellPct / 100 : 0;
-      const base = rng.int(spell.damage[0], spell.damage[1]) + derived.spellBonus + (player.turnFlags.boonBattleTrance ?? 0);
+      // Cantrips (Arcane Spark) skip flat spell power, the first-spell bonus, and spell enchantments.
+      const firstSpellBonus = !spell.cantrip && !enemy.firstSpellHitTaken && derived.firstSpellPct ? derived.firstSpellPct / 100 : 0;
+      const flatPower = spell.cantrip ? 0 : derived.spellBonus;
+      const base = rng.int(spell.damage[0], spell.damage[1]) + flatPower + (player.turnFlags.boonBattleTrance ?? 0);
       damage = Math.max(1, Math.floor(base * (1 + derived.spellDamagePct / 100 + firstSpellBonus)) - enemyStats.defense);
       if (derived.evocationBonus && (enemy.hp / enemy.maxHp >= 0.75 || enemy.hp / enemy.maxHp <= 0.25)) {
         damage += Math.floor(damage * (derived.evocationBonus / 100));
@@ -1957,10 +2026,10 @@ export class Game {
       if (mode.spellId === "ice_shatter" && this.hasStatus(enemy, "chilled")) {
         damage += 4 + this.getControlDurationBonus(player);
       }
-      if (enchantment?.type === "spellBonusDamage") {
+      if (enchantment?.type === "spellBonusDamage" && !spell.cantrip) {
         damage += enchantment.value;
       }
-      enemy.firstSpellHitTaken = true;
+      if (!spell.cantrip) enemy.firstSpellHitTaken = true;
     }
 
     const critChance = clamp(5 + (derived.critBonus ?? 0), 5, 45);
@@ -1975,7 +2044,10 @@ export class Game {
     // A guard struck from outside its room comes for you instead of standing there.
     this.wakeGuard(enemy);
     this.soundPlayer?.play('player_hit_enemy');
-    this.renderer?.queueDamagePopup({ x: enemy.x, y: enemy.y, damage, type: "enemy", critical: criticalHit });
+    // The number appears when the projectile lands, not when it leaves.
+    const travelKind = mode.type === "spell" ? (projectileKind ?? mode.spellId) : ranged ? arrowKind : null;
+    const popupDelay = travelKind ? projectileDelay + (this.renderer?.getProjectileDuration?.(travelKind) ?? 0) : 0;
+    this.renderer?.queueDamagePopup({ x: enemy.x, y: enemy.y, damage, type: "enemy", critical: criticalHit, delay: popupDelay, targetId: enemy.id });
     this.log(`You ${criticalHit ? "critically strike" : "hit"} ${enemy.name} for ${damage} damage.`);
     if (mode.abilityId === "guard_break") {
       this.upsertStatus(enemy, { id: "sundered", turns: 3, value: 2 });
@@ -1984,6 +2056,10 @@ export class Game {
     if (mode.spellId === "frost_shard") {
       this.upsertStatus(enemy, { id: "chilled", turns: 2 + this.getControlDurationBonus(player), value: 1 });
       this.log(`${enemy.name} is chilled.`);
+    }
+    if (mode.spellId === "fireball" && enemy.hp > 0) {
+      const { burn } = SPELLS.fireball;
+      this.upsertStatus(enemy, { id: "burning", turns: burn.turns, value: burn.value });
     }
     if (mode.spellId === "arcane_burst") {
       this.upsertStatus(enemy, { id: "weakened", turns: 2 + this.getControlDurationBonus(player), value: 1 });
@@ -2011,7 +2087,7 @@ export class Game {
       this.upsertStatus(enemy, { id: "sundered", turns: enchantment.turns, value: enchantment.value });
       this.log(`${weapon.name} tears through ${enemy.name}'s guard.`);
     }
-    if (mode.type === "spell" && enchantment?.type === "manaRefundChance" && rng.chance(enchantment.chance)) {
+    if (mode.type === "spell" && !SPELLS[mode.spellId]?.cantrip && enchantment?.type === "manaRefundChance" && rng.chance(enchantment.chance)) {
       player.mana = Math.min(derived.maxMana, player.mana + enchantment.value);
       this.log(`${weapon.name} refunds ${enchantment.value} mana.`);
     }
@@ -2041,8 +2117,8 @@ export class Game {
           const phantomDamage = Math.max(1, Math.floor(damage * 0.5));
           phantomTarget.hp -= phantomDamage;
           this.recordDamage("dealt", phantomDamage);
-          this.renderer?.queueProjectile({ kind: "arrow", from: { x: player.x, y: player.y }, to: { x: phantomTarget.x, y: phantomTarget.y } });
-          this.renderer?.queueDamagePopup({ x: phantomTarget.x, y: phantomTarget.y, damage: phantomDamage, type: "enemy" });
+          this.renderer?.queueProjectile({ kind: "phantom_arrow", from: { x: player.x, y: player.y }, to: { x: phantomTarget.x, y: phantomTarget.y }, targetId: phantomTarget.id, delay: 90 });
+          this.renderer?.queueDamagePopup({ x: phantomTarget.x, y: phantomTarget.y, damage: phantomDamage, type: "enemy", targetId: phantomTarget.id, delay: 90 + (this.renderer?.getProjectileDuration?.("phantom_arrow") ?? 0) });
           this.log(`A phantom arrow strikes ${phantomTarget.name} for ${phantomDamage} damage.`);
           if (phantomTarget.hp <= 0) this.killEnemy(phantomTarget);
         }
@@ -2164,8 +2240,8 @@ export class Game {
     const derived = this.getPlayerCombatSnapshot();
     const spell = SPELLS[spellId];
     const sageEchoCount = player.boonState?.sageEchoCount ?? 0;
-    const sageEchoFree = spell.type === "spell" && player.boonId === "sages_echo" && (sageEchoCount + 1) % 3 === 0;
-    const utilitySpell = spellId === "arcane_shield" || spellId === "blink";
+    const sageEchoFree = spell.type === "spell" && !spell.cantrip && player.boonId === "sages_echo" && (sageEchoCount + 1) % 3 === 0;
+    const utilitySpell = spellId === "arcane_shield" || spellId === "blink" || Boolean(spell.utility);
     const utilityDiscount = utilitySpell ? derived.utilityDiscount : 0;
     const freeUtility = utilitySpell && derived.freeUtility && !player.turnFlags.freeUtilityUsed;
     const free = freeUtility || sageEchoFree;
@@ -2203,10 +2279,72 @@ export class Game {
       player.lastAction = "spell";
       player.mana -= cost;
       if (freeUtility) player.turnFlags.freeUtilityUsed = true;
-      player.statuses = player.statuses.filter((status) => status.id !== "arcane_shield");
-      player.statuses.push({ id: "arcane_shield", turns: 3, fresh: true });
+      player.statuses = player.statuses.filter((status) => status.id !== "arcane_shield" && status.id !== "mana_barrier");
+      // With the Mana Barrier skill the shield soaks up damage instead of adding defense.
+      if (derived.manaBarrier) {
+        const absorb = derived.manaBarrier + player.level;
+        player.statuses.push({ id: "mana_barrier", turns: 4, value: absorb, fresh: true });
+        this.soundPlayer?.play("mana_barrier");
+        this.log(`A Mana Barrier surrounds you (absorbs ${absorb}).`);
+      } else {
+        player.statuses.push({ id: "arcane_shield", turns: 3, fresh: true });
+        this.log("Arcane Shield surrounds you.");
+      }
+      this.renderer?.queueEffect({ kind: "shieldUp", x: player.x, y: player.y, barrier: Boolean(derived.manaBarrier) });
       if (player.boonId === "sages_echo") player.boonState.sageEchoCount = sageEchoCount + 1;
-      this.log("Arcane Shield surrounds you.");
+      this.endPlayerTurn();
+      return;
+    }
+
+    if (spellId === "frost_nova") {
+      const targets = this.state.run.currentFloor.enemies
+        .filter((enemy) => !enemy.disguised && Math.max(Math.abs(enemy.x - player.x), Math.abs(enemy.y - player.y)) <= 1);
+      if (!targets.length) {
+        this.log("No enemies close enough to freeze.");
+        return;
+      }
+      player.lastAction = "spell";
+      player.mana -= cost;
+      if (freeUtility) player.turnFlags.freeUtilityUsed = true;
+      if (player.boonId === "sages_echo") player.boonState.sageEchoCount = sageEchoCount + 1;
+      this.soundPlayer?.play("frost_nova");
+      this.log("Frost Nova bursts outward.");
+      this.renderer?.queueEffect({ kind: "nova", x: player.x, y: player.y });
+      const { freezeTurns } = spell;
+      for (const enemy of targets) {
+        // The chill outlasts the freeze by a turn, so Ice Shatter can still cash it in.
+        this.upsertStatus(enemy, { id: "chilled", turns: freezeTurns + 1 + this.getControlDurationBonus(player), value: 1 });
+        if (ENEMIES[enemy.templateId]?.behavior === "boss") {
+          this.log(`${enemy.name} shrugs off the freeze, but is chilled.`);
+          continue;
+        }
+        // "Fresh", so it survives the end of this turn: the enemy skips its reply to the nova, then
+        // stays frozen through the player's next freezeTurns actions.
+        this.upsertStatus(enemy, { id: "frozen", turns: freezeTurns, value: 1 });
+        this.wakeGuard(enemy);
+        this.log(`${enemy.name} is frozen solid for ${freezeTurns} turns.`);
+      }
+      this.endPlayerTurn();
+      return;
+    }
+
+    if (spellId === "summon_spire") {
+      const floor = this.state.run.currentFloor;
+      const spot = this.findSpireSpot();
+      if (!spot) {
+        this.log("There's no room to raise a spire here.");
+        return;
+      }
+      this.dismissSpire();
+      player.lastAction = "spell";
+      player.mana -= cost;
+      if (player.boonId === "sages_echo") player.boonState.sageEchoCount = sageEchoCount + 1;
+      const spire = { id: `spire-${this.state.run.turn}`, kind: "spire", x: spot.x, y: spot.y, turnsLeft: spell.spire.turns };
+      floor.allies = [...(floor.allies ?? []), spire];
+      floor.map[spot.y][spot.x].occupant = spire.id;
+      this.soundPlayer?.play("summon_spire");
+      this.renderer?.queueEffect({ kind: "column", x: spot.x, y: spot.y });
+      this.log("An arcane spire rises from the stone.");
       this.endPlayerTurn();
       return;
     }
@@ -2235,6 +2373,7 @@ export class Game {
       player.mana -= cost;
       if (freeUtility) player.turnFlags.freeUtilityUsed = true;
       if (spell.type === "spell" && player.boonId === "sages_echo") player.boonState.sageEchoCount = sageEchoCount + 1;
+      this.renderer?.queueEffect({ kind: "blink", from: { x: player.x, y: player.y }, x: destination.x, y: destination.y });
       player.x = destination.x;
       player.y = destination.y;
       this.log("You blink through the dark.");
@@ -2258,7 +2397,10 @@ export class Game {
       }
       player.mana -= cost;
       player.lastAction = "attack";
-      this.performPlayerAttack(target, { type: "ranged_ability", abilityId: "aimed_shot" });
+      // A red aiming line settles on the target for a moment before the arrow looses.
+      const aimMs = 140;
+      this.renderer?.queueEffect({ kind: "aimLine", from: { x: player.x, y: player.y }, x: target.x, y: target.y, targetId: target.id, duration: aimMs + 60 });
+      this.performPlayerAttack(target, { type: "ranged_ability", abilityId: "aimed_shot" }, { projectileDelay: aimMs });
       return;
     }
 
@@ -2270,6 +2412,7 @@ export class Game {
       }
       player.mana -= cost;
       player.lastAction = "move";
+      this.renderer?.queueLeap({ from: { x: player.x, y: player.y }, to: destination, shadow: Boolean(derived.evasiveStepRange) });
       player.x = destination.x;
       player.y = destination.y;
       this.log("You leap away from danger.");
@@ -2289,6 +2432,7 @@ export class Game {
       player.mana -= cost;
       if (spell.type === "spell" && player.boonId === "sages_echo") player.boonState.sageEchoCount = sageEchoCount + 1;
       this.log("Arcane force erupts around you.");
+      this.renderer?.queueEffect({ kind: "pulse", x: player.x, y: player.y });
       for (const target of [...targets]) {
         this.performPlayerAttack(target, { type: "spell", spellId }, { endTurn: false });
       }
@@ -2302,12 +2446,29 @@ export class Game {
       return;
     }
 
-    const shouldSpendMana = !(spell.type === "spell" && derived.freeCastChance && createRng(hashSeed(this.state.run.runSeed, this.state.run.turn, spellId)).chance(derived.freeCastChance));
+    const shouldSpendMana = !(spell.type === "spell" && cost > 0 && derived.freeCastChance && createRng(hashSeed(this.state.run.runSeed, this.state.run.turn, spellId)).chance(derived.freeCastChance));
     if (shouldSpendMana) {
       player.mana -= cost;
     }
     player.lastAction = "spell";
-    if (spell.type === "spell" && player.boonId === "sages_echo") player.boonState.sageEchoCount = sageEchoCount + 1;
+    if (spell.type === "spell" && !spell.cantrip && player.boonId === "sages_echo") player.boonState.sageEchoCount = sageEchoCount + 1;
+    if (spellId === "fireball") {
+      const center = { x: target.x, y: target.y };
+      this.soundPlayer?.play("fireball");
+      this.log("A fireball bursts into flame.");
+      const caught = this.state.run.currentFloor.enemies
+        .filter((enemy) => !enemy.disguised && Math.max(Math.abs(enemy.x - center.x), Math.abs(enemy.y - center.y)) <= spell.radius);
+      const travel = this.renderer?.getProjectileDuration?.("fireball") ?? 0;
+      this.renderer?.queueEffect({ kind: "explosion", x: center.x, y: center.y, delay: travel, targetId: target.id });
+      for (const enemy of caught) {
+        // A summon can crumble mid-blast when its master dies first.
+        if (!this.state.run.currentFloor.enemies.includes(enemy)) continue;
+        const splash = enemy === target ? {} : { projectileFrom: center, projectileFromId: target.id, projectileDelay: travel, projectileKind: "fire_splash" };
+        this.performPlayerAttack(enemy, { type: "spell", spellId }, { endTurn: false, ...splash });
+      }
+      this.endPlayerTurn();
+      return;
+    }
     if (spellId === "chain_bolt") {
       const firstTargetPoint = { x: target.x, y: target.y };
       const firstResult = this.performPlayerAttack(target, { type: "spell", spellId }, { endTurn: false });
@@ -2316,7 +2477,7 @@ export class Game {
         .filter((enemy) => manhattan(enemy, firstTargetPoint) <= 2)
         .sort((a, b) => manhattan(a, firstTargetPoint) - manhattan(b, firstTargetPoint))[0];
       if (firstResult?.hit && chainedTarget) {
-        const chainResult = this.performPlayerAttack(chainedTarget, { type: "spell", spellId }, { endTurn: false, damageMultiplier: 0.6, projectileFrom: firstTargetPoint });
+        const chainResult = this.performPlayerAttack(chainedTarget, { type: "spell", spellId }, { endTurn: false, damageMultiplier: 0.6, projectileFrom: firstTargetPoint, projectileFromId: target.id, projectileDelay: this.renderer?.getProjectileDuration?.("chain_bolt") ?? 0 });
         if (chainResult?.hit) {
           this.log(`Chain Bolt arcs into ${chainedTarget.name}.`);
         }
@@ -2325,6 +2486,85 @@ export class Game {
       return;
     }
     this.performPlayerAttack(target, { type: "spell", spellId });
+  }
+
+  // ── Arcane Spire (Summon Spire) ──
+  // The spire stands on a tile next to the Sorceress, blocks it like a pillar, and fires one bolt at
+  // the nearest enemy it can see at the start of each of her turns. Enemies ignore it.
+  getSpire(floor = this.state.run.currentFloor) {
+    return (floor.allies ?? []).find((ally) => ally.kind === "spire") ?? null;
+  }
+
+  isSpireTarget(spire, enemy, range) {
+    return !enemy.disguised && manhattan(spire, enemy) <= range && hasLineOfSight(this.state.run.currentFloor.map, spire, enemy);
+  }
+
+  // The open tile around the player that the most enemies can be shot from, nearest the fight on ties.
+  findSpireSpot() {
+    const { player, currentFloor } = this.state.run;
+    const { range } = SPELLS.summon_spire.spire;
+    const enemies = currentFloor.enemies.filter((enemy) => !enemy.disguised);
+    const spots = [];
+    for (let dy = -1; dy <= 1; dy += 1) {
+      for (let dx = -1; dx <= 1; dx += 1) {
+        const x = player.x + dx;
+        const y = player.y + dy;
+        const tile = currentFloor.map[y]?.[x];
+        if ((!dx && !dy) || !tile || tile.type !== "floor" || tile.occupant || tile.vendor || tile.stairs || tile.chestId || isBlockedFloor(tile)) continue;
+        if (occupiedByEnemy(currentFloor, x, y)) continue;
+        const spot = { x, y };
+        spots.push({
+          ...spot,
+          inRange: enemies.filter((enemy) => this.isSpireTarget(spot, enemy, range)).length,
+          nearest: Math.min(99, ...enemies.map((enemy) => manhattan(spot, enemy))),
+        });
+      }
+    }
+    spots.sort((a, b) => b.inRange - a.inRange || a.nearest - b.nearest);
+    return spots[0] ?? null;
+  }
+
+  dismissSpire(floor = this.state.run.currentFloor) {
+    const spire = this.getSpire(floor);
+    if (!spire) return;
+    if (floor.map[spire.y]?.[spire.x]?.occupant === spire.id) floor.map[spire.y][spire.x].occupant = null;
+    floor.allies = (floor.allies ?? []).filter((ally) => ally !== spire);
+  }
+
+  takeSpireTurn() {
+    const spire = this.getSpire();
+    if (!spire) return;
+    const { player, currentFloor } = this.state.run;
+    const { range, damage: roll } = SPELLS.summon_spire.spire;
+    const target = currentFloor.enemies
+      .filter((enemy) => this.isSpireTarget(spire, enemy, range))
+      .sort((a, b) => manhattan(spire, a) - manhattan(spire, b))[0];
+    if (target) {
+      const derived = this.getPlayerCombatSnapshot();
+      const stats = this.getEnemyCombatStats(target);
+      const rng = createRng(hashSeed(this.state.run.runSeed, this.state.run.turn, target.id, "spire"));
+      this.renderer?.queueProjectile({ kind: "spire_bolt", from: { x: spire.x, y: spire.y }, to: { x: target.x, y: target.y }, targetId: target.id });
+      target.alerted = true;
+      target.lastKnownPlayerPosition ??= { x: player.x, y: player.y };
+      this.wakeGuard(target);
+      if (!rng.chance(clamp(90 - (stats.evasion ?? 0), 10, 95) / 100)) {
+        this.log(`The spire's bolt misses ${target.name}.`);
+      } else {
+        // Magic Missile's roll with half the Sorceress's flat spell power.
+        const base = rng.int(roll[0], roll[1]) + Math.floor(derived.spellBonus / 2);
+        const damage = Math.max(1, Math.floor(base * (1 + derived.spellDamagePct / 100)) - stats.defense);
+        target.hp -= damage;
+        this.recordDamage("dealt", damage);
+        this.renderer?.queueDamagePopup({ x: target.x, y: target.y, damage, type: "enemy", targetId: target.id, delay: this.renderer?.getProjectileDuration?.("spire_bolt") ?? 0 });
+        this.log(`The spire strikes ${target.name} for ${damage} damage.`);
+        if (target.hp <= 0) this.killEnemy(target);
+      }
+    }
+    spire.turnsLeft -= 1;
+    if (spire.turnsLeft <= 0) {
+      this.dismissSpire();
+      this.log("The spire crumbles into motes of light.");
+    }
   }
 
   findBlinkDestination() {
@@ -2353,7 +2593,7 @@ export class Game {
 
   findEvasiveStepDestination() {
     const { player, currentFloor } = this.state.run;
-    const range = 2 + (this.getDerivedStats(player).evasiveStepRange ?? 0);
+    const range = 3 + (this.getDerivedStats(player).evasiveStepRange ?? 0);
     const nearestEnemy = currentFloor.enemies
       .filter((e) => !e.disguised)
       .sort((a, b) => manhattan(player, a) - manhattan(player, b))[0];
@@ -2375,7 +2615,7 @@ export class Game {
   findNearestVisibleEnemy(range) {
     const { player } = this.state.run;
     const visibleEnemies = this.state.run.currentFloor.enemies
-      .filter((enemy) => manhattan(player, enemy) <= range && hasLineOfSight(this.state.run.currentFloor.map, player, enemy))
+      .filter((enemy) => !enemy.disguised && manhattan(player, enemy) <= range && hasLineOfSight(this.state.run.currentFloor.map, player, enemy))
       .sort((a, b) => manhattan(player, a) - manhattan(player, b));
     return visibleEnemies[0] ?? null;
   }
@@ -2383,7 +2623,7 @@ export class Game {
   findVisibleEnemies(range) {
     const { player } = this.state.run;
     return this.state.run.currentFloor.enemies
-      .filter((enemy) => manhattan(player, enemy) <= range && hasLineOfSight(this.state.run.currentFloor.map, player, enemy));
+      .filter((enemy) => !enemy.disguised && manhattan(player, enemy) <= range && hasLineOfSight(this.state.run.currentFloor.map, player, enemy));
   }
 
   findAdjacentEnemies(point, distance = 1) {
@@ -2836,7 +3076,7 @@ export class Game {
       .map((skillId) => this.findSkill(skillId))
       .filter(Boolean)
       .map((skill) => `<li><strong>${skill.name}</strong> <span class="muted">${skill.description}</span></li>`);
-    const activeStatuses = player.statuses.filter((status) => ["hexed", "chilled", "arcane_shield"].includes(status.id));
+    const activeStatuses = player.statuses.filter((status) => ["hexed", "chilled", "arcane_shield", "mana_barrier"].includes(status.id));
 
     this.state.ui.overlay = {
       type: "character",
@@ -3031,6 +3271,10 @@ export class Game {
       player.hp = Math.min(derived.maxHp, player.hp + 2);
       player.mana = Math.min(derived.maxMana, player.mana + 2);
       this.log(`Unlocked ${branch.skills[index].name}.`);
+      for (const spellId of this.syncSkillSpells(player)) {
+        const slot = player.quickSlots.indexOf(spellId);
+        this.log(`You learn ${SPELLS[spellId].name}.${slot >= 0 ? ` It's on hotbar slot ${slot + 1}.` : " Add it to your hotbar from the loadout."}`);
+      }
       this.openSkills();
       return;
     }
@@ -3309,6 +3553,7 @@ export class Game {
     // The player can die during their own action (e.g. a trap); enemies must not act on a corpse.
     if (this.state.run.player.hp <= 0) return;
     this.state.run.turn += 1;
+    this.takeSpireTurn();
     this.takeEnemyTurns();
     if (this.state.run.player.hp <= 0) return;
     this.processStatuses();
@@ -3350,19 +3595,23 @@ export class Game {
       if (!this.state.run.currentFloor.enemies.includes(enemy)) continue;
       const previousStatuses = [...enemy.statuses];
       let poisonDamage = 0;
+      let burnDamage = 0;
       enemy.statuses = enemy.statuses
         .map((status) => {
           if (status.fresh) return { ...status, fresh: false };
           if (status.id === "poisoned") poisonDamage += status.value ?? 1;
+          if (status.id === "burning") burnDamage += status.value ?? 1;
           return { ...status, turns: status.turns - 1 };
         })
         .filter((status) => status.turns > 0);
-      if (poisonDamage > 0) {
-        enemy.hp -= poisonDamage;
-        this.recordDamage("dealt", poisonDamage);
+      if (poisonDamage + burnDamage > 0) {
+        const total = poisonDamage + burnDamage;
+        enemy.hp -= total;
+        this.recordDamage("dealt", total);
         if (this.state.run.currentFloor.map[enemy.y]?.[enemy.x]?.visible) {
-          this.renderer?.queueDamagePopup({ x: enemy.x, y: enemy.y, damage: poisonDamage, type: "enemy" });
-          this.log(`${enemy.name} takes ${poisonDamage} poison damage.`);
+          this.renderer?.queueDamagePopup({ x: enemy.x, y: enemy.y, damage: total, type: "enemy" });
+          if (poisonDamage) this.log(`${enemy.name} takes ${poisonDamage} poison damage.`);
+          if (burnDamage) this.log(`${enemy.name} burns for ${burnDamage} damage.`);
         }
         if (enemy.hp <= 0) {
           this.killEnemy(enemy);
@@ -3401,6 +3650,9 @@ export class Game {
     const { currentFloor, player } = this.state.run;
     for (const enemy of [...currentFloor.enemies]) {
       if (enemy.disguised) continue;
+      // Killed earlier this round (e.g. by the spire), or frozen by Frost Nova.
+      if (!currentFloor.enemies.includes(enemy)) continue;
+      if (this.hasStatus(enemy, "frozen")) continue;
       // Guards (bosses and the final sentries) hold their room until the player steps inside or
       // strikes them. Their attack rhythm starts from that moment, so every fight opens the same way.
       if (enemy.holdRoom && !enemy.roomTriggered) {
@@ -3588,6 +3840,7 @@ export class Game {
 
       const target = enemy.lastKnownPlayerPosition ?? player;
       const occupiedKeys = new Set(currentFloor.enemies.filter((entry) => entry.id !== enemy.id).map((entry) => toKey(entry.x, entry.y)));
+      for (const ally of currentFloor.allies ?? []) occupiedKeys.add(toKey(ally.x, ally.y));
       const path = pathfind(currentFloor.map, enemy, target, occupiedKeys);
       if (path && path.length > 1) {
         currentFloor.map[enemy.y][enemy.x].occupant = null;
@@ -3647,6 +3900,8 @@ export class Game {
     const derived = this.getPlayerCombatSnapshot();
     const rng = createRng(hashSeed(this.state.run.runSeed, this.state.run.turn, enemy.id, mode));
     const hitChance = clamp(template.accuracy - derived.evasion, 10, 95);
+    const enemyCast = mode === "spell" || mode === "abyssal_bolt";
+    this.renderer?.queueNudge({ id: enemy.id, toward: player, kind: enemyCast ? "recoil" : "lunge", delay: ENEMY_BEAT_MS });
     if (mode === "spell" || mode === "abyssal_bolt") {
       const projectileKind = mode === "abyssal_bolt"
         ? "abyssal_bolt"
@@ -3663,6 +3918,10 @@ export class Game {
         kind: projectileKind,
         from: { x: enemy.x, y: enemy.y },
         to: { x: player.x, y: player.y },
+        targetId: "player",
+        fromId: enemy.id,
+        delay: ENEMY_BEAT_MS,
+        castGlyph: true,
       });
     }
     if (!rng.chance(hitChance / 100)) {
@@ -3693,10 +3952,30 @@ export class Game {
       player.floorFlags.archmageBarrierUsed = true;
     }
 
+    // Mana Barrier soaks up damage until it breaks. A hit it fully absorbs carries no side effects.
+    const barrier = player.statuses.find((status) => status.id === "mana_barrier");
+    if (barrier) {
+      const absorbed = Math.min(barrier.value, damage);
+      barrier.value -= absorbed;
+      damage -= absorbed;
+      if (barrier.value <= 0) {
+        player.statuses = player.statuses.filter((status) => status !== barrier);
+        this.log(`Your Mana Barrier absorbs ${absorbed} and shatters.`);
+      } else {
+        this.log(`Your Mana Barrier absorbs ${absorbed} (${barrier.value} left).`);
+      }
+      if (damage <= 0) {
+        this.state.run.currentTargetId = enemy.id;
+        return;
+      }
+    }
+
     player.hp -= damage;
     this.recordDamage("taken", damage);
     this.soundPlayer?.play('enemy_hit_player');
-    this.renderer?.queueDamagePopup({ x: player.x, y: player.y, damage, type: "player" });
+    // Melee numbers land at the peak of the lunge; spell numbers when the bolt arrives.
+    const spellTravel = enemyCast ? ENEMY_BEAT_MS + (this.renderer?.getProjectileDuration?.(mode === "abyssal_bolt" ? "abyssal_bolt" : "shadow_bolt") ?? 0) : ENEMY_BEAT_MS + 70;
+    this.renderer?.queueDamagePopup({ x: player.x, y: player.y, damage, type: "player", delay: spellTravel, targetId: "player" });
     this.triggerRelentlessStep();
     if (mode === "spell" || mode === "abyssal_bolt") {
       const spellName = mode === "abyssal_bolt"
