@@ -525,6 +525,25 @@ Also in `src/spellFx.js`; cosmetic only.
 - Deadeye: a turning red crosshair marks each enemy at or below 35% HP (where Deadeye's bonus applies)
 - Quick Nock: after a kill, a glowing arrow hovers at the Ranger's side until the momentum is spent
 
+## Warrior Presentation
+
+Also in `src/spellFx.js`; cosmetic only.
+
+- melee swings are shaped by the weapon (any class): swords sweep an arc from high to low through the target, axes chop a heavier, narrower arc with wood chips, hammers smash straight down with a dust ring, spears thrust straight through, staves and bows give a small knock
+- enchanted weapons recolour the swing: Flame-Touched Sword and Sunfire Blade burn with embers, Vampire Axe and Soulreaver swing crimson, Sundering Hammer swings stone-grey
+- Power Strike: a glint flares on the blade for about 130 ms (the wind-up), then a larger arc lands with a shockwave ring and sparks carrying through; its damage number appears when the blow lands
+  - Cleaving Strike: the arc sweeps wide, and each enemy caught in the splash gets its own slash mark
+  - Charge: the Warrior visibly dashes in with afterimages and dust, strikes, then settles back
+- Guard Break: a shield bash with a flash, a clang ring, sparks, armour plates chipping off, and fracture lines; Sundered enemies keep faint fracture lines while the status lasts
+- Sundering Hammer's sunder proc cracks the target's armour; Disrupting Strike drains dark wisps downward off the enemy with a small down-chevron
+- life-stealing weapons on a kill: a crimson wisp flows from the fallen foe back into the Warrior
+- Shielded Stance: while guard is up (after waiting), a steel ring underfoot and a raised shield outline
+- Unyielding: an iron sheen sweeps across the Warrior every couple of seconds while the once-a-floor reduction is ready; when it triggers, a guard arc and "BLOCKED" rise over him
+- Juggernaut: at 30% HP or less, a pulsing red outline and rising red heat
+- Warlord's Advance: speed lines trail behind the last step while the after-moving bonus is primed
+- Battle Rhythm: after a kill, a glowing sword hovers at his side until the momentum is spent
+- Executioner: a small red skull bobs over each enemy at or below 35% HP
+
 Attack nudges (all classes and enemies):
 - melee attackers lunge toward their target; archers and casters recoil slightly
 - enemies act a beat (about 130 ms) after the player, so their lunges, bolts, and damage numbers read as a response

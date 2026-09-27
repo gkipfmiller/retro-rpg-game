@@ -20,6 +20,8 @@ const XP_THRESHOLDS = {
 
 // Enemies act a beat after the player, so their lunges and bolts read as a response.
 const ENEMY_BEAT_MS = 130;
+// Power Strike's wind-up glint before the blow lands (cosmetic; the hit resolves at once).
+const POWER_STRIKE_WINDUP_MS = 130;
 
 function occupiedByEnemy(floor, x, y) {
   return floor.enemies.find((enemy) => enemy.x === x && enemy.y === y && !enemy.disguised);
@@ -1938,7 +1940,19 @@ export class Game {
       windshot: mode.abilityId === "aimed_shot" && Boolean(derived.aimedShotRange),
     };
     // Attackers lean into melee and recoil from a shot (spells have their casting glyph instead).
-    if (mode.type === "melee" || mode.type === "ability") this.renderer?.queueNudge({ id: "player", toward: enemy, kind: "lunge" });
+    // Melee: a swing shaped by the weapon. Power Strike winds up first (and with Charge, dashes in);
+    // Guard Break is a shield bash.
+    const powerStrike = mode.abilityId === "power_strike";
+    const meleeDelay = powerStrike ? POWER_STRIKE_WINDUP_MS : 0;
+    if (mode.type === "melee" || mode.type === "ability") {
+      const reach = manhattan(player, enemy);
+      if (powerStrike) this.renderer?.queueEffect({ kind: "glint", x: player.x, y: player.y, from: { x: enemy.x, y: enemy.y } });
+      if (powerStrike && reach > 1) this.renderer?.queueNudge({ id: "player", toward: enemy, kind: "dash", distance: reach - 1, delay: meleeDelay - 60 });
+      else this.renderer?.queueNudge({ id: "player", toward: enemy, kind: "lunge", delay: meleeDelay });
+      const swing = { x: enemy.x, y: enemy.y, targetId: enemy.id, from: { x: player.x, y: player.y }, weapon: weapon?.id ?? null, delay: meleeDelay };
+      if (mode.abilityId === "guard_break") this.renderer?.queueEffect({ ...swing, kind: "bash" });
+      else this.renderer?.queueEffect({ ...swing, kind: "slash", power: powerStrike, cleave: powerStrike && Boolean(derived.cleave) });
+    }
     if (ranged) this.renderer?.queueNudge({ id: "player", toward: enemy, kind: "recoil", delay: projectileDelay });
     if (!rng.chance(hitChance / 100)) {
       if (ranged) this.renderer?.queueProjectile({ ...arrowLook, missed: true });
@@ -2046,7 +2060,7 @@ export class Game {
     this.soundPlayer?.play('player_hit_enemy');
     // The number appears when the projectile lands, not when it leaves.
     const travelKind = mode.type === "spell" ? (projectileKind ?? mode.spellId) : ranged ? arrowKind : null;
-    const popupDelay = travelKind ? projectileDelay + (this.renderer?.getProjectileDuration?.(travelKind) ?? 0) : 0;
+    const popupDelay = travelKind ? projectileDelay + (this.renderer?.getProjectileDuration?.(travelKind) ?? 0) : meleeDelay;
     this.renderer?.queueDamagePopup({ x: enemy.x, y: enemy.y, damage, type: "enemy", critical: criticalHit, delay: popupDelay, targetId: enemy.id });
     this.log(`You ${criticalHit ? "critically strike" : "hit"} ${enemy.name} for ${damage} damage.`);
     if (mode.abilityId === "guard_break") {
@@ -2077,6 +2091,7 @@ export class Game {
     this.maybeApplyHandsEffect(enemy, mode, rng);
     if (derived.weakenOnHit && mode.type !== "spell") {
       this.upsertStatus(enemy, { id: "weakened", turns: 1 + derived.weakenOnHit, value: 1 });
+      this.renderer?.queueEffect({ kind: "weakenWisp", x: enemy.x, y: enemy.y, targetId: enemy.id, delay: meleeDelay });
       this.log(`${enemy.name} is weakened.`);
     }
     if (mode.type !== "spell" && enchantment?.type === "lifesteal") {
@@ -2085,6 +2100,7 @@ export class Game {
     }
     if (mode.type !== "spell" && enchantment?.type === "sunderChance" && rng.chance(enchantment.chance)) {
       this.upsertStatus(enemy, { id: "sundered", turns: enchantment.turns, value: enchantment.value });
+      this.renderer?.queueEffect({ kind: "crack", x: enemy.x, y: enemy.y, targetId: enemy.id, angle: Math.atan2(enemy.y - player.y, enemy.x - player.x), delay: meleeDelay, duration: 320 });
       this.log(`${weapon.name} tears through ${enemy.name}'s guard.`);
     }
     if (mode.type === "spell" && !SPELLS[mode.spellId]?.cantrip && enchantment?.type === "manaRefundChance" && rng.chance(enchantment.chance)) {
@@ -2100,7 +2116,9 @@ export class Game {
       for (const adjacent of adjacentEnemies.slice(0, 2)) {
         adjacent.hp -= splashDamage;
         this.recordDamage("dealt", splashDamage);
-        this.renderer?.queueDamagePopup({ x: adjacent.x, y: adjacent.y, damage: splashDamage, type: "enemy" });
+        // Cleaving Strike: each enemy caught in the sweep gets its own slash mark.
+        this.renderer?.queueEffect({ kind: "slash", x: adjacent.x, y: adjacent.y, targetId: adjacent.id, from: { x: enemy.x, y: enemy.y }, weapon: weapon?.id ?? null, mark: true, delay: meleeDelay + 60 });
+        this.renderer?.queueDamagePopup({ x: adjacent.x, y: adjacent.y, damage: splashDamage, type: "enemy", targetId: adjacent.id, delay: meleeDelay + 60 });
         this.log(`${adjacent.name} takes ${splashDamage} cleave damage.`);
         if (adjacent.hp <= 0) this.killEnemy(adjacent);
       }
@@ -2164,6 +2182,8 @@ export class Game {
     if (weapon?.enchantment?.type === "healOnKill") {
       const derived = this.getDerivedStats(this.state.run.player);
       this.state.run.player.hp = Math.min(derived.maxHp, this.state.run.player.hp + weapon.enchantment.value);
+      // Life-stealing weapons: a crimson wisp flows from the fallen foe back into the Warrior.
+      this.renderer?.queueEffect({ kind: "lifeWisp", x: enemy.x, y: enemy.y, to: { x: this.state.run.player.x, y: this.state.run.player.y }, delay: 80 });
       this.log(`${weapon.name} restores ${weapon.enchantment.value} HP on the kill.`);
     }
     this.gainXp(enemyStats.xp);
@@ -3941,6 +3961,7 @@ export class Game {
     if (!player.floorFlags.firstHitTaken && derived.firstHitReduction) {
       damage = Math.max(1, Math.floor(damage * (1 - derived.firstHitReduction)));
       player.floorFlags.firstHitTaken = true;
+      this.renderer?.queueEffect({ kind: "block", x: player.x, y: player.y, delay: ENEMY_BEAT_MS + 40 });
     }
     if (!player.floorFlags.reactiveWardUsed && derived.reactiveWard) {
       player.floorFlags.reactiveWardUsed = true;

@@ -1004,7 +1004,7 @@ export class Renderer {
           if (tile.itemIds.length && pickupSprite) {
             const lootRarity = this.getTileLootRarity(tile.itemIds);
             if (lootRarity !== "common") this.drawLootGlow(px, py, tileSize, lootRarity);
-            this.drawSprite(pickupSprite, px, py, tileSize, tileSize, 1.1);
+            this.drawPickup(pickupSprite, px, py, tileSize);
             if (RARITY_RANK[lootRarity] >= RARITY_RANK.rare) sparkleTiles.push({ px, py, rarity: lootRarity });
           }
         }
@@ -1079,10 +1079,13 @@ export class Renderer {
         ctx.drawImage(this.fx.getTint(playerSprite, motion.ghostColor), rect.x, rect.y, rect.width, rect.height);
         ctx.restore();
       }
-      this.fx.drawAuraBehind(ctx, player, px, py, tileSize);
-      this.drawActor(playerSprite, px, py, tileSize);
       const playerRect = this.actorRect(playerSprite, px, py, tileSize, 1, offsetX, offsetY);
+      const warrior = this.getWarriorAuraState(player);
+      this.fx.drawAuraBehind(ctx, player, px, py, tileSize);
+      this.fx.drawWarriorBehind(ctx, playerSprite, playerRect, tileSize, warrior);
+      this.drawActor(playerSprite, px, py, tileSize);
       this.fx.drawAuraFront(ctx, player, playerSprite, playerRect, tileSize);
+      this.fx.drawWarriorFront(ctx, playerSprite, playerRect, tileSize, warrior);
       if (player.turnFlags?.killMomentum) this.fx.drawMomentum(ctx, playerRect, tileSize, player.classId);
       this.drawStatusPips(px, py, tileSize, player.statuses);
     } else {
@@ -1114,7 +1117,11 @@ export class Renderer {
       const ey = offsetY + (enemy.y + motion.dy) * tileSize;
       this.drawHealthBar(ex, ey, tileSize, enemy);
       if (enemy === shotTarget) this.fx.drawTargetMarker(ctx, ex, ey, tileSize);
-      if (deadeye && enemy.hp > 0 && enemy.hp / enemy.maxHp <= 0.35) this.fx.drawDeadeye(ctx, ex, ey, tileSize);
+      if (deadeye && enemy.hp > 0 && enemy.hp / enemy.maxHp <= 0.35) {
+        // The same low-health bonus is Deadeye for the Ranger and Executioner for the Warrior.
+        if (player.classId === "warrior") this.fx.drawExecuteMark(ctx, ex, ey, tileSize);
+        else this.fx.drawDeadeye(ctx, ex, ey, tileSize);
+      }
     }
 
     this.mapView = { offsetX, offsetY, tileSize, floor: currentFloor };
@@ -1204,6 +1211,29 @@ export class Renderer {
     const offsetY = y + tileSize - height;
     this.ctx.imageSmoothingEnabled = false;
     this.ctx.drawImage(image, x, offsetY, width, height);
+  }
+
+  // Loot on the floor, at its true proportions. Long, narrow items (swords, spears, hammers) lie
+  // diagonally across the tile as if dropped there; everything else stands upright, fitted to the tile.
+  drawPickup(image, x, y, tileSize) {
+    const width = image.naturalWidth || image.width;
+    const height = image.naturalHeight || image.height;
+    const { ctx } = this;
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    if (height / width >= 1.8) {
+      // Fit the long side along the tile's diagonal, with a little margin.
+      const scale = Math.min((tileSize * 1.25) / height, (tileSize * 0.5) / width);
+      ctx.translate(x + tileSize / 2, y + tileSize / 2);
+      ctx.rotate(Math.PI / 4);
+      ctx.drawImage(image, -(width * scale) / 2, -(height * scale) / 2, width * scale, height * scale);
+    } else {
+      const scale = Math.min(tileSize / width, (tileSize * 1.1) / height);
+      const drawWidth = width * scale;
+      const drawHeight = height * scale;
+      ctx.drawImage(image, x + (tileSize - drawWidth) / 2, y + tileSize - drawHeight, drawWidth, drawHeight);
+    }
+    ctx.restore();
   }
 
   // Draws an actor bottom-aligned and horizontally centred on its tile, keeping the sprite's aspect ratio.
@@ -1910,6 +1940,29 @@ export class Renderer {
       ctx.fillRect(px + Math.round((tileSize - total) / 2) + index * (pip + gap), py + tileSize - pip - 1, pip, pip);
     }
     ctx.restore();
+  }
+
+  // Which Warrior skill auras are showing right now, plus the direction of the last step.
+  getWarriorAuraState(player) {
+    const last = this.lastPlayerPos;
+    if (last && (last.x !== player.x || last.y !== player.y)) {
+      this.lastMoveDir = { x: Math.sign(player.x - last.x), y: Math.sign(player.y - last.y) };
+      if (this.lastMoveDir.x) this.facing = this.lastMoveDir.x;
+    }
+    this.lastPlayerPos = { x: player.x, y: player.y };
+    const derived = this.game.getDerivedStats(player);
+    return {
+      // Shielded Stance: guard is up after waiting.
+      guard: Boolean(derived.waitDefense) && player.lastAction === "wait",
+      // Unyielding: the once-a-floor reduction is still ready.
+      unyielding: Boolean(derived.firstHitReduction) && !player.floorFlags?.firstHitTaken,
+      // Juggernaut: the low-HP damage bonus is active.
+      juggernaut: Boolean(derived.lowHpDamagePct) && player.hp / derived.maxHp <= 0.3,
+      // Warlord's Advance: the after-moving bonus is primed (the Ranger's Opportunist shares the stat).
+      advance: player.classId === "warrior" && Boolean(derived.advanceDamagePct) && player.lastAction === "move",
+      moveDir: this.lastMoveDir ?? null,
+      facing: this.facing ?? 1,
+    };
   }
 
   // Current tile of the player ("player") or a living enemy, by id.

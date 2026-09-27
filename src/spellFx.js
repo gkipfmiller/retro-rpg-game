@@ -55,6 +55,32 @@ const RGB = {
   poison: "120, 210, 100",
 };
 
+// Melee swings: the weapon's shape decides the motion, and enchanted weapons recolour it.
+export function weaponKind(itemId = "") {
+  if (!itemId) return "fist";
+  if (/hammer|mace|maul/.test(itemId)) return "hammer";
+  if (/axe|cleaver/.test(itemId)) return "axe";
+  if (/spear|lance|pike/.test(itemId)) return "spear";
+  if (/staff|wand|rod/.test(itemId)) return "staff";
+  if (/bow/.test(itemId)) return "fist";
+  return "sword";
+}
+const SWING_COLORS = {
+  steel: { color: "#dfe6ea", core: "#ffffff", glow: "200, 220, 240" },
+  fire: { color: "#ff9a3c", core: "#fff2c0", glow: "255, 140, 50", motes: "embers" },
+  blood: { color: "#e0304a", core: "#ffc0cc", glow: "220, 40, 70", motes: "blood" },
+  stone: { color: "#b8c4d0", core: "#eef3f6", glow: "170, 190, 210" },
+  wood: { color: "#c9a06a", core: "#f3e3b8", glow: "200, 170, 120" },
+};
+const WEAPON_SWING = {
+  flame_touched_sword: "fire",
+  sunfire_blade: "fire",
+  vampire_axe: "blood",
+  soulreaver_axe: "blood",
+  sundering_hammer: "stone",
+};
+const swingColors = (itemId) => SWING_COLORS[WEAPON_SWING[itemId] ?? (weaponKind(itemId) === "staff" ? "wood" : "steel")];
+
 const rgba = (rgb, alpha) => `rgba(${rgb}, ${alpha})`;
 const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - ((-2 * t + 2) ** 2) / 2);
 const easeOut = (t) => 1 - (1 - t) ** 3;
@@ -117,7 +143,7 @@ export class SpellFx {
   // Area and cast effects queued by the game: explosion, nova, pulse, blink, column, shieldUp.
   addEffect(effect) {
     const start = performance.now() + (effect.delay ?? 0);
-    const durations = { explosion: 620, nova: 520, pulse: 420, blink: 420, column: 700, shieldUp: 520, aimLine: 200, poisonSplash: 420, dust: 1, shadowPuff: 1 };
+    const durations = { explosion: 620, nova: 520, pulse: 420, blink: 420, column: 700, shieldUp: 520, aimLine: 200, poisonSplash: 420, dust: 1, shadowPuff: 1, glint: 170, slash: 300, bash: 360, weakenWisp: 480, lifeWisp: 1, block: 620 };
     this.effects.push({ ...effect, start, duration: effect.duration ?? durations[effect.kind] ?? 400, spawned: false });
   }
 
@@ -576,6 +602,38 @@ export class SpellFx {
       // Shadow Step: dark smoke instead of dust.
       this.burst(cx, cy + 0.1, 12, { color: "rgba(60, 40, 90, 0.6)", speed: [0.6, 1.8], life: [0.35, 0.6], size: [0.08, 0.13], shape: "smoke" });
       this.burst(cx, cy, 6, { color: "#b89cff", speed: [0.8, 1.6], life: [0.25, 0.4], size: [0.025, 0.04], shape: "twinkle" });
+    } else if (effect.kind === "slash") {
+      const colors = swingColors(effect.weapon);
+      const kind = weaponKind(effect.weapon);
+      const angle = Math.atan2(effect.y - effect.from.y, effect.x - effect.from.x);
+      if (effect.power) this.effects.push({ kind: "ring", x: effect.x, y: effect.y, rgb: colors.glow, radius: effect.cleave ? 1.3 : 0.95, start: this.now, duration: 320 });
+      if (kind === "axe") this.burstCone(cx, cy, 6, angle, 0.8, { color: "#b89a74", speed: [1.2, 2.6], life: [0.2, 0.35], size: [0.035, 0.055], shape: "shard", gravity: 4 });
+      if (kind === "hammer") this.burst(cx, cy + 0.35, 10, { color: "rgba(170, 150, 120, 0.55)", speed: [0.8, 2], life: [0.3, 0.5], size: [0.06, 0.1], shape: "smoke" });
+      if (colors.motes === "embers") this.burst(cx, cy, effect.power ? 16 : 9, { color: "#ffb347", speed: [1, 2.6], life: [0.25, 0.5], size: [0.03, 0.05], gravity: -1, shape: "ember" });
+      if (colors.motes === "blood") this.burst(cx, cy, effect.power ? 12 : 7, { color: "#e0304a", speed: [0.8, 2], life: [0.3, 0.5], size: [0.03, 0.05], shape: "twinkle" });
+      if (effect.power) this.burstCone(cx, cy, 10, angle, 0.5, { color: colors.core, speed: [2.5, 5], life: [0.12, 0.25] });
+    } else if (effect.kind === "bash") {
+      // Guard Break: a shield bash. Sparks, a clang, and armour plates chipping away.
+      const angle = Math.atan2(effect.y - effect.from.y, effect.x - effect.from.x);
+      this.effects.push({ kind: "flash", x: effect.x, y: effect.y, rgb: "255, 240, 200", radius: 0.7, start: this.now, duration: 160 });
+      this.effects.push({ kind: "ring", x: effect.x, y: effect.y, rgb: "235, 240, 245", radius: 0.7, start: this.now, duration: 260 });
+      this.effects.push({ kind: "crack", x: effect.x, y: effect.y, angle, start: this.now, duration: 340 });
+      this.burstCone(cx, cy, 14, angle, 0.9, { color: "#ffe9a8", speed: [2.5, 5], life: [0.12, 0.26] });
+      this.burst(cx, cy, 7, { color: "#aeb6bf", speed: [1.5, 3], life: [0.3, 0.5], size: [0.05, 0.08], gravity: 4, shape: "shard" });
+    } else if (effect.kind === "weakenWisp") {
+      // Disrupting Strike: dark wisps drain downward off the enemy.
+      for (let index = 0; index < (reduceMotion() ? 3 : 9); index += 1) {
+        this.emit({ x: cx + rand(-0.25, 0.25), y: cy - rand(0.2, 0.5), vx: rand(-0.15, 0.15), vy: rand(0.4, 0.9), life: rand(0.35, 0.55), size: rand(0.05, 0.08), color: "rgba(110, 60, 150, 0.6)", shape: "smoke", drag: 1 });
+      }
+    } else if (effect.kind === "lifeWisp") {
+      // A crimson thread of life flowing from the fallen foe back into the Warrior.
+      const travel = 0.45;
+      for (let index = 0; index < (reduceMotion() ? 4 : 12); index += 1) {
+        const life = travel * rand(0.85, 1.1);
+        this.emit({ x: cx + rand(-0.2, 0.2), y: cy + rand(-0.2, 0.2), vx: (effect.to.x - effect.x) / life + rand(-0.4, 0.4), vy: (effect.to.y - effect.y) / life + rand(-0.4, 0.4), life, size: rand(0.03, 0.05), color: index % 3 ? "#e0304a" : "#ffb0c0", shape: "twinkle", drag: 1 });
+      }
+    } else if (effect.kind === "block") {
+      this.burst(cx, cy, 10, { color: "#eef3f6", speed: [1.5, 3], life: [0.15, 0.3], size: [0.02, 0.035], shape: "streak" });
     } else if (effect.kind === "smokeLater") {
       for (let index = 0; index < (reduceMotion() ? 3 : 9); index += 1) {
         const angle = rand(0, TAU);
@@ -720,6 +778,59 @@ export class SpellFx {
           ctx.lineTo(px + Math.cos(a) * r * 1.3, py + Math.sin(a) * r * 1.3);
           ctx.stroke();
         }
+        break;
+      }
+      case "glint": {
+        // Power Strike wind-up: a star of light flares on the blade, on the side facing the target.
+        const angle = Math.atan2(effect.from.y - effect.y, effect.from.x - effect.x);
+        const gx = px + Math.cos(angle) * tileSize * 0.3;
+        const gy = py - tileSize * 0.2 + Math.sin(angle) * tileSize * 0.15;
+        const size = tileSize * 0.28 * Math.sin(Math.PI * t);
+        this.glowAt(ctx, gx, gy, tileSize * 0.5, "255, 245, 210", 0.6 * Math.sin(Math.PI * t));
+        ctx.fillStyle = "#ffffff";
+        ctx.translate(gx, gy);
+        ctx.rotate(t * 1.5);
+        ctx.beginPath();
+        for (let index = 0; index < 8; index += 1) {
+          const r = index % 2 === 0 ? size : size * 0.18;
+          const a = (index / 8) * TAU;
+          ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+        }
+        ctx.closePath();
+        ctx.fill();
+        break;
+      }
+      case "slash":
+        this.drawSlash(ctx, effect, t, px, py, tileSize);
+        break;
+      case "weakenWisp": {
+        // A dark downward chevron over the enemy.
+        const alpha = t < 0.2 ? t / 0.2 : 1 - (t - 0.2) / 0.8;
+        const cy = py - tileSize * (0.55 - t * 0.2);
+        ctx.strokeStyle = `rgba(170, 110, 220, ${0.9 * alpha})`;
+        ctx.lineWidth = Math.max(1.5, tileSize * 0.07);
+        ctx.beginPath();
+        ctx.moveTo(px - tileSize * 0.14, cy - tileSize * 0.07);
+        ctx.lineTo(px, cy + tileSize * 0.07);
+        ctx.lineTo(px + tileSize * 0.14, cy - tileSize * 0.07);
+        ctx.stroke();
+        break;
+      }
+      case "block": {
+        // Unyielding: the first blow of the floor rings off the Warrior's guard.
+        const alpha = t < 0.15 ? t / 0.15 : 1 - (t - 0.15) / 0.85;
+        const r = tileSize * (0.45 + easeOut(clamp(t / 0.4, 0, 1)) * 0.25);
+        ctx.strokeStyle = `rgba(225, 232, 240, ${0.9 * alpha})`;
+        ctx.lineWidth = Math.max(2, tileSize * 0.07);
+        ctx.beginPath();
+        ctx.arc(px, py, r, Math.PI * 1.1, Math.PI * 1.9);
+        ctx.stroke();
+        ctx.font = `bold ${Math.max(9, Math.round(tileSize * 0.32))}px monospace`;
+        ctx.textAlign = "center";
+        ctx.fillStyle = `rgba(20, 24, 30, ${0.8 * alpha})`;
+        ctx.fillText("BLOCKED", px + 1, py - tileSize * (0.75 + t * 0.3) + 1);
+        ctx.fillStyle = `rgba(230, 238, 245, ${alpha})`;
+        ctx.fillText("BLOCKED", px, py - tileSize * (0.75 + t * 0.3));
         break;
       }
       case "poisonSplash": {
@@ -920,16 +1031,199 @@ export class SpellFx {
     this.particles = keep;
   }
 
+  // A melee swing across the target, shaped by the weapon: swords sweep an arc, axes chop down
+  // diagonally, hammers smash straight down, spears thrust through. Power Strike is larger;
+  // Cleaving Strike widens the sweep; cleave marks are small.
+  drawSlash(ctx, effect, t, px, py, tileSize) {
+    const colors = swingColors(effect.weapon);
+    const kind = weaponKind(effect.weapon);
+    const angle = Math.atan2(effect.y - effect.from.y, effect.x - effect.from.x);
+    const swing = easeOut(clamp(t / 0.45, 0, 1));
+    const fade = t < 0.45 ? 1 : 1 - (t - 0.45) / 0.55;
+    const scale = effect.mark ? 0.7 : effect.power ? 1.45 : 1;
+    const layered = (draw, width) => {
+      ctx.globalCompositeOperation = "lighter";
+      ctx.strokeStyle = rgba(colors.glow, 0.35 * fade);
+      ctx.lineWidth = width * 2.6;
+      draw();
+      ctx.globalCompositeOperation = "source-over";
+      ctx.strokeStyle = colors.color;
+      ctx.globalAlpha = fade;
+      ctx.lineWidth = width;
+      draw();
+      ctx.strokeStyle = colors.core;
+      ctx.lineWidth = Math.max(1, width * 0.35);
+      draw();
+      ctx.globalAlpha = 1;
+    };
+    ctx.lineCap = "round";
+    if (kind === "spear") {
+      // A straight thrust through the target.
+      const reach = tileSize * 0.9 * scale;
+      const sx = px - Math.cos(angle) * reach;
+      const sy = py - Math.sin(angle) * reach;
+      const ex = sx + Math.cos(angle) * reach * 1.4 * swing;
+      const ey = sy + Math.sin(angle) * reach * 1.4 * swing;
+      layered(() => { ctx.beginPath(); ctx.moveTo(sx + (ex - sx) * 0.4, sy + (ey - sy) * 0.4); ctx.lineTo(ex, ey); ctx.stroke(); }, Math.max(2, tileSize * 0.07 * scale));
+      return;
+    }
+    if (kind === "hammer") {
+      // An overhead smash: the blow drops onto the target, then a dust ring spreads at its feet.
+      const top = py - tileSize * 0.9 * scale;
+      const head = top + (py - top) * swing;
+      layered(() => { ctx.beginPath(); ctx.moveTo(px, top + (head - top) * 0.35); ctx.lineTo(px, head); ctx.stroke(); }, Math.max(3, tileSize * 0.14 * scale));
+      if (t > 0.35) {
+        const ringT = (t - 0.35) / 0.65;
+        ctx.strokeStyle = `rgba(200, 185, 160, ${0.7 * (1 - ringT)})`;
+        ctx.lineWidth = Math.max(1.5, tileSize * 0.06);
+        ctx.beginPath();
+        ctx.ellipse(px, py + tileSize * 0.35, tileSize * (0.2 + ringT * 0.55) * scale, tileSize * (0.08 + ringT * 0.18) * scale, 0, 0, TAU);
+        ctx.stroke();
+      }
+      return;
+    }
+    // Swords, axes, staves, and fists: the blade swings from high to low around the attacker, its
+    // tip passing through the target. Axes chop a narrower, heavier arc; Cleaving Strike sweeps wide.
+    const distance = Math.hypot(effect.x - effect.from.x, effect.y - effect.from.y) * tileSize;
+    const pivotX = px - Math.cos(angle) * distance;
+    const pivotY = py - Math.sin(angle) * distance;
+    const radius = distance * (kind === "staff" || kind === "fist" ? 0.8 : 0.95) * (effect.power ? 1.1 : 1);
+    const sweep = effect.cleave ? 3 : kind === "axe" ? 1.4 : effect.mark ? 1.4 : 2;
+    // "Up" on screen is negative y; start above the line to the target and swing down through it.
+    const down = Math.cos(angle) >= 0 ? 1 : -1;
+    const start = angle - down * sweep * (kind === "axe" ? 0.7 : 0.5);
+    const now = start + down * sweep * swing;
+    const tail = start + down * Math.max(0, sweep * swing - 1.3);
+    const width = Math.max(2.5, tileSize * (kind === "axe" ? 0.15 : kind === "staff" || kind === "fist" ? 0.07 : 0.1) * scale);
+    layered(() => {
+      ctx.beginPath();
+      ctx.arc(pivotX, pivotY, radius, Math.min(tail, now), Math.max(tail, now));
+      ctx.stroke();
+    }, width);
+  }
+
+  // Warrior readability auras. Behind the sprite: Juggernaut's red outline and Shielded Stance's
+  // ring. In front: Unyielding's iron sheen, Juggernaut's rising heat, Warlord's Advance streaks.
+  drawWarriorBehind(ctx, sprite, rect, tileSize, state) {
+    if (state.juggernaut && sprite) {
+      const pulse = reduceMotion() ? 0.7 : 0.55 + Math.sin(this.now / 180) * 0.25;
+      const red = this.getTint(sprite, "#ff3b2f");
+      const step = Math.max(1, Math.round(tileSize / 16));
+      ctx.save();
+      ctx.globalAlpha = pulse;
+      ctx.imageSmoothingEnabled = false;
+      for (const [ox, oy] of [[-step, 0], [step, 0], [0, -step], [0, step]]) ctx.drawImage(red, rect.x + ox, rect.y + oy, rect.width, rect.height);
+      ctx.restore();
+    }
+    if (state.guard) {
+      const cx = rect.x + rect.width / 2;
+      const feet = rect.y + rect.height - tileSize * 0.06;
+      ctx.save();
+      ctx.strokeStyle = "rgba(200, 212, 225, 0.8)";
+      ctx.lineWidth = Math.max(1.5, tileSize * 0.06);
+      ctx.beginPath();
+      ctx.ellipse(cx, feet, tileSize * 0.45, tileSize * 0.16, 0, 0, TAU);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  drawWarriorFront(ctx, sprite, rect, tileSize, state) {
+    const cx = rect.x + rect.width / 2;
+    if (state.guard) {
+      // Shielded Stance: a steel shield outline raised in front.
+      const pulse = reduceMotion() ? 0.7 : 0.6 + Math.sin(this.now / 300) * 0.15;
+      const sx = cx + tileSize * 0.3 * state.facing;
+      const sy = rect.y + rect.height - tileSize * 0.5;
+      const w = tileSize * 0.22;
+      const h = tileSize * 0.3;
+      ctx.save();
+      ctx.strokeStyle = `rgba(215, 225, 235, ${pulse})`;
+      ctx.fillStyle = `rgba(160, 175, 190, ${pulse * 0.35})`;
+      ctx.lineWidth = Math.max(1.5, tileSize * 0.05);
+      ctx.beginPath();
+      ctx.moveTo(sx - w, sy - h * 0.6);
+      ctx.lineTo(sx + w, sy - h * 0.6);
+      ctx.lineTo(sx + w, sy + h * 0.1);
+      ctx.quadraticCurveTo(sx + w, sy + h * 0.55, sx, sy + h * 0.75);
+      ctx.quadraticCurveTo(sx - w, sy + h * 0.55, sx - w, sy + h * 0.1);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+    if (state.unyielding && sprite && !reduceMotion()) {
+      // Unyielding ready: an iron sheen sweeps across the Warrior every couple of seconds.
+      const cycle = (this.now % 2400) / 600;
+      if (cycle < 1) {
+        const bandX = rect.x - rect.width * 0.4 + cycle * rect.width * 1.8;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(bandX, rect.y, rect.width * 0.28, rect.height);
+        ctx.clip();
+        ctx.globalAlpha = 0.55;
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(this.getTint(sprite, "#eef3f8"), rect.x, rect.y, rect.width, rect.height);
+        ctx.restore();
+      }
+    }
+    const tileX = (cx - rect.offsetX) / tileSize;
+    const tileY = (rect.y + rect.height - rect.offsetY) / tileSize;
+    if (state.juggernaut && !reduceMotion() && Math.random() < 8 * this.dt) {
+      this.emit({ x: tileX + rand(-0.25, 0.25), y: tileY - rand(0.1, 0.6), vx: rand(-0.1, 0.1), vy: rand(-0.9, -0.4), life: rand(0.35, 0.6), size: rand(0.04, 0.07), color: "rgba(255, 70, 50, 0.45)", shape: "smoke", drag: 1 });
+    }
+    if (state.advance && state.moveDir) {
+      // Warlord's Advance primed: speed lines trail behind the last step.
+      const alpha = reduceMotion() ? 0.75 : 0.65 + Math.sin(this.now / 150) * 0.2;
+      const back = { x: -state.moveDir.x, y: -state.moveDir.y };
+      const side = { x: -back.y, y: back.x };
+      const mid = { x: cx, y: rect.y + rect.height - tileSize * 0.45 };
+      ctx.save();
+      ctx.strokeStyle = `rgba(255, 214, 150, ${alpha})`;
+      ctx.lineWidth = Math.max(1.5, tileSize * 0.06);
+      ctx.lineCap = "round";
+      for (const [offset, length] of [[-0.18, 0.28], [0, 0.4], [0.18, 0.28]]) {
+        const ox = mid.x + back.x * tileSize * 0.3 + side.x * offset * tileSize;
+        const oy = mid.y + back.y * tileSize * 0.3 + side.y * offset * tileSize;
+        ctx.beginPath();
+        ctx.moveTo(ox, oy);
+        ctx.lineTo(ox + back.x * length * tileSize, oy + back.y * length * tileSize);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+
+  // Executioner (Warrior): a small red skull bobbing over enemies low enough for the bonus.
+  drawExecuteMark(ctx, px, py, tileSize) {
+    const grid = [".rrrrr.", "rrrrrrr", "rkrrrkr", "rrrrrrr", ".rrkrr.", ".rrrrr.", "..r.r.."];
+    const pixel = Math.max(1, Math.round(tileSize / 16));
+    const bob = reduceMotion() ? 0 : Math.round(Math.sin(this.now / 260) * pixel);
+    const left = Math.round(px + tileSize / 2 - (grid[0].length * pixel) / 2);
+    const top = Math.round(py - pixel * 9 + bob);
+    ctx.save();
+    this.glowAt(ctx, px + tileSize / 2, top + pixel * 3.5, tileSize * 0.4, "255, 60, 50", 0.35);
+    grid.forEach((row, y) => [...row].forEach((cell, x) => {
+      if (cell === ".") return;
+      ctx.fillStyle = cell === "k" ? "#2a0806" : "#ff4a3d";
+      ctx.fillRect(left + x * pixel, top + y * pixel, pixel, pixel);
+    }));
+    ctx.restore();
+  }
+
   // ── Actor motion: attack nudges and the Evasive Step leap ──
   // Offsets are cosmetic; the game has already moved the actor. Ids are enemy ids or "player".
-  addNudge({ id, toward, kind = "lunge", delay = 0 }) {
+  addNudge({ id, toward, kind = "lunge", delay = 0, distance = 0 }) {
     const at = this.locate(id);
     if (!at || !toward) return;
     const dx = toward.x - at.x;
     const dy = toward.y - at.y;
     const length = Math.hypot(dx, dy) || 1;
+    const durations = { lunge: 190, recoil: 170, dash: 340 };
     this.motions = this.motions ?? [];
-    this.motions.push({ id, kind, dirX: dx / length, dirY: dy / length, start: performance.now() + delay, duration: kind === "lunge" ? 190 : 170 });
+    this.motions.push({ id, kind, distance, dirX: dx / length, dirY: dy / length, start: performance.now() + delay, duration: durations[kind] ?? 180 });
+    // Charge: dust kicked up where the dash starts.
+    if (kind === "dash") this.addEffect({ kind: "dust", x: at.x, y: at.y, delay });
   }
 
   addLeap({ from, to, shadow = false }) {
@@ -962,6 +1256,16 @@ export class SpellFx {
           if (t - lag > 0) result.ghosts.push({ ...at(t - lag), alpha });
         }
         result.ghostColor = motion.shadow ? "#5b4a7a" : "#cfe8ff";
+      } else if (motion.kind === "dash") {
+        // Charge: rush in to strike, hold a beat, then settle back, leaving afterimages on the way in.
+        const reach = motion.distance + 0.3;
+        const out = t < 0.3 ? easeOut(t / 0.3) : t < 0.55 ? 1 : 1 - easeInOut((t - 0.55) / 0.45);
+        result.dx += motion.dirX * reach * out;
+        result.dy += motion.dirY * reach * out;
+        if (t < 0.4) {
+          for (const [lag, alpha] of [[0.35, 0.3], [0.7, 0.15]]) result.ghosts.push({ dx: motion.dirX * reach * out * (1 - lag), dy: motion.dirY * reach * out * (1 - lag), alpha });
+          result.ghostColor = "#e8eef2";
+        }
       } else {
         const push = Math.sin(Math.PI * t) * (motion.kind === "lunge" ? 0.28 : -0.12);
         result.dx += motion.dirX * push;
@@ -1023,6 +1327,24 @@ export class SpellFx {
       ctx.translate(x, y);
       ctx.rotate(-Math.PI / 2);
       this.drawArrowBody(ctx, tileSize * 0.8, { color: "#ffcf7a", core: "#fff1c2", tip: "#ffd98a", bowTrail: true });
+    } else if (classId === "warrior") {
+      // Battle Rhythm: a glowing sword, point down.
+      const blade = tileSize * 0.34;
+      ctx.lineCap = "round";
+      ctx.strokeStyle = "#fff1c2";
+      ctx.lineWidth = Math.max(2, tileSize * 0.07);
+      ctx.beginPath();
+      ctx.moveTo(x, y - blade * 0.35);
+      ctx.lineTo(x, y + blade * 0.65);
+      ctx.stroke();
+      ctx.strokeStyle = "#ffcf7a";
+      ctx.lineWidth = Math.max(1.5, tileSize * 0.05);
+      ctx.beginPath();
+      ctx.moveTo(x - tileSize * 0.1, y - blade * 0.35);
+      ctx.lineTo(x + tileSize * 0.1, y - blade * 0.35);
+      ctx.moveTo(x, y - blade * 0.35);
+      ctx.lineTo(x, y - blade * 0.6);
+      ctx.stroke();
     } else {
       ctx.fillStyle = "#ffcf7a";
       ctx.beginPath();
@@ -1086,6 +1408,20 @@ export class SpellFx {
       ctx.restore();
     } else if (find("chilled") && chance(3)) {
       this.emit({ x: tileX + rand(-0.3, 0.3), y: tileY - rand(0.6, 1), vx: rand(-0.1, 0.1), vy: rand(0.3, 0.6), life: rand(0.5, 0.8), size: rand(0.02, 0.035), color: "#dff6ff", drag: 1 });
+    }
+
+    if (find("sundered")) {
+      ctx.save();
+      ctx.strokeStyle = "rgba(235, 240, 245, 0.75)";
+      ctx.lineWidth = Math.max(1, tileSize * 0.035);
+      const crack = (points) => {
+        ctx.beginPath();
+        points.forEach(([fx, fy], index) => (index ? ctx.lineTo : ctx.moveTo).call(ctx, rect.x + rect.width * fx, rect.y + rect.height * fy));
+        ctx.stroke();
+      };
+      crack([[0.3, 0.35], [0.42, 0.5], [0.36, 0.62], [0.5, 0.78]]);
+      crack([[0.68, 0.3], [0.58, 0.45], [0.66, 0.55]]);
+      ctx.restore();
     }
 
     if (find("burning")) {
