@@ -1014,7 +1014,7 @@ Daily Descent:
 - the last name used on the leaderboard is remembered and prefilled at the end of the next run
 
 Fallen adventurers:
-- every death on Floor 1+ posts where it happened (`POST /api/fallen`: name, class, level, floor, x, y, cause, daily date) to `public.fallen`. The name is the player's remembered leaderboard name, or blank ("a nameless Ranger")
+- every death on Floor 1+ records where it happened (`POST /api/fallen`: name, class, level, floor, x, y, cause, daily date) to `public.fallen`. It's posted when the player leaves the end screen, not at the moment of death, so it carries the name they just saved the score under; leaving without saving (Main Menu, Start New Run, or closing the tab, which posts on `pagehide` with `keepalive`) uses the name they last saved under, or blank ("a nameless Ranger")
 - on arriving at a floor the game asks `GET /api/fallen?floor=N` (plus `&daily=` in a Daily Descent) and places remains: in a daily run every recent death on that floor lies exactly where it happened, and the log says how many fell there today; in an ordinary run one or two recent deaths on that floor number are scattered on open tiles out of sight and at least 5 steps from the arrival point
 - remains are a skull and bones with the delver's weapon (sword, staff or bow) and a pale wisp until searched; they don't block movement, show on both minimaps until searched, and describe who fell and to what on hover
 - standing on remains and pressing Enter searches them once: 3-6 + 2×floor gold and a 30% chance of a potion (greater from Floor 11), with the fallen's epitaph shown as narration

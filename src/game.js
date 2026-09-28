@@ -733,16 +733,24 @@ export class Game {
   // Other delvers' deaths (api/fallen.js) leave remains to find. In a Daily Descent everyone shares
   // the dungeon, so remains lie exactly where that delver fell; in ordinary runs a couple of recent
   // deaths on the same floor number are scattered somewhere out of sight.
-  async recordFallen() {
+  //
+  // A death is recorded when the player leaves the end screen, not the moment they die, so the
+  // remains carry the name they just typed for the leaderboard. Leaving without saving a score uses
+  // the name they last saved under (blank if none). keepalive lets the post finish even when the
+  // tab is closing (main.js flushes on pagehide).
+  async recordFallen(name = this.getRememberedPlayerName()) {
     const run = this.state.run;
-    if (!this.canUseSharedScores() || !run || run.floorNumber < 1) return;
+    if (!run?.fallenPending) return;
+    run.fallenPending = false;
+    if (!this.canUseSharedScores()) return;
     const { player } = run;
     try {
       await fetch("/api/fallen", {
         method: "POST",
+        keepalive: true,
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({
-          name: this.getRememberedPlayerName(),
+          name,
           className: CLASSES[player.classId].name,
           level: player.level,
           floor: run.floorNumber,
@@ -5009,7 +5017,8 @@ export class Game {
     const bossInFight = this.state.run.currentFloor.enemies.find((enemy) => ENEMIES[enemy.templateId]?.behavior === "boss"
       && this.state.run.player.floorFlags?.[`${enemy.templateId}Seen`]);
     if (bossInFight) this.recordBossOutcome(bossInFight.templateId, "killed");
-    this.recordFallen();
+    // Posted once the end screen is left (see recordFallen).
+    if (this.state.run.floorNumber >= 1) this.state.run.fallenPending = true;
     if (this.state.run.daily) this.refreshSharedScores(this.state.run.daily);
     this.state.mode = "in_game";
     this.openRunEnd();
@@ -5235,11 +5244,13 @@ export class Game {
         this.openVendor(this.state.ui.overlay?.selectedIndex ?? 0);
         break;
       case "new-run-from-death":
+        this.recordFallen();
         this.pendingDaily = false;
         this.state.mode = "class";
         this.state.ui.overlay = null;
         break;
       case "main-menu":
+        this.recordFallen();
         this.state.mode = "menu";
         this.state.run = null;
         this.state.ui.overlay = null;
@@ -5258,6 +5269,7 @@ export class Game {
         const summary = this.buildRunSummary(this.state.run, endInfo.cause, endInfo.result);
         const saveResult = this.saveHighScore(payload.playerName, summary);
         if (saveResult.ok) {
+          this.recordFallen(saveResult.name);
           this.state.run.scoreSaved = true;
           // Land on the board this run was entered into.
           this.scoreBoard = summary.daily ? "daily" : "all";

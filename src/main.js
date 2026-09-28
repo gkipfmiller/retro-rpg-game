@@ -263,6 +263,9 @@ game.onScoresChanged = () => {
 };
 game.refreshSharedScores();
 
+// Closing the tab on the death screen still leaves remains for others (see Game.recordFallen).
+window.addEventListener("pagehide", () => game.recordFallen());
+
 function refresh() {
   if (game.state.mode === "scores") {
     document.getElementById("high-scores-content").innerHTML = game.renderScoresScreen();
