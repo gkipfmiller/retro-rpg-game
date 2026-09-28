@@ -22,3 +22,9 @@ create table if not exists public.scores (
 create index if not exists scores_rank_idx on public.scores (score desc, floor desc, kills desc, recorded_at asc);
 
 alter table public.scores enable row level security;
+
+-- Projects that don't auto-expose new tables to the API need this so the service role can use it.
+grant select, insert on public.scores to service_role;
+
+-- Tell Supabase's REST API to pick up the new table right away.
+notify pgrst, 'reload schema';
