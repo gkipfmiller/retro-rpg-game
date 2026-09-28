@@ -23,11 +23,29 @@ function supabaseConfig() {
   const url = process.env.D30_SUPABASE_URL ?? process.env.SUPABASE_URL;
   const key = process.env.D30_SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
-  return { url: url.replace(/\/$/, ""), key };
+  return { url: url.trim().replace(/\/$/, ""), key: key.trim() };
 }
 
+// Legacy Supabase keys are JWTs ("eyJ...") and go in both headers. Newer secret keys ("sb_secret_...")
+// are not JWTs and must only be sent as apikey; Supabase rejects them as a Bearer token.
 function supabaseHeaders(key, extra = {}) {
-  return { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json", ...extra };
+  const headers = { apikey: key, "Content-Type": "application/json", ...extra };
+  if (key.startsWith("eyJ")) headers.Authorization = `Bearer ${key}`;
+  return headers;
+}
+
+// Supabase's own explanation of a failed request (never includes the key), to make setup problems
+// visible in the response and in the Vercel function logs.
+async function supabaseError(response) {
+  let detail = "";
+  try {
+    const body = await response.json();
+    detail = [body.message, body.hint, body.code].filter(Boolean).join(" | ");
+  } catch {
+    detail = response.statusText;
+  }
+  console.error(`Supabase ${response.status}: ${detail}`);
+  return { status: response.status, detail };
 }
 
 // Database rows use snake_case; the game uses camelCase.
@@ -86,13 +104,18 @@ export default async function handler(req, res) {
     res.status(503).json({ error: "The leaderboard isn't configured." });
     return;
   }
+  if (!/^https:\/\//.test(config.url)) {
+    // A common mix-up: the Postgres connection string instead of the project's https API URL.
+    res.status(503).json({ error: "D30_SUPABASE_URL must be the project's https URL (e.g. https://abcd1234.supabase.co)." });
+    return;
+  }
 
   if (req.method === "GET") {
     const limit = Math.min(MAX_LIMIT, Math.max(1, Number.parseInt(req.query?.limit, 10) || 20));
     const query = `select=${COLUMNS}&order=score.desc,floor.desc,kills.desc,recorded_at.asc&limit=${limit}`;
     const response = await fetch(`${config.url}/rest/v1/scores?${query}`, { headers: supabaseHeaders(config.key) });
     if (!response.ok) {
-      res.status(502).json({ error: "Couldn't load the leaderboard." });
+      res.status(502).json({ error: "Couldn't load the leaderboard.", supabase: await supabaseError(response) });
       return;
     }
     const rows = await response.json();
@@ -122,7 +145,7 @@ export default async function handler(req, res) {
       body: JSON.stringify(row),
     });
     if (!response.ok) {
-      res.status(502).json({ error: "Couldn't save the score." });
+      res.status(502).json({ error: "Couldn't save the score.", supabase: await supabaseError(response) });
       return;
     }
     res.status(201).json({ ok: true, entry: toEntry({ ...row, recorded_at: new Date().toISOString() }) });
