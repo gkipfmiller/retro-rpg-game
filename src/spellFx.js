@@ -143,7 +143,7 @@ export class SpellFx {
   // Area and cast effects queued by the game: explosion, nova, pulse, blink, column, shieldUp.
   addEffect(effect) {
     const start = performance.now() + (effect.delay ?? 0);
-    const durations = { explosion: 620, nova: 520, pulse: 420, blink: 420, column: 700, shieldUp: 520, aimLine: 200, poisonSplash: 420, dust: 1, shadowPuff: 1, glint: 170, slash: 300, bash: 360, weakenWisp: 480, lifeWisp: 1, block: 620 };
+    const durations = { explosion: 620, nova: 520, pulse: 420, blink: 420, column: 700, shieldUp: 520, aimLine: 200, poisonSplash: 420, dust: 1, shadowPuff: 1, glint: 170, slash: 300, bash: 360, weakenWisp: 480, lifeWisp: 1, block: 620, gateSlam: 1, gateLift: 1, groundSlam: 520, hookChain: 380, stitchHeal: 700, stitchTear: 420, bossVictory: 1600, riftBurst: 460, crumble: 1, eclipse: 900, soulDrain: 1 };
     this.effects.push({ ...effect, start, duration: effect.duration ?? durations[effect.kind] ?? 400, spawned: false });
   }
 
@@ -634,6 +634,43 @@ export class SpellFx {
       }
     } else if (effect.kind === "block") {
       this.burst(cx, cy, 10, { color: "#eef3f6", speed: [1.5, 3], life: [0.15, 0.3], size: [0.02, 0.035], shape: "streak" });
+    } else if (effect.kind === "gateSlam" || effect.kind === "gateLift") {
+      for (const gate of effect.gates ?? []) {
+        this.burst(gate.x + 0.5, gate.y + 0.85, effect.kind === "gateSlam" ? 8 : 4, { color: "rgba(170, 150, 120, 0.55)", speed: [0.6, 1.8], life: [0.3, 0.55], size: [0.06, 0.1], shape: "smoke" });
+      }
+    } else if (effect.kind === "groundSlam") {
+      this.burst(cx, cy + 0.3, 22, { color: "rgba(170, 150, 120, 0.6)", speed: [1.2, 3.2], life: [0.35, 0.6], size: [0.07, 0.12], shape: "smoke" });
+      this.burst(cx, cy, 14, { color: "#8a7a66", speed: [2, 4], life: [0.3, 0.5], size: [0.04, 0.07], gravity: 5, shape: "shard" });
+    } else if (effect.kind === "stitchTear") {
+      this.burst(cx, cy, 14, { color: "#e0d2b0", speed: [1.5, 3.5], life: [0.25, 0.45], size: [0.03, 0.05], shape: "streak" });
+      this.burst(cx, cy, 8, { color: "#a01c1c", speed: [1, 2.5], life: [0.3, 0.5], size: [0.03, 0.05], gravity: 4 });
+    } else if (effect.kind === "riftBurst") {
+      for (const tile of effect.tiles ?? []) this.burst(tile.x + 0.5, tile.y + 0.5, 6, { color: "#c07cff", speed: [0.6, 1.8], life: [0.3, 0.5], size: [0.03, 0.05], gravity: -2, shape: "twinkle" });
+    } else if (effect.kind === "crumble") {
+      for (const tile of effect.tiles ?? []) {
+        this.burst(tile.x + 0.5, tile.y + 0.5, 2, { color: "#6a5a70", speed: [0.3, 1], life: [0.4, 0.7], size: [0.04, 0.07], gravity: 4, shape: "shard" });
+      }
+    } else if (effect.kind === "eclipse") {
+      const arena = effect.arena;
+      if (arena) {
+        for (let index = 0; index < (reduceMotion() ? 10 : 40); index += 1) {
+          this.emit({ x: arena.x + Math.random() * arena.width, y: arena.y + Math.random() * arena.height, vx: rand(-0.3, 0.3), vy: rand(-1.4, -0.4), life: rand(0.5, 0.9), size: rand(0.08, 0.14), color: "rgba(120, 40, 200, 0.5)", shape: "smoke", drag: 1 });
+        }
+      }
+    } else if (effect.kind === "soulDrain") {
+      // The Overlord devours an imp: its essence streams into him.
+      const travel = 0.4;
+      for (let index = 0; index < (reduceMotion() ? 4 : 14); index += 1) {
+        const life = travel * rand(0.85, 1.1);
+        this.emit({ x: cx + rand(-0.2, 0.2), y: cy + rand(-0.2, 0.2), vx: (effect.to.x - effect.x) / life + rand(-0.5, 0.5), vy: (effect.to.y - effect.y) / life + rand(-0.5, 0.5), life, size: rand(0.03, 0.05), color: index % 3 ? "#ff6a4a" : "#ffd0a0", shape: "twinkle", drag: 1 });
+      }
+    } else if (effect.kind === "bossVictory") {
+      // The seal breaks: shards burst from the arena's heart, and light rises at the stairs and the reward.
+      const heart = effect.arena?.center ?? { x: effect.x, y: effect.y };
+      this.burst(heart.x + 0.5, heart.y + 0.5, 30, { color: "#ffe9a8", speed: [2, 5], life: [0.4, 0.8], size: [0.05, 0.1], shape: "shard", gravity: 2 });
+      this.burst(effect.x + 0.5, effect.y + 0.5, 20, { color: "#ffffff", speed: [1, 3], life: [0.4, 0.7], size: [0.03, 0.05], shape: "twinkle" });
+      if (effect.stairs) this.effects.push({ kind: "column", x: effect.stairs.x, y: effect.stairs.y, start: this.now + 500, duration: 900, spawned: false, rgb: "137, 209, 133" });
+      if (effect.chest) this.effects.push({ kind: "column", x: effect.chest.x, y: effect.chest.y, start: this.now + 700, duration: 900, spawned: false, rgb: "255, 214, 120" });
     } else if (effect.kind === "smokeLater") {
       for (let index = 0; index < (reduceMotion() ? 3 : 9); index += 1) {
         const angle = rand(0, TAU);
@@ -833,6 +870,97 @@ export class SpellFx {
         ctx.fillText("BLOCKED", px, py - tileSize * (0.75 + t * 0.3));
         break;
       }
+      case "groundSlam": {
+        // Patches' Ground Slam: a heavy shockwave across the 3x3 around him.
+        const r = tileSize * (0.4 + easeOut(t) * 1.3);
+        ctx.strokeStyle = `rgba(230, 200, 160, ${0.85 * (1 - t)})`;
+        ctx.lineWidth = Math.max(2, tileSize * 0.12 * (1 - t) + 1);
+        ctx.beginPath();
+        ctx.ellipse(px, py + tileSize * 0.3, r, r * 0.55, 0, 0, TAU);
+        ctx.stroke();
+        this.glowAt(ctx, px, py, tileSize * 1.2, "255, 150, 90", 0.35 * (1 - t));
+        break;
+      }
+      case "hookChain": {
+        // The chain flies out to the target and snaps back.
+        const from = { x: view.offsetX + (effect.from.x + 0.5) * tileSize, y: view.offsetY + (effect.from.y + 0.5) * tileSize };
+        const reach = t < 0.4 ? easeOut(t / 0.4) : 1 - easeInOut((t - 0.4) / 0.6);
+        const hx = from.x + (px - from.x) * reach;
+        const hy = from.y + (py - from.y) * reach;
+        ctx.strokeStyle = "#6e665e";
+        ctx.lineWidth = Math.max(2, tileSize * 0.06);
+        ctx.setLineDash([tileSize * 0.1, tileSize * 0.06]);
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(hx, hy);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.strokeStyle = "#d0d6dc";
+        ctx.lineWidth = Math.max(2, tileSize * 0.08);
+        ctx.beginPath();
+        ctx.arc(hx, hy + tileSize * 0.05, tileSize * 0.14, -Math.PI * 0.1, Math.PI * 1.05);
+        ctx.stroke();
+        break;
+      }
+      case "stitchHeal": {
+        // Green thread looping around Patches as he sews himself up.
+        const alpha = Math.sin(Math.PI * t);
+        const spin = t * TAU * 1.5;
+        ctx.strokeStyle = `rgba(150, 230, 120, ${0.85 * alpha})`;
+        ctx.lineWidth = Math.max(1.5, tileSize * 0.045);
+        ctx.beginPath();
+        for (let index = 0; index <= 40; index += 1) {
+          const a = spin + (index / 40) * TAU * 1.5;
+          const r = tileSize * (0.25 + (index / 40) * 0.25);
+          const x = px + Math.cos(a) * r;
+          const y = py - tileSize * 0.1 + Math.sin(a) * r * 0.6;
+          if (index) ctx.lineTo(x, y);
+          else ctx.moveTo(x, y);
+        }
+        ctx.stroke();
+        this.glowAt(ctx, px, py, tileSize * 0.8, "150, 230, 120", 0.35 * alpha);
+        break;
+      }
+      case "riftBurst":
+        for (const tile of effect.tiles ?? []) {
+          const tx = view.offsetX + (tile.x + 0.5) * tileSize;
+          const ty = view.offsetY + (tile.y + 0.5) * tileSize;
+          this.glowAt(ctx, tx, ty, tileSize * 0.7, "170, 80, 255", 0.8 * (1 - t));
+          ctx.strokeStyle = `rgba(230, 200, 255, ${1 - t})`;
+          ctx.lineWidth = Math.max(1.5, tileSize * 0.06);
+          ctx.beginPath();
+          ctx.moveTo(tx - tileSize * 0.3, ty + tileSize * 0.1);
+          ctx.lineTo(tx - tileSize * 0.05, ty - tileSize * 0.05);
+          ctx.lineTo(tx + tileSize * 0.3, ty - tileSize * 0.15);
+          ctx.stroke();
+        }
+        break;
+      case "eclipse": {
+        // A violet-black pulse sweeping the whole view.
+        const alpha = t < 0.15 ? t / 0.15 : 1 - (t - 0.15) / 0.85;
+        ctx.fillStyle = `rgba(40, 0, 70, ${0.55 * alpha})`;
+        ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        break;
+      }
+      case "stitchTear":
+        this.glowAt(ctx, px, py, tileSize * 0.9, "255, 80, 60", 0.6 * (1 - t));
+        break;
+      case "bossVictory": {
+        // A slow white bloom over the whole map, and a ring breaking out from the arena's heart.
+        const alpha = t < 0.12 ? t / 0.12 : 1 - (t - 0.12) / 0.88;
+        ctx.fillStyle = `rgba(255, 250, 235, ${0.55 * alpha})`;
+        ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        const heart = effect.arena?.center ?? { x: effect.x, y: effect.y };
+        const hx = view.offsetX + (heart.x + 0.5) * tileSize;
+        const hy = view.offsetY + (heart.y + 0.5) * tileSize;
+        const r = tileSize * (0.5 + easeOut(t) * 7);
+        ctx.strokeStyle = `rgba(255, 233, 168, ${0.8 * (1 - t)})`;
+        ctx.lineWidth = Math.max(2, tileSize * 0.15 * (1 - t) + 1);
+        ctx.beginPath();
+        ctx.arc(hx, hy, r, 0, TAU);
+        ctx.stroke();
+        break;
+      }
       case "poisonSplash": {
         const r = tileSize * (0.2 + easeOut(t) * 0.4);
         ctx.strokeStyle = `rgba(127, 211, 107, ${0.85 * (1 - t)})`;
@@ -935,14 +1063,15 @@ export class SpellFx {
         const alpha = t < 0.15 ? t / 0.15 : 1 - (t - 0.15) / 0.85;
         const width = tileSize * 0.7 * (1 - t * 0.6);
         const top = py - tileSize * 2.4;
+        const rgb = effect.rgb ?? "226, 200, 255";
         ctx.globalCompositeOperation = "lighter";
         const beam = ctx.createLinearGradient(px - width / 2, 0, px + width / 2, 0);
-        beam.addColorStop(0, "rgba(176, 108, 255, 0)");
-        beam.addColorStop(0.5, `rgba(226, 200, 255, ${0.75 * alpha})`);
-        beam.addColorStop(1, "rgba(176, 108, 255, 0)");
+        beam.addColorStop(0, rgba(rgb, 0));
+        beam.addColorStop(0.5, rgba(rgb, 0.75 * alpha));
+        beam.addColorStop(1, rgba(rgb, 0));
         ctx.fillStyle = beam;
         ctx.fillRect(px - width / 2, top, width, py + tileSize * 0.5 - top);
-        this.glowAt(ctx, px, py + tileSize * 0.3, tileSize * 0.9, RGB.arcane, 0.6 * alpha);
+        this.glowAt(ctx, px, py + tileSize * 0.3, tileSize * 0.9, effect.rgb ?? RGB.arcane, 0.6 * alpha);
         break;
       }
       case "shieldUp": {
@@ -1226,10 +1355,15 @@ export class SpellFx {
     if (kind === "dash") this.addEffect({ kind: "dust", x: at.x, y: at.y, delay });
   }
 
-  addLeap({ from, to, shadow = false }) {
-    const start = performance.now();
-    const duration = 260;
+  addLeap({ from, to, shadow = false, kind = "leap", delay = 0 }) {
+    const start = performance.now() + delay;
     this.motions = this.motions ?? [];
+    if (kind === "pull") {
+      // Dragged by Patches' hook: a fast, flat slide with no dust or afterimages.
+      this.motions.push({ id: "player", kind: "pull", from, to, start, duration: 200 });
+      return;
+    }
+    const duration = 260;
     this.motions.push({ id: "player", kind: "leap", from, to, start, duration, shadow });
     this.addEffect({ kind: shadow ? "shadowPuff" : "dust", x: from.x, y: from.y });
     this.addEffect({ kind: shadow ? "shadowPuff" : "dust", x: to.x, y: to.y, delay: duration - 30 });
@@ -1243,7 +1377,13 @@ export class SpellFx {
     for (const motion of this.motions) {
       if (motion.id !== id) continue;
       const t = (this.now - motion.start) / motion.duration;
-      if (t < 0) continue;
+      if (t < 0) {
+        if (motion.kind === "pull") {
+          result.dx += motion.from.x - motion.to.x;
+          result.dy += motion.from.y - motion.to.y;
+        }
+        continue;
+      }
       if (motion.kind === "leap") {
         const at = (time) => {
           const e = easeOut(clamp(time, 0, 1));
@@ -1256,6 +1396,10 @@ export class SpellFx {
           if (t - lag > 0) result.ghosts.push({ ...at(t - lag), alpha });
         }
         result.ghostColor = motion.shadow ? "#5b4a7a" : "#cfe8ff";
+      } else if (motion.kind === "pull") {
+        const e = easeInOut(clamp(t, 0, 1));
+        result.dx += (motion.from.x - motion.to.x) * (1 - e);
+        result.dy += (motion.from.y - motion.to.y) * (1 - e);
       } else if (motion.kind === "dash") {
         // Charge: rush in to strike, hold a beat, then settle back, leaving afterimages on the way in.
         const reach = motion.distance + 0.3;
@@ -1388,7 +1532,7 @@ export class SpellFx {
   // Over the sprite: frozen ice tint, flames, frost and poison motes, shield bubbles.
   drawAuraFront(ctx, entity, sprite, rect, tileSize) {
     const statuses = entity.statuses ?? [];
-    if (!statuses.length) return;
+    if (!statuses.length && !entity.enraged && !entity.stitching) return;
     const find = (id) => statuses.find((status) => status.id === id);
     const cx = rect.x + rect.width / 2;
     const feet = rect.y + rect.height;
@@ -1408,6 +1552,21 @@ export class SpellFx {
       ctx.restore();
     } else if (find("chilled") && chance(3)) {
       this.emit({ x: tileX + rand(-0.3, 0.3), y: tileY - rand(0.6, 1), vx: rand(-0.1, 0.1), vy: rand(0.3, 0.6), life: rand(0.5, 0.8), size: rand(0.02, 0.035), color: "#dff6ff", drag: 1 });
+    }
+
+    if (entity.enraged) {
+      // Patches enraged: seams glowing red, steam venting.
+      const pulse = motion ? 0.3 + Math.sin(this.now / 160) * 0.15 : 0.3;
+      if (sprite) {
+        ctx.save();
+        ctx.globalAlpha = pulse;
+        ctx.drawImage(this.getTint(sprite, "#ff3b2f"), rect.x, rect.y, rect.width, rect.height);
+        ctx.restore();
+      }
+      if (chance(10)) this.emit({ x: tileX + rand(-0.3, 0.3), y: tileY - rand(0.3, 0.9), vx: rand(-0.2, 0.2), vy: rand(-1, -0.5), life: rand(0.35, 0.6), size: rand(0.05, 0.08), color: "rgba(255, 90, 60, 0.45)", shape: "smoke", drag: 1 });
+    }
+    if (entity.stitching && chance(6)) {
+      this.emit({ x: tileX + rand(-0.3, 0.3), y: tileY - rand(0.2, 0.8), vx: rand(-0.3, 0.3), vy: rand(-0.4, 0), life: rand(0.3, 0.5), size: rand(0.025, 0.04), color: "#b8f0a0", shape: "twinkle", drag: 1 });
     }
 
     if (find("sundered")) {

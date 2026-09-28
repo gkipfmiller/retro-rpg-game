@@ -56,6 +56,10 @@ export function deepClone(value) {
 }
 
 // Floor tiles you can't step onto: holes, shrines, and room props (sewer pillars, crates, cauldrons).
+// Boss-arena props that stand in the way (see generator dressArena). Bone piles, seams, and
+// fissures are floor markings and don't block.
+export const BLOCKING_ARENA_PROPS = new Set(["coffin", "slab", "pit", "throne", "pillar"]);
+
 export function isBlockedFloor(tile) {
-  return Boolean(tile?.hole || tile?.shrineId || tile?.prop);
+  return Boolean(tile?.hole || tile?.shrineId || tile?.prop || tile?.sealed || BLOCKING_ARENA_PROPS.has(tile?.arenaProp));
 }

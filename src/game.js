@@ -1,4 +1,4 @@
-import { BAND_NAMES, BOONS, BOSS_REWARDS, BOSS_TITLES, CHEST_TABLE, CLASSES, ENEMIES, ITEMS, QUICK_SLOT_COUNT, SKILL_TREES, SPELLS, STATUS_DEFINITIONS, TRAPS } from "./data.js";
+import { BAND_NAMES, BOONS, BOSS_REWARDS, BOSS_TITLES, CHEST_TABLE, CLASSES, ENEMIES, ITEMS, QUICK_SLOT_COUNT, SKILL_TREES, SPELLS, STATUS_DEFINITIONS, TRAPS, getDepthDamageBonus, getDepthHpMultiplier } from "./data.js";
 import { attachVaultFeaturesToFloor, generateFloor, getDropForEnemy } from "./generator.js";
 import { getActorSpriteFrame, getEnemySpriteId, getItemSprite } from "./assets.js";
 import { getBranchIconUrl, getSpellIconUrl, getStatusIconUrl } from "./pixelIcons.js";
@@ -22,6 +22,18 @@ const XP_THRESHOLDS = {
 const ENEMY_BEAT_MS = 130;
 // Power Strike's wind-up glint before the blow lands (cosmetic; the hit resolves at once).
 const POWER_STRIKE_WINDUP_MS = 130;
+// Patches' Stitch Up: HP healed per turn of stitching, and the damage between his turns that tears it.
+const PATCHES_STITCH_HEAL = 8;
+const PATCHES_STITCH_BREAK = 12;
+// How often Patches can Ground Slam, and how often and how long his hits Rend.
+const PATCHES_SLAM_COOLDOWN = 3;
+const PATCHES_REND_CHANCE = 0.6;
+const PATCHES_REND_TURNS = 4;
+// The Abyssal Overlord: HP regained per devoured imp, the Eclipse's damage (ignores armour), and
+// the burn for standing in crumbled void at the end of a turn.
+const OVERLORD_DEVOUR_HEAL = 14;
+const OVERLORD_ECLIPSE_DAMAGE = [20, 26];
+const VOID_BURN = 3;
 
 function occupiedByEnemy(floor, x, y) {
   return floor.enemies.find((enemy) => enemy.x === x && enemy.y === y && !enemy.disguised);
@@ -210,7 +222,7 @@ export class Game {
   }
 
   getNegativeStatusIds() {
-    return ["chilled", "sundered", "weakened", "hexed", "poisoned"];
+    return ["chilled", "sundered", "weakened", "hexed", "poisoned", "rended"];
   }
 
   getBoonChoices(classId, runSeed) {
@@ -683,6 +695,13 @@ export class Game {
       this.state.run.player.quickSlots = this.padQuickSlots(this.state.run.player.quickSlots);
       // Saves from before spells were granted by skills (or before Arcane Spark) learn them now.
       this.syncSkillSpells(this.state.run.player);
+      // Crates were retired from the sewer props: clear any on a floor saved before that.
+      const savedMap = this.state.run.currentFloor.map;
+      savedMap.forEach((row, y) => row.forEach((tile, x) => {
+        if (tile.prop !== "crate_small" && tile.prop !== "crate_large") return;
+        if (tile.prop === "crate_large" && savedMap[y][x + 1]?.prop === "extends") savedMap[y][x + 1].prop = null;
+        tile.prop = null;
+      }));
       for (const abilityId of CLASSES[this.state.run.player.classId].abilities) {
         if (!this.state.run.player.learnedSpells.includes(abilityId)) this.state.run.player.learnedSpells.push(abilityId);
       }
@@ -1171,7 +1190,10 @@ export class Game {
     const phaseDamageBonus = enemy.templateId === "abyssal_overlord" && enemy.phaseTwo ? 2 : 0;
     // Mimics hit harder the deeper they're found: +1 damage per 6 floors past Floor 3 (their HP already
     // scales in the generator), so a deep mimic stays a real threat rather than free loot.
-    const depthDamageBonus = enemy.templateId === "mimic" ? Math.max(0, Math.floor(((enemy.floorNumber ?? 3) - 3) / 6)) : 0;
+    // Ordinary enemies gain damage with depth (DEPTH_SCALING); bosses are tuned by hand.
+    const depthDamageBonus = enemy.templateId === "mimic"
+      ? Math.max(0, Math.floor(((enemy.floorNumber ?? 3) - 3) / 6))
+      : template.behavior === "boss" ? 0 : getDepthDamageBonus(enemy.floorNumber ?? this.state.run?.floorNumber ?? 1);
     return {
       ...template,
       accuracy: template.accuracy + (enemy.elite ? 3 : 0) + phaseAccuracyBonus - (chilled ? 6 : 0),
@@ -1225,7 +1247,7 @@ export class Game {
     return {
       name: enemy.name,
       rank: enemy.templateId === "abyssal_overlord"
-        ? `Final Boss${enemy.phaseTwo ? " • Phase 2" : " • Phase 1"}`
+        ? `Final Boss • Phase ${enemy.phaseThree ? 3 : enemy.phaseTwo ? 2 : 1}`
         : template.behavior === "boss" ? "Boss" : enemy.elite ? "Elite" : "Enemy",
       behavior: behaviorLabels[template.behavior] ?? template.behavior,
       hp: Math.max(0, enemy.hp),
@@ -1256,14 +1278,15 @@ export class Game {
 
   summonEnemy(templateId, x, y, flags = {}) {
     const template = ENEMIES[templateId];
+    const hp = Math.floor(template.hp * getDepthHpMultiplier(this.state.run.floorNumber));
     const enemy = {
       id: `enemy-summon-${templateId}-${this.state.run.turn}-${Math.random().toString(36).slice(2, 7)}`,
       templateId,
       name: template.name,
       x,
       y,
-      hp: template.hp,
-      maxHp: template.hp,
+      hp,
+      maxHp: hp,
       alerted: true,
       lastKnownPlayerPosition: { x: this.state.run.player.x, y: this.state.run.player.y },
       statuses: [],
@@ -2165,6 +2188,10 @@ export class Game {
     if (ENEMIES[enemy.templateId]?.behavior === "boss") {
       this.renderer?.triggerFlash("seal");
       this.recordBossOutcome(enemy.templateId, "defeated");
+      // Victory: the arena's sigil shatters, the bars lift, the stairs unseal, the reward lights up.
+      const chest = floor.chests?.find((entry) => entry.bossReward);
+      this.renderer?.queueEffect({ kind: "bossVictory", x: enemy.x, y: enemy.y, arena: floor.arena ?? null, stairs: floor.exit ?? null, chest: chest ? { x: chest.x, y: chest.y } : null });
+      this.updateArenaSeal();
     }
     const playerSnapshot = this.getPlayerCombatSnapshot();
     if (playerSnapshot.killMomentum) {
@@ -2665,8 +2692,9 @@ export class Game {
       if (item.effect.type === "heal") {
         this.soundPlayer?.play('heal');
         const derived = this.getDerivedStats(player);
-        player.hp = Math.min(derived.maxHp, player.hp + item.effect.value);
-        this.log(`You recover ${item.effect.value} HP.`);
+        const amount = this.getRendedHealing(item.effect.value);
+        player.hp = Math.min(derived.maxHp, player.hp + amount);
+        this.log(`You recover ${amount} HP.${amount < item.effect.value ? " Your rent wounds resist the healing." : ""}`);
       } else if (item.effect.type === "mana") {
         this.soundPlayer?.play('use_item');
         const derived = this.getDerivedStats(player);
@@ -2778,7 +2806,7 @@ export class Game {
       shrine.used = true;
       if (shrine.mode === "healing") {
         const derived = this.getDerivedStats(player);
-        const amount = Math.floor(derived.maxHp * 0.45);
+        const amount = this.getRendedHealing(Math.floor(derived.maxHp * 0.45));
         player.hp = Math.min(derived.maxHp, player.hp + amount);
         this.log(`The shrine restores ${amount} HP.`);
       } else {
@@ -3575,6 +3603,7 @@ export class Game {
     this.state.run.turn += 1;
     this.takeSpireTurn();
     this.takeEnemyTurns();
+    if (this.state.run.player.hp > 0) this.updateArenaSeal();
     if (this.state.run.player.hp <= 0) return;
     this.processStatuses();
     if (!this.isEncounterActive()) {
@@ -3609,6 +3638,17 @@ export class Game {
     if (player.hp <= 0) {
       this.handleDeath("Succumbed to poison.", { kind: "poison", name: "Poison" });
       return;
+    }
+    // Crumbled arena floor (the Overlord's second phase) burns anyone standing on it.
+    if (this.state.run.currentFloor.map[player.y]?.[player.x]?.voidHazard) {
+      player.hp = Math.max(0, player.hp - VOID_BURN);
+      this.recordDamage("taken", VOID_BURN);
+      this.renderer?.queueDamagePopup({ x: player.x, y: player.y, damage: VOID_BURN, type: "player", targetId: "player" });
+      this.log(`The void burns you for ${VOID_BURN} damage.`);
+      if (player.hp <= 0) {
+        this.handleDeath("Consumed by the void beneath the throne.", { kind: "trap", name: "The Void" });
+        return;
+      }
     }
     for (const enemy of [...this.state.run.currentFloor.enemies]) {
       // Skip anything removed earlier in this loop (a summon whose master just died).
@@ -3666,6 +3706,364 @@ export class Game {
     enemy.lastKnownPlayerPosition = { x: player.x, y: player.y };
   }
 
+  // Boss arenas seal while the fight is on: iron bars drop across the entrance once the boss wakes
+  // with the player inside, and lift when the boss dies or the player is somehow out (an escape
+  // scroll), so the way back never locks.
+  updateArenaSeal() {
+    const floor = this.state.run.currentFloor;
+    const arena = floor.arena;
+    if (!arena?.gates?.length) return;
+    const boss = floor.enemies.find((enemy) => ENEMIES[enemy.templateId]?.behavior === "boss");
+    const shouldSeal = Boolean(boss?.roomTriggered) && this.isInsideRoom(this.state.run.player, arena);
+    if (shouldSeal === Boolean(arena.sealed)) return;
+    arena.sealed = shouldSeal;
+    for (const gate of arena.gates) floor.map[gate.y][gate.x].sealed = shouldSeal;
+    this.renderer?.queueEffect({ kind: shouldSeal ? "gateSlam" : "gateLift", x: arena.gates[0].x, y: arena.gates[0].y, gates: arena.gates });
+    this.log(shouldSeal ? "Iron bars slam down across the way you came." : "The bars grind upward. The way back is open.");
+  }
+
+  // Rend (Patches): healing from potions and shrines is halved while it lasts.
+  getRendedHealing(amount) {
+    return this.hasStatus(this.state.run.player, "rended") ? Math.max(1, Math.floor(amount / 2)) : amount;
+  }
+
+  // Area attacks: tiles marked a turn ahead (enemy.aoe), resolved on the enemy's next turn. The
+  // player dodges by standing anywhere else. Returns true if the enemy's turn was spent on it.
+  resolveAreaAttack(enemy) {
+    const { player } = this.state.run;
+    const aoe = enemy.aoe;
+    enemy.aoe = null;
+    const struck = aoe.tiles.some((tile) => tile.x === player.x && tile.y === player.y);
+    if (aoe.kind === "slam") {
+      this.renderer?.queueEffect({ kind: "groundSlam", x: enemy.x, y: enemy.y, delay: ENEMY_BEAT_MS });
+      this.renderer?.triggerSlamFlash();
+      if (struck) this.enemyAttack(enemy, "groundSlam");
+      else this.log("Patches' fists crater the floor where you stood.");
+      return true;
+    }
+    if (aoe.kind === "rift") {
+      this.renderer?.queueEffect({ kind: "riftBurst", x: aoe.tiles[0].x, y: aoe.tiles[0].y, tiles: aoe.tiles, delay: ENEMY_BEAT_MS });
+      if (struck) this.enemyAttack(enemy, "rift");
+      else this.log("The void rift tears open on empty stone.");
+      return true;
+    }
+    if (aoe.kind === "crumble") {
+      const floor = this.state.run.currentFloor;
+      for (const tile of aoe.tiles) floor.map[tile.y][tile.x].voidHazard = true;
+      this.renderer?.queueEffect({ kind: "crumble", x: aoe.tiles[0].x, y: aoe.tiles[0].y, tiles: aoe.tiles });
+      this.log("The arena's edge falls away into burning void.");
+      return true;
+    }
+    if (aoe.kind === "eclipse") {
+      const arena = this.state.run.currentFloor.arena;
+      this.renderer?.queueEffect({ kind: "eclipse", x: arena?.center.x ?? enemy.x, y: arena?.center.y ?? enemy.y, arena });
+      this.renderer?.shake();
+      if (struck) this.enemyAttack(enemy, "eclipse");
+      else this.log("The Eclipse breaks over the arena. The sigil holds.");
+      return true;
+    }
+    if (aoe.kind === "hook") {
+      this.renderer?.queueEffect({ kind: "hookChain", from: { x: enemy.x, y: enemy.y }, x: struck ? player.x : aoe.tiles[aoe.tiles.length - 1].x, y: struck ? player.y : aoe.tiles[aoe.tiles.length - 1].y, delay: ENEMY_BEAT_MS });
+      if (!struck) {
+        this.log("The meat hook whips past you and clatters away.");
+        return true;
+      }
+      // Reel the player in to the nearest free tile along the chain.
+      const floor = this.state.run.currentFloor;
+      const landing = aoe.tiles.find((tile) => {
+        const mapTile = floor.map[tile.y]?.[tile.x];
+        return mapTile && !isBlockedFloor(mapTile) && !occupiedByEnemy(floor, tile.x, tile.y) && !(this.getSpire()?.x === tile.x && this.getSpire()?.y === tile.y);
+      });
+      if (landing && (landing.x !== player.x || landing.y !== player.y)) {
+        this.renderer?.queueLeap({ from: { x: player.x, y: player.y }, to: landing, kind: "pull", delay: ENEMY_BEAT_MS + 120 });
+        player.x = landing.x;
+        player.y = landing.y;
+      }
+      this.log("A meat hook bites into you and drags you to Patches.");
+      this.enemyAttack(enemy, "hook");
+      return true;
+    }
+    return false;
+  }
+
+  // Patches, Keeper of the Stitching Pit. Returns true when his turn is spent.
+  //   Meat Hook: marks a lane toward a player 2-5 tiles away; anyone still in it is dragged in.
+  //   Ground Slam: marks the 8 tiles around him; anyone still there takes a heavy, sure hit.
+  //   Stitch Up: once, at half HP, he walks to a stitching post and sews himself up (heals each
+  //     turn for 3 turns) unless a big enough hit tears the stitches.
+  //   Enrage: at 30% HP his seams burst: he moves twice and strikes twice on alternate turns.
+  //   Rend: his fists can leave wounds that halve healing (see enemyAttack).
+  takePatchesTurn(enemy, { canSee, distance }) {
+    const { currentFloor, player } = this.state.run;
+    const ratio = enemy.hp / enemy.maxHp;
+    const chebyshev = Math.max(Math.abs(enemy.x - player.x), Math.abs(enemy.y - player.y));
+
+    if (enemy.stitching) {
+      const taken = (enemy.hpMark ?? enemy.hp) - enemy.hp;
+      if (taken >= PATCHES_STITCH_BREAK) {
+        enemy.stitching = null;
+        enemy.staggeredUntil = enemy.turnCounter + 1;
+        this.log("The stitches tear loose! Patches staggers.");
+        this.renderer?.queueEffect({ kind: "stitchTear", x: enemy.x, y: enemy.y });
+        return true;
+      }
+      const heal = Math.min(PATCHES_STITCH_HEAL, enemy.maxHp - enemy.hp);
+      enemy.hp += heal;
+      enemy.hpMark = enemy.hp;
+      enemy.stitching.turnsLeft -= 1;
+      this.renderer?.queueEffect({ kind: "stitchHeal", x: enemy.x, y: enemy.y, targetId: enemy.id });
+      this.renderer?.queueDamagePopup({ x: enemy.x, y: enemy.y, damage: `+${heal}`, type: "heal", targetId: enemy.id });
+      this.log(`Patches stitches himself back together (+${heal} HP).`);
+      if (enemy.stitching.turnsLeft <= 0) enemy.stitching = null;
+      return true;
+    }
+    if (enemy.staggeredUntil >= enemy.turnCounter) return true;
+
+    if (!enemy.stitchUsed && ratio <= 0.5) {
+      enemy.stitchUsed = true;
+      const posts = [];
+      currentFloor.map.forEach((row, y) => row.forEach((tile, x) => { if (tile.patchMarker) posts.push({ x, y }); }));
+      const free = posts.filter((post) => !occupiedByEnemy(currentFloor, post.x, post.y) && !(post.x === player.x && post.y === player.y));
+      enemy.stitchTarget = free.sort((a, b) => manhattan(a, enemy) - manhattan(b, enemy))[0] ?? null;
+      enemy.stitchDeadline = enemy.turnCounter + 7;
+      if (enemy.stitchTarget) this.log("Patches lurches toward a stitching post, trailing thread.");
+    }
+    if (enemy.stitchTarget) {
+      if (enemy.x === enemy.stitchTarget.x && enemy.y === enemy.stitchTarget.y) {
+        enemy.stitchTarget = null;
+        enemy.stitching = { turnsLeft: 3 };
+        enemy.hpMark = enemy.hp;
+        this.log("Patches starts sewing his wounds shut. Hit him hard to tear the stitches!");
+        this.renderer?.queueEffect({ kind: "stitchHeal", x: enemy.x, y: enemy.y, targetId: enemy.id });
+        return true;
+      }
+      if (enemy.turnCounter > enemy.stitchDeadline || !this.stepEnemyToward(enemy, enemy.stitchTarget)) enemy.stitchTarget = null;
+      else return true;
+    }
+
+    // A telegraphed attack was just declared: nothing else this turn.
+    const telegraph = (aoe, message) => {
+      enemy.aoe = { ...aoe, landsOnTurn: enemy.turnCounter + 1 };
+      this.log(message);
+      return true;
+    };
+    if (chebyshev <= 1 && enemy.turnCounter >= (enemy.slamReadyTurn ?? 3)) {
+      enemy.slamReadyTurn = enemy.turnCounter + PATCHES_SLAM_COOLDOWN;
+      const tiles = [];
+      for (let dy = -1; dy <= 1; dy += 1) for (let dx = -1; dx <= 1; dx += 1) {
+        if ((dx || dy) && currentFloor.map[enemy.y + dy]?.[enemy.x + dx]?.type === "floor") tiles.push({ x: enemy.x + dx, y: enemy.y + dy });
+      }
+      return telegraph({ kind: "slam", tiles }, "Patches raises both fists high. Get clear of him!");
+    }
+    if (canSee && distance >= 2 && distance <= 5 && enemy.turnCounter >= (enemy.hookReadyTurn ?? 2)) {
+      const tiles = this.getHookLane(enemy, player);
+      if (tiles.some((tile) => tile.x === player.x && tile.y === player.y)) {
+        enemy.hookReadyTurn = enemy.turnCounter + 5;
+        return telegraph({ kind: "hook", tiles }, "Patches whirls a meat hook on its chain. Step out of its line!");
+      }
+    }
+
+    if (enemy.enraged && enemy.turnCounter % 2 === 0) {
+      if (distance === 1) {
+        this.enemyAttack(enemy);
+        if (player.hp > 0) this.enemyAttack(enemy);
+        return true;
+      }
+      // One extra step now; the ordinary chase below takes the second.
+      this.stepEnemyToward(enemy, player);
+    }
+    return false;
+  }
+
+  // Patches' enrage at 30% HP. Checked at the start of his turn, before anything he'd marked lands.
+  checkPatchesEnrage(enemy) {
+    if (enemy.enraged || enemy.hp / enemy.maxHp > 0.3) return;
+    enemy.enraged = true;
+    this.log("Patches' seams burst. He roars and comes on faster.");
+    this.renderer?.triggerFlash("slam");
+    this.renderer?.shake();
+    this.state.ui.bossIntro = { templateId: enemy.templateId, name: enemy.name, kicker: "The seams burst", title: "Patches is enraged", phase: true, startedAt: Date.now() };
+  }
+
+  // The Abyssal Overlord, Sovereign of the Abyssal Throne. Three phases by HP:
+  //   1 (above 2/3) Enthroned: he never leaves his place before the throne. Abyssal bolts, and void
+  //     rifts marked under the player.
+  //   2 (above 1/3) Rising: he steps down to hunt and cleave, keeps two imps summoned, and the arena's
+  //     outer rings crumble into burning void, one ring at a time.
+  //   3 Hunger: the light closes in, he devours his imps to heal, and every so often he calls the
+  //     Abyssal Eclipse: the whole arena is marked except a couple of glowing sigils, two turns ahead.
+  // Returns true when his turn is spent; false lets the ordinary boss melee and chase run.
+  takeOverlordTurn(enemy, { canSee, distance, template }) {
+    const { currentFloor, player } = this.state.run;
+    const ratio = enemy.hp / enemy.maxHp;
+    const imps = () => currentFloor.enemies.filter((candidate) => candidate.templateId === "infernal_imp" && candidate.summonedBy === enemy.id);
+    const summonImp = () => {
+      const tile = this.findAdjacentOpen(enemy.x, enemy.y);
+      if (!tile) return false;
+      this.summonEnemy("infernal_imp", tile.x, tile.y, { summonedBy: enemy.id });
+      return true;
+    };
+    // One marked attack at a time: while one is pending, only bolts and blows.
+    const marking = !enemy.aoe;
+    const mark = (aoe, message, turnsAhead = 1) => {
+      enemy.aoe = { ...aoe, landsOnTurn: enemy.turnCounter + turnsAhead };
+      this.log(message);
+      return true;
+    };
+
+    if (!enemy.phaseTwo && ratio <= 2 / 3) {
+      enemy.phaseTwo = true;
+      enemy.crumbleReadyTurn = enemy.turnCounter + 3;
+      this.log("The Abyssal Overlord rises from the throne, wreathed in shadowflame.");
+      this.renderer?.triggerFlash("void");
+      this.renderer?.shake();
+      this.state.ui.bossIntro = { templateId: enemy.templateId, name: enemy.name, kicker: "The throne answers", title: "Phase two: the Overlord rises", phase: true, startedAt: Date.now() };
+      let summons = 0;
+      while (summons < 2 && summonImp()) summons += 1;
+      if (summons) this.log(`The Overlord tears open the void and summons ${summons} Infernal Imp${summons === 1 ? "" : "s"}.`);
+      return true;
+    }
+    if (enemy.phaseTwo && !enemy.phaseThree && ratio <= 1 / 3) {
+      enemy.phaseThree = true;
+      this.log("The throne hungers. The light gutters, and the Overlord turns on his own.");
+      this.renderer?.triggerFlash("void");
+      this.renderer?.shake();
+      this.state.ui.bossIntro = { templateId: enemy.templateId, name: enemy.name, kicker: "The throne hungers", title: "Phase three: the Abyssal Eclipse", phase: true, startedAt: Date.now() };
+      if (marking) return this.declareEclipse(enemy);
+      enemy.eclipseReadyTurn = enemy.turnCounter + 2;
+      return true;
+    }
+
+    if (enemy.phaseThree) {
+      if (marking && enemy.turnCounter >= (enemy.eclipseReadyTurn ?? 0)) return this.declareEclipse(enemy);
+      // Devour the nearest imp to heal. Killing them first denies it.
+      const prey = imps().sort((a, b) => manhattan(a, enemy) - manhattan(b, enemy))[0];
+      if (prey && enemy.turnCounter % 3 === 2) {
+        const heal = Math.min(OVERLORD_DEVOUR_HEAL, enemy.maxHp - enemy.hp);
+        this.renderer?.queueEffect({ kind: "soulDrain", x: prey.x, y: prey.y, to: { x: enemy.x, y: enemy.y } });
+        currentFloor.map[prey.y][prey.x].occupant = null;
+        currentFloor.enemies = currentFloor.enemies.filter((entry) => entry !== prey);
+        enemy.hp += heal;
+        this.renderer?.queueDamagePopup({ x: enemy.x, y: enemy.y, damage: `+${heal}`, type: "heal", targetId: enemy.id, delay: 350 });
+        this.log(`The Overlord devours an Infernal Imp and knits back ${heal} HP.`);
+        return true;
+      }
+    }
+
+    if (enemy.phaseTwo && canSee && imps().length < 2 && enemy.turnCounter % 4 === 1 && summonImp()) {
+      this.log(`The Overlord rends the void and calls another Infernal Imp (${imps().length}/2).`);
+      this.renderer?.triggerFlash("void");
+      return true;
+    }
+
+    // Phase two onward: the arena's outer rings crumble into void, outermost first.
+    if (marking && enemy.phaseTwo && (enemy.crumbleWave ?? 0) < 2 && enemy.turnCounter >= (enemy.crumbleReadyTurn ?? 0)) {
+      const arena = currentFloor.arena;
+      const ring = enemy.crumbleWave ?? 0;
+      const tiles = [];
+      if (arena) {
+        for (let y = arena.y; y < arena.y + arena.height; y += 1) {
+          for (let x = arena.x; x < arena.x + arena.width; x += 1) {
+            const edge = Math.min(x - arena.x, arena.x + arena.width - 1 - x, y - arena.y, arena.y + arena.height - 1 - y);
+            const tile = currentFloor.map[y][x];
+            if (edge === ring && tile.type === "floor" && !tile.voidHazard && !isBlockedFloor(tile) && !tile.stairs && !tile.chestId) tiles.push({ x, y });
+          }
+        }
+      }
+      enemy.crumbleWave = ring + 1;
+      enemy.crumbleReadyTurn = enemy.turnCounter + 6;
+      if (tiles.length) return mark({ kind: "crumble", tiles }, "The arena's edge cracks and sags toward the void. Move inward!");
+    }
+
+    // Void rift under the player.
+    if (marking && canSee && distance <= 7 && enemy.turnCounter >= (enemy.riftReadyTurn ?? 2)) {
+      enemy.riftReadyTurn = enemy.turnCounter + (enemy.phaseTwo ? 5 : 4);
+      const tiles = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]
+        .map(([dx, dy]) => ({ x: player.x + dx, y: player.y + dy }))
+        .filter((tile) => currentFloor.map[tile.y]?.[tile.x]?.type === "floor");
+      return mark({ kind: "rift", tiles }, "The floor beneath you splits with violet light. Move!");
+    }
+
+    // The cleave and bolt warnings fire the turn before they land (turns divisible by 3).
+    if (canSee && enemy.turnCounter % 3 === 2) {
+      if (distance === 1) {
+        this.log("The Abyssal Overlord draws back for a sweeping cleave.");
+        this.setTelegraph(enemy, "melee");
+      } else if (distance <= (template.range ?? 6) + 1) {
+        this.log("The Abyssal Overlord gathers abyssal fire.");
+        this.setTelegraph(enemy, "bolt");
+      }
+    }
+    if (distance > 1 && canSee && distance <= (template.range ?? 6) && enemy.turnCounter % 3 === 0) {
+      this.enemyAttack(enemy, "abyssal_bolt");
+      return true;
+    }
+    // Enthroned: in phase one he never steps away from the throne.
+    if (!enemy.phaseTwo && distance > 1) return true;
+    return false;
+  }
+
+  // The Abyssal Eclipse: every arena tile is marked except two glowing sigils near the player, and
+  // it lands two turns later. Stand on a sigil.
+  declareEclipse(enemy) {
+    const { currentFloor, player } = this.state.run;
+    const arena = currentFloor.arena;
+    enemy.eclipseReadyTurn = enemy.turnCounter + 9;
+    if (!arena) return false;
+    const open = [];
+    for (let y = arena.y; y < arena.y + arena.height; y += 1) {
+      for (let x = arena.x; x < arena.x + arena.width; x += 1) {
+        // Pillars and the throne are covered too (nobody can stand there), so the wash reads as one sheet.
+        if (currentFloor.map[y][x].type === "floor") open.push({ x, y });
+      }
+    }
+    // Sigils 2 tiles from the player (reachable in time), away from void and other enemies.
+    const reachable = open.filter((tile) => {
+      const mapTile = currentFloor.map[tile.y][tile.x];
+      return manhattan(tile, player) === 2 && !isBlockedFloor(mapTile) && !mapTile.voidHazard && !occupiedByEnemy(currentFloor, tile.x, tile.y);
+    });
+    const rng = createRng(hashSeed(this.state.run.runSeed, enemy.turnCounter, "eclipse"));
+    const safe = [];
+    while (safe.length < 2 && reachable.length) safe.push(reachable.splice(rng.int(0, reachable.length - 1), 1)[0]);
+    const isSafe = (tile) => safe.some((sigil) => sigil.x === tile.x && sigil.y === tile.y);
+    enemy.aoe = { kind: "eclipse", tiles: open.filter((tile) => !isSafe(tile)), safe, landsOnTurn: enemy.turnCounter + 2 };
+    this.log("The Overlord raises both hands to the dark: the Abyssal Eclipse is coming. Reach a glowing sigil!");
+    return true;
+  }
+
+  // Tiles from beside Patches out toward (and past) the player, up to 5 tiles, stopping at walls.
+  getHookLane(enemy, player) {
+    const map = this.state.run.currentFloor.map;
+    const dx = player.x - enemy.x;
+    const dy = player.y - enemy.y;
+    const length = Math.max(Math.abs(dx), Math.abs(dy)) || 1;
+    const far = { x: Math.round(enemy.x + (dx / length) * 5), y: Math.round(enemy.y + (dy / length) * 5) };
+    const lane = [];
+    for (const cell of lineBetween(enemy, far).slice(1)) {
+      if (map[cell.y]?.[cell.x]?.type !== "floor") break;
+      lane.push({ x: cell.x, y: cell.y });
+    }
+    return lane;
+  }
+
+  // One step along a path toward a tile, around other enemies. Returns false when there's no way.
+  stepEnemyToward(enemy, target) {
+    const floor = this.state.run.currentFloor;
+    const blockers = new Set(floor.enemies.filter((entry) => entry.id !== enemy.id).map((entry) => toKey(entry.x, entry.y)));
+    for (const ally of floor.allies ?? []) blockers.add(toKey(ally.x, ally.y));
+    const player = this.state.run.player;
+    blockers.add(toKey(player.x, player.y));
+    const path = pathfind(floor.map, enemy, target, blockers);
+    if (!path || path.length < 2) return false;
+    const next = path[1];
+    if (next.x === player.x && next.y === player.y) return false;
+    floor.map[enemy.y][enemy.x].occupant = null;
+    enemy.x = next.x;
+    enemy.y = next.y;
+    floor.map[enemy.y][enemy.x].occupant = enemy.id;
+    return true;
+  }
+
   takeEnemyTurns() {
     const { currentFloor, player } = this.state.run;
     for (const enemy of [...currentFloor.enemies]) {
@@ -3711,47 +4109,17 @@ export class Game {
       }
       if (!enemy.alerted) continue;
 
-      if (enemy.templateId === "abyssal_overlord" && !enemy.phaseTwo && enemy.hp <= enemy.maxHp / 2) {
-        enemy.phaseTwo = true;
-        this.log("The Abyssal Overlord erupts in shadowflame.");
-        this.renderer?.triggerFlash("void");
-        this.renderer?.shake();
-        // A second name plate marks the turn in the fight.
-        this.state.ui.bossIntro = { templateId: enemy.templateId, name: enemy.name, kicker: "The throne answers", title: "Phase two: shadowflame", phase: true, startedAt: Date.now() };
-        let summons = 0;
-        while (summons < 2) {
-          const summonTile = this.findAdjacentOpen(enemy.x, enemy.y);
-          if (!summonTile) break;
-          this.summonEnemy("infernal_imp", summonTile.x, summonTile.y, { summonedBy: enemy.id });
-          summons += 1;
+      if (enemy.templateId === "patches") this.checkPatchesEnrage(enemy);
+      if (enemy.aoe && enemy.turnCounter >= enemy.aoe.landsOnTurn) {
+        if (this.resolveAreaAttack(enemy)) {
+          if (player.hp <= 0) return;
+          continue;
         }
-        if (summons) {
-          this.log(`The Overlord tears open the void and summons ${summons} Infernal Imp${summons === 1 ? "" : "s"}.`);
-        }
+      }
+
+      if (enemy.templateId === "abyssal_overlord" && this.takeOverlordTurn(enemy, { canSee, distance, template })) {
+        if (player.hp <= 0) return;
         continue;
-      }
-
-      if (enemy.templateId === "abyssal_overlord" && enemy.phaseTwo) {
-        const activeImps = currentFloor.enemies.filter((candidate) => candidate.templateId === "infernal_imp" && candidate.summonedBy === enemy.id).length;
-        if (canSee && activeImps < 2 && enemy.turnCounter % 4 === 1) {
-          const summonTile = this.findAdjacentOpen(enemy.x, enemy.y);
-          if (summonTile) {
-            this.summonEnemy("infernal_imp", summonTile.x, summonTile.y, { summonedBy: enemy.id });
-            this.log(`The Overlord rends the void and calls another Infernal Imp (${activeImps + 1}/2).`);
-            this.renderer?.triggerFlash("void");
-            continue;
-          }
-        }
-      }
-
-      if (enemy.templateId === "abyssal_overlord" && canSee && enemy.turnCounter % 3 === 2) {
-        if (distance === 1) {
-          this.log("The Abyssal Overlord draws back for a sweeping cleave.");
-          this.setTelegraph(enemy, "melee");
-        } else if (distance <= (template.range ?? 6) + 1) {
-          this.log("The Abyssal Overlord gathers abyssal fire.");
-          this.setTelegraph(enemy, "bolt");
-        }
       }
 
       // Warnings fire one turn before the attack they name, matching the timings below:
@@ -3767,18 +4135,7 @@ export class Game {
         }
       }
 
-      if (enemy.templateId === "patches" && canSee && distance <= 2) {
-        if (nextTurn % 4 === 0) {
-          this.log("Patches lifts both fists for a brutal smash.");
-          this.setTelegraph(enemy, "melee");
-        } else if (nextTurn % 3 === 0) {
-          this.log("Patches heaves back for a crushing blow.");
-          this.setTelegraph(enemy, "melee");
-        }
-      }
-
-      if (enemy.templateId === "abyssal_overlord" && distance > 1 && canSee && distance <= (template.range ?? 6) && enemy.turnCounter % 3 === 0) {
-        this.enemyAttack(enemy, "abyssal_bolt");
+      if (enemy.templateId === "patches" && this.takePatchesTurn(enemy, { canSee, distance })) {
         if (player.hp <= 0) return;
         continue;
       }
@@ -3801,13 +4158,6 @@ export class Game {
         }
       }
 
-      if (enemy.templateId === "patches" && distance === 1 && enemy.turnCounter % 4 === 0) {
-        this.renderer?.triggerSlamFlash();
-        this.enemyAttack(enemy, "slam");
-        if (player.hp <= 0) return;
-        continue;
-      }
-
       // Lurkers are rooted in place and lash out at anything within reach.
       if (template.behavior === "lurker") {
         if (canSee && distance <= (template.range ?? 1)) {
@@ -3817,7 +4167,7 @@ export class Game {
         continue;
       }
 
-      if (template.behavior === "boss" && distance === 1 && enemy.turnCounter % 3 === 0) {
+      if (template.behavior === "boss" && enemy.templateId !== "patches" && distance === 1 && enemy.turnCounter % 3 === 0) {
         this.enemyAttack(enemy, "cleave");
         if (player.hp <= 0) return;
         continue;
@@ -3921,7 +4271,8 @@ export class Game {
     const rng = createRng(hashSeed(this.state.run.runSeed, this.state.run.turn, enemy.id, mode));
     const hitChance = clamp(template.accuracy - derived.evasion, 10, 95);
     const enemyCast = mode === "spell" || mode === "abyssal_bolt";
-    this.renderer?.queueNudge({ id: enemy.id, toward: player, kind: enemyCast ? "recoil" : "lunge", delay: ENEMY_BEAT_MS });
+    const areaCast = mode === "rift" || mode === "eclipse";
+    this.renderer?.queueNudge({ id: enemy.id, toward: player, kind: enemyCast || areaCast ? "recoil" : "lunge", delay: ENEMY_BEAT_MS });
     if (mode === "spell" || mode === "abyssal_bolt") {
       const projectileKind = mode === "abyssal_bolt"
         ? "abyssal_bolt"
@@ -3944,7 +4295,9 @@ export class Game {
         castGlyph: true,
       });
     }
-    if (!rng.chance(hitChance / 100)) {
+    // A marked area attack or a hook that caught you can't miss: you were warned.
+    const sureHit = mode === "groundSlam" || mode === "hook" || mode === "rift" || mode === "eclipse";
+    if (!sureHit && !rng.chance(hitChance / 100)) {
       this.log(`${enemy.name} misses you.`);
       return;
     }
@@ -3956,6 +4309,11 @@ export class Game {
     let damage = Math.max(1, rng.int(template.damage[0], template.damage[1]) - defense);
     if (mode === "cleave") damage += 3;
     if (mode === "slam") damage += 2;
+    if (mode === "groundSlam") damage += 5;
+    if (mode === "hook") damage = rng.int(2, 4);
+    if (mode === "rift") damage += 3;
+    // The Eclipse ignores armour: only the sigils protect.
+    if (mode === "eclipse") damage = rng.int(OVERLORD_ECLIPSE_DAMAGE[0], OVERLORD_ECLIPSE_DAMAGE[1]);
     if (mode === "abyssal_bolt") damage += 1;
 
     if (!player.floorFlags.firstHitTaken && derived.firstHitReduction) {
@@ -4011,10 +4369,22 @@ export class Game {
                 ? "Grave Bolt"
               : "Spell";
       this.log(`${enemy.name} casts ${spellName} for ${damage} damage.`);
+    } else if (mode === "groundSlam") {
+      this.log(`${enemy.name}'s Ground Slam crushes you for ${damage} damage.`);
+    } else if (mode === "hook") {
+      this.log(`The hook tears you for ${damage} damage.`);
+    } else if (mode === "rift") {
+      this.log(`The void rift erupts beneath you for ${damage} damage.`);
+    } else if (mode === "eclipse") {
+      this.log(`The Abyssal Eclipse sears you for ${damage} damage.`);
     } else {
       this.log(`${enemy.name} hits you for ${damage} damage.`);
     }
-    if (mode === "slam" && enemy.templateId === "patches" && rng.chance(0.45)) {
+    if (enemy.templateId === "patches" && (mode === "melee" || mode === "groundSlam") && rng.chance(PATCHES_REND_CHANCE)) {
+      this.upsertStatus(player, { id: "rended", turns: PATCHES_REND_TURNS, value: 1 });
+      this.log("Patches' hooked knuckles leave ragged wounds. Healing is halved while they last.");
+    }
+    if ((mode === "slam" || mode === "groundSlam") && enemy.templateId === "patches" && rng.chance(0.45)) {
       this.upsertStatus(player, { id: "sundered", turns: 2, value: 1 });
       this.log("The smash leaves your guard sundered.");
     }

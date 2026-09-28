@@ -20,6 +20,7 @@ export const PROFILES = {
     // Sorceress picks spells by value per mana, finishes weak foes with the staff, and drinks only
     // when she can't cast anything. Set false for the old "biggest spell first" behaviour.
     manaAware: true,
+    dodgeTelegraphs: true,
     manaPotionTarget: 5,
     useAbilities: true,
     useShrines: true,
@@ -439,6 +440,27 @@ export function playRun({ classId, profile = "competent", seed, skillStrategy = 
     return false;
   }
 
+  // Tiles some enemy has marked to strike next turn.
+  function markedTiles() {
+    const marked = new Set();
+    for (const enemy of floor().enemies) {
+      if (!enemy.aoe || enemy.aoe.landsOnTurn <= enemy.turnCounter) continue;
+      for (const tile of enemy.aoe.tiles) marked.add(`${tile.x},${tile.y}`);
+    }
+    return marked;
+  }
+
+  function dodgeMarkedTiles() {
+    const marked = markedTiles();
+    const p = player();
+    if (!marked.has(`${p.x},${p.y}`)) return false;
+    // Head for the nearest unmarked tile (the Eclipse's sigils can be two steps away), avoiding void.
+    const path = pathTo((x, y) => !marked.has(`${x},${y}`) && !tileAt(x, y)?.voidHazard, { maxNodes: 400 });
+    if (!path || path.length > 5) return false;
+    note("dodge marked tiles");
+    return stepAlong(path);
+  }
+
   function fight(enemies) {
     const p = player();
     const derived = game.getDerivedStats(p);
@@ -704,6 +726,8 @@ export function playRun({ classId, profile = "competent", seed, skillStrategy = 
     const danger = threats();
     const hpRatio = p.hp / derived.maxHp;
 
+    // Competent bots read a boss's marked tiles (Patches' slam and hook) and step out first.
+    if (settings.dodgeTelegraphs && dodgeMarkedTiles()) continue;
     if (hpRatio < settings.healAt && (danger.length || hpRatio < 0.3) && drink("heal")) continue;
 
     let didSomething = false;

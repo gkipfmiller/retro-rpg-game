@@ -1,4 +1,4 @@
-import { BOSS_REWARDS, CHEST_TABLE, ENEMIES, FINAL_BOSS_REWARDS, FLOOR20_BOSS_REWARDS, FLOOR_CONFIGS, FLOOR_ENCOUNTERS, ITEMS, ROOM_ENCOUNTERS, TRAPS } from "./data.js";
+import { BOSS_REWARDS, CHEST_TABLE, ENEMIES, FINAL_BOSS_REWARDS, FLOOR20_BOSS_REWARDS, FLOOR_CONFIGS, FLOOR_ENCOUNTERS, ITEMS, ROOM_ENCOUNTERS, TRAPS, getDepthHpMultiplier } from "./data.js";
 import { createRng, hashSeed, isBlockedFloor, toKey } from "./utils.js";
 
 function hashPoint(x, y, seed = 0) {
@@ -257,6 +257,9 @@ function placeSewerProps(map, rooms, theme, floorNumber) {
       const pick = hashPoint(room.x + n * 7, room.y + n * 3, seed + n);
       if (pick % 100 >= 60) continue;
       const kind = kinds[pick % kinds.length];
+      // Crates are retired for now (they read poorly in the sewers). Skipping them, rather than
+      // dropping them from the list, keeps every other room's props exactly where they were.
+      if (kind === "crate_small" || kind === "crate_large") continue;
       const span = right - left - (SEWER_PROP_WIDTHS[kind] - 1) + 1;
       if (span <= 0) continue;
       place(left + ((pick >>> 3) % span), top + ((pick >>> 9) % (bottom - top + 1)), kind, room);
@@ -540,7 +543,7 @@ function spawnEncounter(map, room, rng, floorNumber, state) {
     const elite = room.type === "elite"
       ? true
       : Boolean(config.eliteChance && floorNumber >= 7 && rng.chance(config.eliteChance * (floorNumber >= 16 ? 0.35 : 0.22)));
-    const hp = elite ? Math.floor(template.hp * 1.35) : template.hp;
+    const hp = Math.floor(template.hp * getDepthHpMultiplier(floorNumber) * (elite ? 1.35 : 1));
     const enemy = {
       id: `enemy-${state.enemyId += 1}`,
       templateId,
@@ -902,6 +905,87 @@ function placeShrine(map, rooms, rng, floorNumber) {
   };
 }
 
+// Boss-arena set dressing and metadata. The arena records its entrance ("gate") tiles, which
+// seal while the boss fight is on, and the wall tiles holding braziers that light when the boss
+// wakes. Each boss gets its own props: kind "grave" (Super Skeletor), "stitch" (Patches), or
+// "throne" (the Abyssal Overlord). Blocking props sit near the walls, clear of the boss, the
+// stairs, and the reward chest.
+function dressArena(map, arena, kind, rng) {
+  const { x: x0, y: y0, width: w, height: h } = arena;
+  const inside = (x, y) => x >= x0 && x < x0 + w && y >= y0 && y < y0 + h;
+  const floorAt = (x, y) => map[y]?.[x]?.type === "floor";
+  const free = (x, y) => {
+    const tile = map[y]?.[x];
+    return tile?.type === "floor" && !tile.stairs && !tile.chestId && !tile.arenaProp && !tile.graveCircle && !tile.patchMarker;
+  };
+  const place = (x, y, prop) => {
+    if (free(x, y)) map[y][x].arenaProp = prop;
+  };
+
+  // Gates: floor tiles just outside the arena that lead into it.
+  const gates = [];
+  for (let y = y0 - 1; y <= y0 + h; y += 1) {
+    for (let x = x0 - 1; x <= x0 + w; x += 1) {
+      if (inside(x, y) || !floorAt(x, y)) continue;
+      if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => inside(x + dx, y + dy) && floorAt(x + dx, y + dy))) gates.push({ x, y });
+    }
+  }
+
+  // Braziers on the top and bottom walls.
+  const braziers = [];
+  for (const wallY of [y0 - 1, y0 + h]) {
+    for (const x of [x0 + 2, x0 + 5, x0 + w - 6, x0 + w - 3]) {
+      if (map[wallY]?.[x]?.type === "wall") braziers.push({ x, y: wallY, top: wallY < y0 });
+    }
+  }
+
+  const cx = arena.center.x;
+  const cy = arena.center.y;
+  const hooks = [];
+  if (kind === "grave") {
+    for (const x of [x0 + 3, x0 + w - 4]) {
+      place(x, y0, "coffin");
+      place(x, y0 + h - 1, "coffin");
+    }
+    for (let placed = 0, tries = 0; placed < 12 && tries < 200; tries += 1) {
+      const x = rng.int(x0, x0 + w - 1);
+      const y = rng.int(y0, y0 + h - 1);
+      if (Math.abs(x - cx) + Math.abs(y - cy) < 2 || !free(x, y)) continue;
+      map[y][x].arenaProp = "bones";
+      placed += 1;
+    }
+  } else if (kind === "stitch") {
+    // Stitched seams join the four corner stitching posts into a square around the boss.
+    for (let x = cx - 2; x <= cx + 2; x += 1) {
+      for (const y of [cy - 3, cy + 3]) if (free(x, y)) map[y][x].seam = "h";
+    }
+    for (let y = cy - 2; y <= cy + 2; y += 1) {
+      for (const x of [cx - 3, cx + 3]) if (free(x, y)) map[y][x].seam = "v";
+    }
+    place(x0 + 2, y0 + 2, "pit");
+    place(x0 + 3, y0 + 2, "pit");
+    place(x0 + w - 4, y0 + h - 3, "pit");
+    place(x0 + w - 3, y0 + h - 3, "pit");
+    place(x0 + 5, y0 + h - 1, "slab");
+    place(x0 + 6, y0 + h - 1, "slab");
+    // Meat hooks hang from the top wall on chains.
+    for (const x of [x0 + 4, x0 + 7, x0 + 10]) if (map[y0 - 1]?.[x]?.type === "wall") hooks.push({ x, y: y0 - 1 });
+  } else if (kind === "throne") {
+    for (let x = cx - 1; x <= cx + 1; x += 1) place(x, y0, "throne");
+    for (const [x, y] of [[x0 + 3, y0 + 3], [x0 + w - 4, y0 + 3], [x0 + 3, y0 + h - 4], [x0 + w - 4, y0 + h - 4]]) place(x, y, "pillar");
+    // Void fissures run out from the throne toward the far corners.
+    for (let step = 2; step <= 6; step += 1) {
+      for (const side of [-1, 1]) {
+        const x = cx + side * step;
+        const y = y0 + 1 + step;
+        if (free(x, y)) map[y][x].arenaProp = "fissure";
+      }
+    }
+  }
+
+  return { x: x0, y: y0, width: w, height: h, center: { x: cx, y: cy }, kind, gates, braziers, hooks, sealed: false };
+}
+
 export function generateBossFloor(runSeed, floorNumber, playerClass) {
   const rng = createRng(hashSeed(runSeed, floorNumber, "boss"));
   const width = 34;
@@ -976,6 +1060,7 @@ export function generateBossFloor(runSeed, floorNumber, playerClass) {
     width,
     height,
     map,
+    arena: dressArena(map, arena, "grave", rng),
     rooms: [entry, corridor, arena],
     spawn,
     exit,
@@ -1060,6 +1145,7 @@ export function generateFloor20BossFloor(runSeed, floorNumber, playerClass) {
     width,
     height,
     map,
+    arena: dressArena(map, arena, "stitch", rng),
     rooms: [entry, corridor, arena],
     spawn,
     exit,
@@ -1099,8 +1185,8 @@ export function generateFinalBossFloor(runSeed, floorNumber, playerClass) {
       name: ENEMIES.void_stalker.name,
       x: antechamber.center.x - 2,
       y: antechamber.center.y,
-      hp: ENEMIES.void_stalker.hp,
-      maxHp: ENEMIES.void_stalker.hp,
+      hp: Math.floor(ENEMIES.void_stalker.hp * getDepthHpMultiplier(floorNumber)),
+      maxHp: Math.floor(ENEMIES.void_stalker.hp * getDepthHpMultiplier(floorNumber)),
       alerted: false,
       holdRoom: { x: antechamber.x, y: antechamber.y, width: antechamber.width, height: antechamber.height },
       lastKnownPlayerPosition: { ...spawn },
@@ -1115,8 +1201,8 @@ export function generateFinalBossFloor(runSeed, floorNumber, playerClass) {
       name: ENEMIES.infernal_imp.name,
       x: antechamber.center.x + 2,
       y: antechamber.center.y,
-      hp: ENEMIES.infernal_imp.hp,
-      maxHp: ENEMIES.infernal_imp.hp,
+      hp: Math.floor(ENEMIES.infernal_imp.hp * getDepthHpMultiplier(floorNumber)),
+      maxHp: Math.floor(ENEMIES.infernal_imp.hp * getDepthHpMultiplier(floorNumber)),
       alerted: false,
       holdRoom: { x: antechamber.x, y: antechamber.y, width: antechamber.width, height: antechamber.height },
       lastKnownPlayerPosition: { ...spawn },
@@ -1130,12 +1216,13 @@ export function generateFinalBossFloor(runSeed, floorNumber, playerClass) {
     map[sentry.y][sentry.x].occupant = sentry.id;
   }
 
+  // Enthroned: he waits just before the throne on the north wall.
   const boss = {
     id: "enemy-final-boss",
     templateId: "abyssal_overlord",
     name: ENEMIES.abyssal_overlord.name,
     x: arena.center.x,
-    y: arena.center.y,
+    y: arena.y + 1,
     hp: ENEMIES.abyssal_overlord.hp,
     maxHp: ENEMIES.abyssal_overlord.hp,
     alerted: false,
@@ -1172,6 +1259,7 @@ export function generateFinalBossFloor(runSeed, floorNumber, playerClass) {
     width,
     height,
     map,
+    arena: dressArena(map, arena, "throne", rng),
     rooms: [entry, antechamber, arena],
     spawn,
     exit,

@@ -871,16 +871,51 @@ Implemented final boss:
 These apply to all three bosses (Super Skeletor, Patches, Abyssal Overlord):
 - each boss waits in its arena until the player steps inside (the Floor 30 sentries likewise hold the antechamber); striking a guard from outside wakes it immediately
 - a boss's attack rhythm starts when it wakes, so every fight opens the same way; the intro plate and boss HP bar appear at that moment
-- every telegraph in the log fires exactly one turn before the attack it names: Super Skeletor's "raises a bony hand" (cleave) and "gathers a bolt of gravefire" (ranged), Patches' "heaves back" (cleave) and "lifts both fists" (slam, which takes priority when both are due), and the Overlord's "draws back" (cleave) and "gathers abyssal fire" (bolt)
+- every telegraph in the log fires exactly one turn before the attack it names: Super Skeletor's "raises a bony hand" (cleave) and "gathers a bolt of gravefire" (ranged), and the Overlord's "draws back" (cleave) and "gathers abyssal fire" (bolt); Patches' telegraphs are area marks (below)
+- area attacks: some boss attacks mark floor tiles a turn ahead (`enemy.aoe`: kind, tiles, landsOnTurn), drawn as pulsing red tiles; on the boss's next turn anyone still on a marked tile is hit, and the hit can't miss. Competent balance bots step off marked tiles
 - summoned minions (Super Skeletor's skeletons, the Overlord's imps) vanish when their summoner dies, without XP or drops
 - the defeat line ("The first seal breaks...", "The second threshold is broken...") is logged the moment the boss dies
 - every telegraph also marks the map until the attack lands: a melee warning reddens the tiles the boss can reach (step off them to avoid the hit), and a bolt warning puts pulsing red target brackets on the player with a dashed line from the boss
-- the Overlord's phase change gets its own moment: a violet name plate ("The throne answers · Phase two: shadowflame"), a void flash, and a short screen shake (skipped under reduced motion), alongside its imps and the violet boss bar
+- the Overlord's phase changes each get their own moment: a name plate, a void flash, and a short screen shake (skipped under reduced motion); the boss bar shows the phase and a marker at the next threshold
 - bosses remember you across runs (stored per browser under `dungeon30_boss_memory`): the name plate reads "It remembers you", and the sighting line changes depending on whether your last meeting ended with you beating it or dying in its fight (any death while a sighted boss lives counts, even to a summon or poison)
 - boss-floor stairs are visibly sealed (iron bars over a pulsing red ward) while the boss lives, and open the moment it dies
 - each boss's reward chest is named and drawn in its own palette, with a matching glow: Reliquary of the First Seal (bone, Floor 10), The Stitched Hoard (crimson, Floor 20), Tribute of the Abyssal Throne (abyssal violet, Floor 30); the palettes are load-time recolours of the standard chest's wood, keeping its gold trim
-- screen flashes: Super Skeletor's summons (necrotic), Patches' slam (amber), the Overlord's phase change and imp summons (void violet), and every boss defeat (a gold "seal" burst)
+- screen flashes: Super Skeletor's summons (necrotic), Patches' slam and enrage (amber), the Overlord's phase change and imp summons (void violet), and every boss defeat (a gold "seal" burst)
 - boss sighting lines, boss-floor entry lines, and hidden-cache discoveries are narration: the dialogue box shows them in italics with no speaker (named speakers are kept for the Grey Witness and vendors)
+
+### Boss arenas
+
+Each boss floor carries `floor.arena` (built by `dressArena` in the generator): the arena's bounds, its kind ("grave", "stitch", "throne"), the gate tiles leading in, the wall tiles holding braziers, and Patches' hook anchors.
+- sealing: once the boss wakes with the player inside the arena, iron bars drop across every gate tile (`tile.sealed`, which blocks movement). They lift when the boss dies, or if the player is ever outside the arena (an escape scroll), so the way back can't lock
+- lighting: the arena sits in heavy shadow until the boss wakes; then its eight wall braziers light one after another from the entrance side and light the room. Flames are themed (necrotic green, butcher's orange, void violet), turn red while Patches is enraged and magenta in the Overlord's second phase, and burn gold once the boss is dead
+- dressing (pixel art in `src/arenaArt.js`):
+  - Super Skeletor's crypt: coffins against the walls (blocking), bone piles, and the grave circles
+  - Patches' Stitching Pit: two pits and a butcher's slab (blocking), meat hooks hanging from the north wall, and cross-stitched seams joining the four stitching posts in a square around him
+  - the Abyssal Throne: the throne against the north wall and four obsidian-and-gold pillars (blocking), and violet void fissures running out from the throne
+  - blocking props are listed in `BLOCKING_ARENA_PROPS` (utils) and never sit on the boss, stairs, chest, or ritual tiles
+- victory: a slow white bloom over the map, a ring bursting from the arena's heart with gold shards, the bars lifting, and shafts of light over the unsealed stairs and the reward chest
+
+### Patches, Keeper of the Stitching Pit (Floor 20)
+
+- Meat Hook: at 2–5 tiles, he marks a lane from beside him out toward (and past) the player. If the player is still in the lane next turn, the chain drags them to the nearest free tile beside him (2–4 damage). Every 5 turns at most
+- Ground Slam: when the player is next to him, he marks all 8 tiles around him; next turn anyone still there takes a sure hit with +5 damage (it can also Rend and Sunder). Every 4 turns at most
+- Stitch Up: once, at half HP, he walks to the nearest free stitching post and sews himself up for 3 turns, healing 8 HP a turn. Taking 12 or more damage between his turns tears the stitches and staggers him for a turn
+- Enrage: at 30% HP his seams burst (a red name plate "The seams burst · Patches is enraged", red tint and steam, red braziers); on alternate turns he strikes twice or moves twice
+- Rend: his fists and slam can leave the player Rended for 4 turns (60%), halving healing from potions and shrines
+- numbers: 160 HP, 11-16 damage; Ground Slam at most every 3 turns (constants `PATCHES_*` in game.js)
+
+### The Abyssal Overlord, Sovereign of the Abyssal Throne (Floor 30)
+
+He waits before his throne on the arena's north wall. Three phases by HP; each change gets a name plate, a void flash, and a shake.
+- Phase 1, enthroned (above 2/3 HP): he never leaves his place. Abyssal Bolt every third turn at range, a cleave if you stand beside him, and a Void Rift marked in a cross under the player every 4 turns (a sure hit, +3 damage, if you stay in it)
+- Phase 2, rising (above 1/3): "The throne answers · Phase two: the Overlord rises". He steps down to hunt and cleave, summons two Infernal Imps and keeps two in play, rifts every 5 turns, and the arena's outer rings crumble into void, outermost first, twice (each ring is marked a turn ahead). Crumbled floor burns anyone standing on it for 3 at the end of each turn
+- Phase 3, hunger (1/3 and below): "The throne hungers · Phase three: the Abyssal Eclipse". The player's light shrinks to a few tiles and the braziers gutter. Every third turn he devours his nearest imp to heal 14 HP (kill the imps first). The Abyssal Eclipse comes at once and then every 9 turns: the whole arena washes violet except two glowing gold sigils two tiles from the player, with a 2-turn countdown; anyone off a sigil when it lands takes 20-26 damage, ignoring armour
+- he declares only one marked attack at a time
+- numbers: constants `OVERLORD_*` and `VOID_BURN` in game.js
+
+### Enemy depth scaling
+
+Ordinary enemies (including summons and the Floor 30 sentries, not bosses) gain HP with depth: +1.5% of their base HP per floor past Floor 10 (`DEPTH_SCALING` in data.js). The damage bonus is present but disabled (`damageEveryFloors: 99`); simulated damage bonuses made melee classes collapse. Mimics keep their own steeper scaling.
 
 ## Save and Continue
 

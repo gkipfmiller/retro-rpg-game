@@ -15,6 +15,7 @@ import { clamp } from "./utils.js";
 import { LOG_FILTERS, logText, mergeLogEntries } from "./log.js";
 import { getSpellIconUrl, getSpireCanvas, getStatusIconCanvas, getStatusIconUrl } from "./pixelIcons.js";
 import { SpellFx } from "./spellFx.js";
+import { ARENA_FIRE, drawArenaProp, drawBrazier, drawGateBars, drawHook, drawSeam, drawThrone, drawVoidTile } from "./arenaArt.js";
 
 const COLORS = {
   wall: "#26303d",
@@ -280,6 +281,8 @@ function getStatusColor(statusId) {
       return "#ff8a2a";
     case "frozen":
       return "#9fe6ff";
+    case "rended":
+      return "#c8323a";
     default:
       return "#d7a54d";
   }
@@ -320,6 +323,10 @@ function getThemeFloorAtlasCoord(theme, x, y) {
   ];
   return sewerFloorTiles[(x * 5 + y * 7) % sewerFloorTiles.length];
 }
+
+// Sewer-atlas wall tiles whose centre column runs out of the tile's bottom edge, i.e. that connect to
+// the wall below: the corners [1,0]/[3,0], the T-junctions [1,1]/[3,1]/[4,0], and the columns [8,0]/[8,1].
+const WALL_TILES_JOINING_SOUTH = new Set(["1,0", "3,0", "1,1", "3,1", "4,0", "8,0", "8,1"]);
 
 function getThemeWallAtlasCoord(theme, map, x, y, options = {}) {
   if (!ATLAS_THEMES.has(theme)) return null;
@@ -371,6 +378,14 @@ function getThemeWallAtlasCoord(theme, map, x, y, options = {}) {
   // the wall below is instead the bottom of a 2-tall horizontal wall block, and
   // the corner must stay a plain corner rather than drop a stub column.
   const stubDropsBelow = southWall && !isFloor(x, y + 2);
+  // Whether the wall joins its east/west neighbour with a rail: only when that pair of tiles borders
+  // open floor above or below. Two walls that are the opposite faces of a thick wall (a 2-wide stem,
+  // or a face beside a solid core) sit side by side without a rail between them.
+  const joinsEast = eastWall && (isFloor(x, y - 1) || isFloor(x, y + 1) || isFloor(x + 1, y - 1) || isFloor(x + 1, y + 1));
+  const joinsWest = westWall && (isFloor(x, y - 1) || isFloor(x, y + 1) || isFloor(x - 1, y - 1) || isFloor(x - 1, y + 1));
+  // The same test for the wall above and below: a column joins only along an edge beside floor.
+  const joinsNorth = northWall && (isFloor(x - 1, y) || isFloor(x + 1, y) || isFloor(x - 1, y - 1) || isFloor(x + 1, y - 1));
+  const joinsSouth = southWall && (isFloor(x - 1, y) || isFloor(x + 1, y) || isFloor(x - 1, y + 1) || isFloor(x + 1, y + 1));
 
   if (southFloor) {
     if (westFloor && !eastFloor) {
@@ -420,14 +435,22 @@ function getThemeWallAtlasCoord(theme, map, x, y, options = {}) {
     // A free-standing vertical wall (floor on both sides) terminating here
     // heading north needs the pillar top cap [0,0], not a horizontal E/W wall.
     if (westFloor && eastFloor) return [0, 0];
+    // A top rail with a face dropping from its middle (a thin wall meeting a block's side): the
+    // T-junction [4,3], so the column below hangs from the rail instead of floating.
+    if (westWall && eastWall && joinsSouth) return [4, 3];
     return [2, 3];
   }
 
   if (westFloor && eastFloor) {
     if (!northWall && southWall) return [8, 0];
     if (northWall && southWall) {
+      // Continue the column (rather than cap a new one) when the wall above already runs down into
+      // this tile: another free-standing column, or a corner, T-junction, or column piece that
+      // connects south (e.g. the [1,0] corner at the top of a wall that turns down).
       const northAlsoColumn = isFloor(x - 1, y - 1) && isFloor(x + 1, y - 1);
-      return northAlsoColumn ? [8, 1] : [8, 0];
+      const north = options.fromBelow ? null : getThemeWallAtlasCoord(theme, map, x, y - 1, { ...options, fromBelow: true });
+      const northJoinsDown = Boolean(north && WALL_TILES_JOINING_SOUTH.has(`${north[0]},${north[1]}`));
+      return northAlsoColumn || northJoinsDown ? [8, 1] : [8, 0];
     }
     if (northWall && !southWall) return [8, 2];
     return [8, 1];
@@ -440,7 +463,7 @@ function getThemeWallAtlasCoord(theme, map, x, y, options = {}) {
     // Vertical wall with floor to the east. When a horizontal wall also joins
     // from the west it must connect into it ([3,1], connects west); otherwise
     // it is a plain floor-facing column [8,1].
-    return southWall ? (northWall ? (westWall ? [3, 1] : [8, 1]) : [5, 0]) : [1, 0];
+    return southWall ? (northWall ? (joinsWest ? [3, 1] : [8, 1]) : [5, 0]) : [1, 0];
   }
   if (westFloor && !eastFloor) {
     if (northVoid && southVoid) return [8, 1];
@@ -448,7 +471,7 @@ function getThemeWallAtlasCoord(theme, map, x, y, options = {}) {
     if (southVoid) return [11, 3];
     // Mirror of the eastFloor case: connect into a horizontal wall joining from
     // the east ([1,1], connects east) when one is present.
-    return southWall ? (northWall ? (eastWall ? [1, 1] : [8, 1]) : [6, 0]) : [11, 0];
+    return southWall ? (northWall ? (joinsEast ? [1, 1] : [8, 1]) : [6, 0]) : [11, 0];
   }
 
   if (northVoid || southVoid || westVoid || eastVoid) {
@@ -456,7 +479,21 @@ function getThemeWallAtlasCoord(theme, map, x, y, options = {}) {
     if (northVoid && eastVoid) return [11, 0];
     if (southVoid && westVoid) return [8, 3];
     if (southVoid && eastVoid) return [11, 3];
+    // Void only to the north with walls on the other three sides: the rail running east-west must
+    // also drop into the wall below (the corner where a thick block's top edge meets its side), so
+    // use the T-junction [4,0]; the plain rail [9,0] would leave the column below floating.
+    // When only one side's rail is real, the outline just turns the corner: east + south [1,0], or
+    // west + south [3,0].
+    if (northVoid && westWall && eastWall && southWall) {
+      if (joinsWest && joinsEast) return [4, 0];
+      if (joinsEast) return [1, 0];
+      if (joinsWest) return [3, 0];
+    }
     if (northVoid) return [9, 0];
+    // A face coming down from above that turns along a top rail: the corner pieces [11,3] (turns
+    // west) and [8,3] (turns east) instead of the plain rail [9,3].
+    if (southVoid && joinsNorth && joinsWest && !joinsEast) return [11, 3];
+    if (southVoid && joinsNorth && joinsEast && !joinsWest) return [8, 3];
     if (southVoid) return [9, 3];
     // Void on one side only: the other three sides are walls, so this is a
     // vertical wall with a horizontal wall branching off. Use the T-junction
@@ -955,6 +992,11 @@ export class Renderer {
           this.drawAtlasTile(floorDecorAtlas, floorDecorSpec.coord, px, py, tileSize);
         }
 
+        // Boss-arena set dressing (see arenaArt.js); the throne is drawn in the arena pass below.
+        if (tile.visible && tile.seam) drawSeam(ctx, tile.seam, px, py, tileSize);
+        if (tile.explored && tile.voidHazard) drawVoidTile(ctx, px, py, tileSize, hashPoint(x, y, 11), tile.visible);
+        if (tile.visible && tile.arenaProp && tile.arenaProp !== "throne") drawArenaProp(ctx, tile.arenaProp, px, py, tileSize, hashPoint(x, y, 7));
+
         if (tile.visible) {
           const stairsSprite = this.assets?.images[currentFloor.theme === "sunken_vault" ? this.assets.manifest.ladder : this.assets.manifest.stairs];
           const vendorSpritePath = this.assets ? getActorSpriteFrame(this.assets.manifest, getVendorSpriteId(this.assets.manifest, currentFloor.vendor), animationFrame) : null;
@@ -1027,6 +1069,9 @@ export class Renderer {
         }
       }
     }
+
+    const arenaState = this.getArenaState(currentFloor);
+    if (arenaState) this.drawArena(currentFloor, arenaState, offsetX, offsetY, tileSize, torchLights);
 
     for (const standing of sewerStanding.sort((a, b) => a.y - b.y)) {
       this.drawSewerSprite(sewerSheet, standing, tileSize);
@@ -1366,7 +1411,7 @@ export class Renderer {
     lctx.fillRect(0, 0, width, height);
     lctx.globalCompositeOperation = "destination-out";
     const playerPoint = centre(player.x, player.y);
-    const radius = tileSize * LIGHT_RADIUS_TILES * flicker;
+    const radius = tileSize * LIGHT_RADIUS_TILES * flicker * (this.lightScale ?? 1);
     cut(playerPoint, radius, [[0, 1], [0.5, 0.9], [0.8, 0.55], [1, 0]]);
 
     const glows = extraLights.map((light) => ({ point: centre(light.x, light.y), radius: tileSize * light.radius, color: light.color, strength: light.strength }));
@@ -1458,8 +1503,11 @@ export class Renderer {
       document.getElementById("boss-bar-fill").style.width = `${ratio * 100}%`;
       document.getElementById("boss-bar-trail").style.width = `${ratio * 100}%`;
       const isOverlord = boss.templateId === "abyssal_overlord";
-      document.getElementById("boss-bar-marker").classList.toggle("hidden", !isOverlord || boss.phaseTwo);
-      document.getElementById("boss-bar-phase").textContent = isOverlord ? (boss.phaseTwo ? "Phase 2" : "Phase 1") : "";
+      // The marker sits at the next phase threshold: two-thirds, then one-third.
+      const marker = document.getElementById("boss-bar-marker");
+      marker.classList.toggle("hidden", !isOverlord || Boolean(boss.phaseThree));
+      marker.style.left = boss.phaseTwo ? "33.33%" : "66.67%";
+      document.getElementById("boss-bar-phase").textContent = isOverlord ? `Phase ${boss.phaseThree ? 3 : boss.phaseTwo ? 2 : 1}` : "";
       bar.classList.toggle("enraged", Boolean(boss.phaseTwo));
     }
 
@@ -1752,6 +1800,9 @@ export class Renderer {
     const pulse = reduceMotion() ? 0.75 : 0.6 + Math.sin(performance.now() / 160) * 0.25;
     const line = Math.max(1, Math.floor(tileSize / 16));
     for (const enemy of currentFloor.enemies) {
+      if (enemy.aoe && enemy.aoe.landsOnTurn > enemy.turnCounter) this.drawAreaTelegraph(enemy, currentFloor, offsetX, offsetY, tileSize, pulse, line);
+    }
+    for (const enemy of currentFloor.enemies) {
       const telegraph = enemy.telegraph;
       if (!telegraph || telegraph.landsOnTurn <= enemy.turnCounter) continue;
       if (!currentFloor.map[enemy.y]?.[enemy.x]?.visible) continue;
@@ -1942,6 +1993,205 @@ export class Renderer {
     ctx.restore();
   }
 
+  // ── Boss arenas ──
+  // Lighting state for the current floor's arena: dark until the boss wakes, then the braziers light
+  // one after another from the entrance side. Their flame follows the fight: themed per boss, red
+  // when Patches is enraged, magenta in the Overlord's second phase, gold once the boss is dead.
+  getArenaState(floor) {
+    const arena = floor.arena;
+    if (!arena) {
+      this.lightScale = 1;
+      return null;
+    }
+    const now = performance.now();
+    const boss = floor.enemies.find((enemy) => ENEMIES[enemy.templateId]?.behavior === "boss");
+    const awake = !boss || Boolean(boss.roomTriggered);
+    if (this.lightScale == null) this.lightScale = 1;
+    if (this.arenaFloor !== floor) {
+      // A new floor (or a loaded save): an arena already in the fight starts fully lit.
+      this.arenaFloor = floor;
+      this.arenaWokeAt = awake ? now - 10000 : null;
+      this.arenaIgnited = new Set();
+      this.gateAnim = null;
+    }
+    if (awake && this.arenaWokeAt == null) this.arenaWokeAt = now;
+    // The Overlord's third phase: the player's light shrinks to a few tiles, and the braziers gutter.
+    const hunger = Boolean(boss?.phaseThree);
+    this.lightScale += ((hunger ? 0.42 : 1) - (this.lightScale ?? 1)) * 0.05;
+    const fire = !boss ? ARENA_FIRE.victory
+      : boss.enraged ? ARENA_FIRE.enraged
+        : boss.phaseTwo ? { core: "#ffd0f0", mid: "#ff4fa0", outer: "#7a1040", light: "255, 70, 150" }
+          : ARENA_FIRE[arena.kind] ?? ARENA_FIRE.stitch;
+    const order = [...new Set(arena.braziers.map((brazier) => brazier.x))].sort((a, b) => a - b);
+    const litOf = (brazier) => {
+      if (this.arenaWokeAt == null) return 0;
+      const delay = order.indexOf(brazier.x) * 160;
+      return clamp((now - this.arenaWokeAt - delay) / 260, 0, 1);
+    };
+    return { arena, awake, fire, litOf: hunger ? (brazier) => litOf(brazier) * 0.35 : litOf };
+  }
+
+  drawArena(floor, state, offsetX, offsetY, tileSize, lights) {
+    const { ctx } = this;
+    const { arena } = state;
+    const map = floor.map;
+    const tilePx = (x, y) => ({ px: offsetX + x * tileSize, py: offsetY + y * tileSize });
+
+    // Before the fight, the arena sits in heavy shadow; it lifts as the braziers catch.
+    const litShare = arena.braziers.length ? arena.braziers.reduce((sum, brazier) => sum + state.litOf(brazier), 0) / arena.braziers.length : 1;
+    if (litShare < 1) {
+      ctx.save();
+      ctx.fillStyle = `rgba(0, 0, 0, ${0.42 * (1 - litShare)})`;
+      for (let y = arena.y; y < arena.y + arena.height; y += 1) {
+        for (let x = arena.x; x < arena.x + arena.width; x += 1) {
+          if (!map[y]?.[x]?.explored) continue;
+          const { px, py } = tilePx(x, y);
+          ctx.fillRect(px, py, tileSize, tileSize);
+        }
+      }
+      ctx.restore();
+    }
+
+    // The throne rises from its middle tile into the wall behind it.
+    const throneTile = map[arena.y]?.[arena.center.x];
+    if (throneTile?.arenaProp === "throne" && throneTile.explored) {
+      const { px, py } = tilePx(arena.center.x, arena.y);
+      drawThrone(ctx, px + tileSize / 2, py, tileSize);
+    }
+
+    for (const hook of arena.hooks ?? []) {
+      if (!map[hook.y]?.[hook.x]?.explored) continue;
+      const { px, py } = tilePx(hook.x, hook.y);
+      drawHook(ctx, px, py, tileSize, hook.x);
+    }
+
+    arena.braziers.forEach((brazier, index) => {
+      if (!map[brazier.y]?.[brazier.x]?.explored) return;
+      const lit = state.litOf(brazier);
+      const { px, py } = tilePx(brazier.x, brazier.y);
+      // Bottom-wall braziers hang on the wall's face, just below the tile.
+      drawBrazier(ctx, px, py + (brazier.top ? 0 : tileSize * 0.15), tileSize, lit, state.fire, index);
+      if (lit > 0) {
+        lights.push({ x: brazier.x, y: brazier.y + (brazier.top ? 0.8 : -0.4), radius: 3.4, color: state.fire.light, strength: 0.22 * lit });
+        if (!this.arenaIgnited.has(index)) {
+          this.arenaIgnited.add(index);
+          if (performance.now() - this.arenaWokeAt < 5000) this.fx.burst(brazier.x + 0.5, brazier.y + 0.35, 10, { color: state.fire.mid, speed: [0.8, 2.2], life: [0.25, 0.5], size: [0.03, 0.05], gravity: -1.5, shape: "ember" });
+        }
+      }
+    });
+
+    // Iron bars over the entrance: dropping when the fight seals it, lifting when it's won.
+    const anim = this.gateAnim;
+    const t = anim ? (performance.now() - anim.start) / (anim.sealing ? 200 : 650) : 1;
+    for (const gate of arena.gates) {
+      if (!map[gate.y]?.[gate.x]?.explored) continue;
+      const sealed = Boolean(map[gate.y][gate.x].sealed);
+      let drop = sealed ? 1 : 0;
+      if (anim && t < 1) drop = anim.sealing ? (clamp(t, 0, 1) ** 2) : 1 - clamp(t, 0, 1);
+      const { px, py } = tilePx(gate.x, gate.y);
+      drawGateBars(ctx, px, py, tileSize, drop);
+    }
+  }
+
+  // Tiles an enemy has marked for next turn: a slam's ring of red, or a meat hook's lane.
+  drawAreaTelegraph(enemy, floor, offsetX, offsetY, tileSize, pulse, line) {
+    const { ctx } = this;
+    const aoe = enemy.aoe;
+    if (aoe.kind === "eclipse") {
+      this.drawEclipseTelegraph(enemy, floor, offsetX, offsetY, tileSize, pulse, line);
+      return;
+    }
+    // Colours: red for strikes, violet for void rifts, amber for the crumbling edge.
+    const tint = aoe.kind === "rift" ? ["150, 60, 255", "210, 150, 255"] : aoe.kind === "crumble" ? ["230, 120, 40", "255, 190, 110"] : ["230, 50, 35", "255, 120, 90"];
+    ctx.save();
+    for (const tile of aoe.tiles) {
+      if (!floor.map[tile.y]?.[tile.x]?.visible) continue;
+      const px = offsetX + tile.x * tileSize;
+      const py = offsetY + tile.y * tileSize;
+      ctx.fillStyle = `rgba(${tint[0]}, ${(0.34 * pulse).toFixed(3)})`;
+      ctx.fillRect(px, py, tileSize, tileSize);
+      ctx.strokeStyle = `rgba(${tint[1]}, ${pulse.toFixed(3)})`;
+      ctx.lineWidth = line * 2;
+      ctx.strokeRect(px + line, py + line, tileSize - line * 2, tileSize - line * 2);
+      if (aoe.kind === "slam") {
+        // Cracks radiating from the boss.
+        const cx = px + tileSize / 2;
+        const cy = py + tileSize / 2;
+        const ax = Math.sign(tile.x - enemy.x);
+        const ay = Math.sign(tile.y - enemy.y);
+        ctx.strokeStyle = `rgba(255, 200, 170, ${(0.8 * pulse).toFixed(3)})`;
+        ctx.lineWidth = line;
+        ctx.beginPath();
+        ctx.moveTo(cx - ax * tileSize * 0.35, cy - ay * tileSize * 0.35);
+        ctx.lineTo(cx + ay * tileSize * 0.08, cy - ax * tileSize * 0.08);
+        ctx.lineTo(cx + ax * tileSize * 0.3, cy + ay * tileSize * 0.3);
+        ctx.stroke();
+      }
+    }
+    if (aoe.kind === "hook" && aoe.tiles.length) {
+      // A dashed chain line down the lane, with a hook glyph at its far end.
+      const from = { x: offsetX + (enemy.x + 0.5) * tileSize, y: offsetY + (enemy.y + 0.5) * tileSize };
+      const end = aoe.tiles[aoe.tiles.length - 1];
+      const to = { x: offsetX + (end.x + 0.5) * tileSize, y: offsetY + (end.y + 0.5) * tileSize };
+      ctx.strokeStyle = `rgba(210, 205, 200, ${(0.85 * pulse).toFixed(3)})`;
+      ctx.lineWidth = line * 2;
+      ctx.setLineDash([line * 3, line * 2]);
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(to.x, to.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.strokeStyle = `rgba(230, 235, 240, ${pulse.toFixed(3)})`;
+      ctx.lineWidth = line * 2.5;
+      ctx.beginPath();
+      ctx.arc(to.x - tileSize * 0.08, to.y, tileSize * 0.16, -Math.PI * 0.2, Math.PI * 1.1);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // The Abyssal Eclipse: the arena washes violet, and the safe sigils glow gold with a countdown.
+  drawEclipseTelegraph(enemy, floor, offsetX, offsetY, tileSize, pulse, line) {
+    const { ctx } = this;
+    const aoe = enemy.aoe;
+    const turnsLeft = Math.max(1, aoe.landsOnTurn - enemy.turnCounter);
+    ctx.save();
+    ctx.fillStyle = `rgba(90, 20, 150, ${(0.22 + 0.12 * pulse).toFixed(3)})`;
+    for (const tile of aoe.tiles) {
+      if (!floor.map[tile.y]?.[tile.x]?.explored) continue;
+      ctx.fillRect(offsetX + tile.x * tileSize, offsetY + tile.y * tileSize, tileSize, tileSize);
+    }
+    for (const sigil of aoe.safe ?? []) {
+      const cx = offsetX + (sigil.x + 0.5) * tileSize;
+      const cy = offsetY + (sigil.y + 0.5) * tileSize;
+      ctx.globalCompositeOperation = "lighter";
+      const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, tileSize * 0.9);
+      glow.addColorStop(0, `rgba(255, 214, 120, ${(0.55 * pulse).toFixed(3)})`);
+      glow.addColorStop(1, "rgba(255, 214, 120, 0)");
+      ctx.fillStyle = glow;
+      ctx.fillRect(cx - tileSize, cy - tileSize, tileSize * 2, tileSize * 2);
+      ctx.globalCompositeOperation = "source-over";
+      ctx.strokeStyle = `rgba(255, 224, 150, ${pulse.toFixed(3)})`;
+      ctx.lineWidth = line * 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, tileSize * 0.38, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      for (let index = 0; index <= 6; index += 1) {
+        const a = -Math.PI / 2 + (index * 4 * Math.PI) / 6;
+        ctx.lineTo(cx + Math.cos(a) * tileSize * 0.3, cy + Math.sin(a) * tileSize * 0.3);
+      }
+      ctx.stroke();
+      ctx.font = `bold ${Math.max(10, Math.round(tileSize * 0.42))}px monospace`;
+      ctx.textAlign = "center";
+      ctx.fillStyle = "rgba(20, 10, 30, 0.8)";
+      ctx.fillText(String(turnsLeft), cx + 1, cy - tileSize * 0.52 + 1);
+      ctx.fillStyle = "#ffe08a";
+      ctx.fillText(String(turnsLeft), cx, cy - tileSize * 0.52);
+    }
+    ctx.restore();
+  }
+
   // Which Warrior skill auras are showing right now, plus the direction of the last step.
   getWarriorAuraState(player) {
     const last = this.lastPlayerPos;
@@ -1980,6 +2230,7 @@ export class Renderer {
 
   // Area and cast effects: explosion, nova, pulse, blink, column, shieldUp (see spellFx.js).
   queueEffect(effect) {
+    if (effect.kind === "gateSlam" || effect.kind === "gateLift") this.gateAnim = { sealing: effect.kind === "gateSlam", start: performance.now() };
     this.fx.addEffect(effect);
   }
 

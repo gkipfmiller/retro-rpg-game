@@ -106,6 +106,19 @@ const STATUS_ICONS = {
       "..kkk...",
     ],
   },
+  rended: {
+    palette: { r: "#c8323a", d: "#6a1418", w: "#e8dcc0" },
+    grid: [
+      "........",
+      ".r...r..",
+      "..r.r.r.",
+      "rd.r.rd.",
+      ".rd.rd..",
+      "..rdd...",
+      "...w....",
+      "........",
+    ],
+  },
   frozen: {
     palette: { a: "#9fe6ff", b: "#ffffff", d: "#3a8fc0", k: "#0e2a3a" },
     grid: [

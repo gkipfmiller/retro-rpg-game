@@ -441,6 +441,19 @@ export const ITEMS = {
   arcane_burst_tome: { id: "arcane_burst_tome", name: "Tome of Arcane Burst", category: "tome", rarity: "uncommon", spellId: "arcane_burst", value: 58 },
 };
 
+// Depth scaling for ordinary enemies (not bosses, whose numbers are set by hand below): past
+// startFloor, each floor adds hpPerFloor of their base HP, and every damageEveryFloors floors adds
+// +1 to both ends of their damage. Summons and the final sentries scale with the floor they're on.
+export const DEPTH_SCALING = { startFloor: 10, hpPerFloor: 0.015, damageEveryFloors: 99 };
+
+export function getDepthHpMultiplier(floorNumber = 1) {
+  return 1 + Math.max(0, floorNumber - DEPTH_SCALING.startFloor) * DEPTH_SCALING.hpPerFloor;
+}
+
+export function getDepthDamageBonus(floorNumber = 1) {
+  return Math.max(0, Math.floor((floorNumber - DEPTH_SCALING.startFloor) / DEPTH_SCALING.damageEveryFloors));
+}
+
 export const ENEMIES = {
   rat: { id: "rat", name: "Slug", behavior: "melee", hp: 8, damage: [2, 3], accuracy: 75, defense: 0, xp: 5, gold: [1, 3], glyph: "R" },
   goblin: { id: "goblin", name: "Goblin", behavior: "skirmisher", hp: 12, damage: [2, 4], accuracy: 85, defense: 0, evasion: 3, xp: 8, gold: [3, 5], glyph: "G" },
@@ -457,7 +470,7 @@ export const ENEMIES = {
   doom_ogre: { id: "doom_ogre", name: "Doom Ogre", behavior: "blocker", hp: 33, damage: [7, 10], accuracy: 81, defense: 4, xp: 46, gold: [10, 16], glyph: "O" },
   abyssal_overlord: { id: "abyssal_overlord", name: "Abyssal Overlord", behavior: "boss", hp: 118, damage: [9, 14], accuracy: 90, defense: 6, xp: 160, gold: [40, 64], glyph: "M", range: 6 },
   bone_captain: { id: "bone_captain", name: "Super Skeletor", behavior: "boss", hp: 54, damage: [5, 8], accuracy: 85, defense: 3, xp: 60, gold: [16, 27], glyph: "S", range: 5 },
-  patches: { id: "patches", name: "Patches", behavior: "boss", hp: 78, damage: [7, 11], accuracy: 84, defense: 4, xp: 96, gold: [26, 40], glyph: "P", range: 1 },
+  patches: { id: "patches", name: "Patches", behavior: "boss", hp: 160, damage: [11, 16], accuracy: 84, defense: 4, xp: 96, gold: [26, 40], glyph: "P", range: 1 },
   mimic: { id: "mimic", name: "Mimic", behavior: "melee", hp: 28, damage: [5, 9], accuracy: 86, defense: 3, xp: 35, gold: [12, 20], glyph: "M" },
   angel: { id: "angel", name: "Celestial Guardian", behavior: "caster", hp: 30, damage: [7, 10], accuracy: 88, defense: 3, xp: 48, gold: [10, 15], glyph: "A", range: 5 },
   ice_zombie: { id: "ice_zombie", name: "Ice Zombie", behavior: "melee", hp: 28, damage: [6, 9], accuracy: 80, defense: 4, xp: 44, gold: [9, 14], glyph: "Z" },
@@ -561,6 +574,7 @@ export const STATUS_DEFINITIONS = {
   mana_barrier: { id: "mana_barrier", name: "Mana Barrier", icon: "M", description: "A barrier soaks up incoming damage until it breaks or fades." },
   burning: { id: "burning", name: "Burning", icon: "B", description: "Takes fire damage at the end of each turn." },
   frozen: { id: "frozen", name: "Frozen", icon: "F", description: "Frozen solid: takes no turns until the ice melts." },
+  rended: { id: "rended", name: "Rended", icon: "R", description: "Ragged wounds: healing from potions and shrines is halved." },
 };
 
 export const BOONS = {
