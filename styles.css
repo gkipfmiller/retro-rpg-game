@@ -3618,3 +3618,50 @@ button.danger {
 .milestone-list li.locked {
   opacity: 0.55;
 }
+
+/* ── Daily Descent ── */
+/* A cool, moonlit variant of the menu buttons: same shape, its own colour, with the date beneath. */
+.menu-actions--stack .daily-button {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  background: linear-gradient(180deg, #2c3a4a, #1c2530);
+  border-color: #5f7ea0;
+}
+
+.daily-label {
+  color: #d9e8ff;
+}
+
+.daily-detail {
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  color: #9fb4cc;
+  letter-spacing: 0;
+}
+
+.daily-note {
+  margin: 0.4rem 0 0;
+  color: #b9cce2;
+  font-size: 0.9rem;
+}
+
+/* High Scores tabs: All Time / today's Daily Descent. */
+.score-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.25rem 0 0.9rem;
+}
+
+.score-tab {
+  padding: 0.45rem 0.85rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.score-tab.active {
+  color: var(--accent-bright);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), inset 0 -2px 0 rgba(0, 0, 0, 0.35);
+}

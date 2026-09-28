@@ -45,6 +45,10 @@
           </div>
           <div class="menu-actions menu-actions--stack">
             <button id="new-run-button" class="primary">New Run</button>
+            <button id="daily-run-button" class="daily-button">
+              <span class="daily-label">Daily Descent</span>
+              <span id="daily-run-detail" class="daily-detail"></span>
+            </button>
             <button id="how-to-play-button">How to Play</button>
             <button id="high-scores-button">High Scores</button>
             <button id="settings-button">Settings</button>
@@ -54,7 +58,8 @@
             <p><strong>Move:</strong> Arrow keys or WASD</p>
             <p><strong>Wait:</strong> Space</p>
             <p><strong>Fire Ranged Weapon:</strong> F (targets nearest visible enemy)</p>
-            <p><strong>Interact:</strong> Enter (stairs, vendors, shrines)</p>
+            <p><strong>Interact:</strong> Enter (stairs, vendors, shrines, remains)</p>
+            <p><strong>Daily Descent:</strong> one shared dungeon a day, one attempt, its own leaderboard</p>
             <p><strong>Inventory:</strong> I</p>
             <p><strong>Character:</strong> C</p>
             <p><strong>Skills:</strong> K</p>
@@ -71,8 +76,9 @@
       <section id="class-screen" class="screen">
         <div class="panel class-select-panel">
           <div class="screen-heading">
-            <span class="title-kicker">Who descends?</span>
+            <span id="class-kicker" class="title-kicker">Who descends?</span>
             <h2>Choose Your Delver</h2>
+            <p id="class-daily-note" class="daily-note hidden"></p>
           </div>
           <div class="class-grid">
             <button class="class-card" data-class-id="warrior">

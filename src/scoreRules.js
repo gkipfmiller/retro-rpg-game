@@ -35,3 +35,17 @@ export function checkPlayerName(name) {
 export function calculateScore({ floor, level, kills, gold, result }) {
   return (floor * 120) + (level * 90) + (kills * 12) + gold + (result === "victory" ? 1500 : 0);
 }
+
+// ── Daily Descent ──
+// Everyone's daily run uses the same seed for the same UTC date, so the whole world plays one dungeon
+// per day. A run that started just before midnight can still be submitted the next day.
+export const DAILY_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+export function dailyDateUTC(now = Date.now()) {
+  return new Date(now).toISOString().slice(0, 10);
+}
+
+export function isRecentDailyDate(date, now = Date.now()) {
+  if (typeof date !== "string" || !DAILY_DATE_PATTERN.test(date)) return false;
+  return date === dailyDateUTC(now) || date === dailyDateUTC(now - 24 * 60 * 60 * 1000);
+}

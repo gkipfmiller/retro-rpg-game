@@ -1,7 +1,7 @@
 import { BAND_NAMES, BOONS, BOSS_REWARDS, BOSS_TITLES, CHEST_TABLE, CLASSES, ENEMIES, ITEMS, QUICK_SLOT_COUNT, SKILL_TREES, SPELLS, STATUS_DEFINITIONS, TRAPS, getDepthDamageBonus, getDepthHpMultiplier, getReforgedId, STAT_KEYS, STAT_LABELS, STAT_SHORT, STAT_MILESTONES, CLASS_STATS } from "./data.js";
 import { attachVaultFeaturesToFloor, generateFloor, getDropForEnemy } from "./generator.js";
 import { getActorSpriteFrame, getEnemySpriteId, getItemSprite } from "./assets.js";
-import { calculateScore, checkPlayerName, containsBlockedNameTerm, normalizePlayerName } from "./scoreRules.js";
+import { calculateScore, checkPlayerName, containsBlockedNameTerm, dailyDateUTC, normalizePlayerName } from "./scoreRules.js";
 import { getBranchIconUrl, getSpellIconUrl, getStatusIconUrl } from "./pixelIcons.js";
 import { clamp, createRng, deepClone, hashSeed, isBlockedFloor, manhattan, toKey } from "./utils.js";
 import { MAX_LOG_ENTRIES, logText, normalizeLogs } from "./log.js";
@@ -42,6 +42,10 @@ const REFORGE_VALUE_MULTIPLIER = 8;
 const REFORGE_MIN_COST = 400;
 const OVERLORD_ECLIPSE_DAMAGE = [20, 26];
 const VOID_BURN = 3;
+// Fallen adventurers (other players' deaths, from api/fallen.js): how many sets of remains an
+// ordinary floor shows, and how far from the arrival point they must lie.
+const FALLEN_PER_FLOOR = [1, 2];
+const FALLEN_MIN_SPAWN_DISTANCE = 5;
 
 function occupiedByEnemy(floor, x, y) {
   return floor.enemies.find((enemy) => enemy.x === x && enemy.y === y && !enemy.disguised);
@@ -137,10 +141,17 @@ export class Game {
     this.bossMemoryStorageKey = "dungeon30_boss_memory";
     // Dev only (dungeon30Debug.revealFloor({ all: true })): keep the whole floor in view every turn.
     this.debugSeeAll = false;
-    // The shared leaderboard (api/scores.js), once loaded. Until then, or when it can't be reached,
-    // the high-score lists fall back to this browser's own scores.
-    this.sharedScores = null;
-    this.sharedScoresStatus = "idle";
+    this.dailyStorageKey = "dungeon30_daily";
+    this.playerNameStorageKey = "dungeon30_player_name";
+    // The shared leaderboards (api/scores.js), once loaded, keyed by board: "all" for all time, or a
+    // date ("2026-09-28") for that day's Daily Descent. Until a board loads, or when it can't be
+    // reached, it falls back to this browser's own scores.
+    this.sharedScores = {};
+    this.sharedScoresStatus = {};
+    // Which board the High Scores screen shows.
+    this.scoreBoard = "all";
+    // Set when the class screen was opened to start today's Daily Descent.
+    this.pendingDaily = false;
     // Set by main.js: redraw whatever shows scores when the shared list changes.
     this.onScoresChanged = null;
   }
@@ -165,9 +176,10 @@ export class Game {
       20: "The Stitching Pit",
       30: "The Abyssal Throne",
     };
-    if (floorNumber === 0) return { kicker: "Prelude", title: "The Sage Waits", subtitle: "Choose a gift before the descent", boss: false };
-    if (bossFloors[floorNumber]) return { kicker: `Floor ${floorNumber}`, title: bossFloors[floorNumber], subtitle: band, boss: true };
-    return { kicker: `${floorNumber} of 30`, title: `Floor ${floorNumber}`, subtitle: band, boss: false };
+    const daily = this.state.run?.daily ? "Daily Descent · " : "";
+    if (floorNumber === 0) return { kicker: `${daily}Prelude`, title: "The Sage Waits", subtitle: "Choose a gift before the descent", boss: false };
+    if (bossFloors[floorNumber]) return { kicker: `${daily}Floor ${floorNumber}`, title: bossFloors[floorNumber], subtitle: band, boss: true };
+    return { kicker: `${daily}${floorNumber} of 30`, title: `Floor ${floorNumber}`, subtitle: band, boss: false };
   }
 
   getBossFloorEntryLine(floorNumber) {
@@ -628,24 +640,27 @@ export class Game {
     return typeof fetch === "function" && /^https?:$/.test(globalThis.window?.location?.protocol ?? "");
   }
 
-  async refreshSharedScores() {
-    if (!this.canUseSharedScores() || this.sharedScoresStatus === "loading") return;
-    this.sharedScoresStatus = "loading";
+  // board: "all", or a Daily Descent date.
+  async refreshSharedScores(board = "all") {
+    if (!this.canUseSharedScores() || this.sharedScoresStatus[board] === "loading") return;
+    this.sharedScoresStatus[board] = "loading";
     try {
-      const response = await fetch("/api/scores?limit=20", { headers: { Accept: "application/json" } });
+      const query = board === "all" ? "limit=20" : `limit=20&daily=${encodeURIComponent(board)}`;
+      const response = await fetch(`/api/scores?${query}`, { headers: { Accept: "application/json" } });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const entries = await response.json();
       if (!Array.isArray(entries)) throw new Error("Bad leaderboard data");
-      this.sharedScores = entries;
-      this.sharedScoresStatus = "online";
+      this.sharedScores[board] = entries;
+      this.sharedScoresStatus[board] = "online";
     } catch {
-      this.sharedScoresStatus = "offline";
+      this.sharedScoresStatus[board] = "offline";
     }
     this.onScoresChanged?.();
   }
 
   async submitSharedScore(entry) {
     if (!this.canUseSharedScores()) return;
+    const boards = entry.daily ? ["all", entry.daily] : ["all"];
     try {
       const response = await fetch("/api/scores", {
         method: "POST",
@@ -653,18 +668,193 @@ export class Game {
         body: JSON.stringify(entry),
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      this.sharedScoresStatus = "idle";
-      await this.refreshSharedScores();
+      for (const board of boards) this.sharedScoresStatus[board] = "idle";
+      await Promise.all(boards.map((board) => this.refreshSharedScores(board)));
     } catch {
-      this.sharedScoresStatus = "offline";
+      for (const board of boards) this.sharedScoresStatus[board] = "offline";
       this.onScoresChanged?.();
     }
   }
 
   // Scores to show: the shared leaderboard when it's loaded, otherwise this browser's own.
-  getHighScores() {
-    if (this.sharedScores) return this.sharedScores;
-    return this.getLocalHighScores();
+  getHighScores(board = "all") {
+    if (this.sharedScores[board]) return this.sharedScores[board];
+    const local = this.getLocalHighScores();
+    return board === "all" ? local : local.filter((entry) => entry.daily === board);
+  }
+
+  // ── Daily Descent ──
+  // One dungeon per UTC day, the same for everyone (the seed comes from the date alone, and floor
+  // layouts and enemies don't depend on class). One attempt per day on each device.
+  getDailyStatus() {
+    const date = dailyDateUTC();
+    let record = null;
+    try {
+      record = JSON.parse(window.localStorage.getItem(this.dailyStorageKey) ?? "null");
+    } catch {
+      record = null;
+    }
+    return { date, attempted: record?.date === date, classId: record?.date === date ? record.classId : null };
+  }
+
+  markDailyAttempt(date, classId) {
+    try {
+      window.localStorage.setItem(this.dailyStorageKey, JSON.stringify({ date, classId }));
+    } catch {
+      // Without storage the daily just isn't limited on this device.
+    }
+  }
+
+  // The name this player last put on the leaderboard: prefilled at the end of a run, and carried by
+  // their remains.
+  getRememberedPlayerName() {
+    try {
+      return window.localStorage.getItem(this.playerNameStorageKey) ?? "";
+    } catch {
+      return "";
+    }
+  }
+
+  rememberPlayerName(name) {
+    try {
+      window.localStorage.setItem(this.playerNameStorageKey, name);
+    } catch {
+      // Not remembering the name is harmless.
+    }
+  }
+
+  // Human-readable form of a daily date, e.g. "Sep 28".
+  formatDailyDate(date) {
+    const parsed = new Date(`${date}T00:00:00Z`);
+    return Number.isNaN(parsed.getTime()) ? date : parsed.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  }
+
+  // ── Fallen adventurers ──
+  // Other delvers' deaths (api/fallen.js) leave remains to find. In a Daily Descent everyone shares
+  // the dungeon, so remains lie exactly where that delver fell; in ordinary runs a couple of recent
+  // deaths on the same floor number are scattered somewhere out of sight.
+  async recordFallen() {
+    const run = this.state.run;
+    if (!this.canUseSharedScores() || !run || run.floorNumber < 1) return;
+    const { player } = run;
+    try {
+      await fetch("/api/fallen", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          name: this.getRememberedPlayerName(),
+          className: CLASSES[player.classId].name,
+          level: player.level,
+          floor: run.floorNumber,
+          x: player.x,
+          y: player.y,
+          cause: run.endInfo?.cause ?? "",
+          daily: run.daily ?? null,
+        }),
+      });
+    } catch {
+      // A lost record only means nobody finds these remains.
+    }
+  }
+
+  async loadFallenRemains() {
+    const run = this.state.run;
+    const floor = run?.currentFloor;
+    if (!this.canUseSharedScores() || !floor || run.floorNumber < 1 || floor.fallenLoaded) return;
+    floor.fallenLoaded = true;
+    try {
+      const query = `floor=${run.floorNumber}${run.daily ? `&daily=${encodeURIComponent(run.daily)}` : ""}`;
+      const response = await fetch(`/api/fallen?${query}`, { headers: { Accept: "application/json" } });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const entries = await response.json();
+      // The player may have moved on (or died) while this was loading.
+      if (this.state.run !== run || run.currentFloor !== floor || run.deathMessage) return;
+      if (Array.isArray(entries) && this.placeFallenRemains(entries)) this.onScoresChanged?.();
+    } catch {
+      // No remains this floor.
+    }
+  }
+
+  // A tile that can take a set of remains without hiding or blocking anything.
+  canHoldRemains(floor, x, y, { hidden }) {
+    const tile = floor.map[y]?.[x];
+    if (!tile || tile.type !== "floor" || isBlockedFloor(tile)) return false;
+    if (tile.stairs || tile.chestId || tile.vendor || tile.shrineId || tile.remainsId || tile.itemIds?.length || tile.voidHazard || tile.arenaProp) return false;
+    if (hidden && (tile.visible || manhattan(floor.spawn, { x, y }) < FALLEN_MIN_SPAWN_DISTANCE)) return false;
+    const { player } = this.state.run;
+    if (player.x === x && player.y === y) return false;
+    if (floor.enemies.some((enemy) => enemy.x === x && enemy.y === y)) return false;
+    if (floor.traps.some((trap) => trap.x === x && trap.y === y)) return false;
+    return !(floor.sage && floor.sage.x === x && floor.sage.y === y);
+  }
+
+  // Returns how many sets of remains were placed.
+  placeFallenRemains(entries) {
+    const run = this.state.run;
+    const floor = run.currentFloor;
+    floor.remains = floor.remains ?? [];
+    const rng = createRng(hashSeed(run.runSeed, run.floorNumber, "fallen"));
+    const valid = entries.filter((entry) => entry && Number.isInteger(entry.x) && Number.isInteger(entry.y));
+    const chosen = run.daily ? valid : rng.shuffle(valid).slice(0, rng.int(FALLEN_PER_FLOOR[0], FALLEN_PER_FLOOR[1]));
+    let openTiles = null;
+    let placed = 0;
+    for (const entry of chosen) {
+      let spot = run.daily && this.canHoldRemains(floor, entry.x, entry.y, { hidden: false }) ? { x: entry.x, y: entry.y } : null;
+      if (!spot) {
+        openTiles = openTiles ?? floor.map.flatMap((row, y) => row.map((_, x) => ({ x, y })));
+        const candidates = openTiles.filter(({ x, y }) => this.canHoldRemains(floor, x, y, { hidden: true }));
+        if (!candidates.length) break;
+        spot = rng.pick(candidates);
+      }
+      const id = `remains-${entry.id ?? `${run.floorNumber}-${placed}`}`;
+      floor.remains.push({
+        id,
+        x: spot.x,
+        y: spot.y,
+        name: String(entry.name ?? "").slice(0, 18),
+        className: String(entry.className ?? "").slice(0, 12),
+        level: Number(entry.level) || 1,
+        cause: String(entry.cause ?? "").slice(0, 120),
+        searched: false,
+      });
+      floor.map[spot.y][spot.x].remainsId = id;
+      placed += 1;
+    }
+    if (placed && run.daily) {
+      this.log(placed === 1 ? "Another delver fell on this floor today." : `${placed} delvers fell on this floor today.`);
+    }
+    return placed;
+  }
+
+  getRemainsAt(x, y) {
+    const floor = this.state.run?.currentFloor;
+    const id = floor?.map[y]?.[x]?.remainsId;
+    return id ? floor.remains?.find((entry) => entry.id === id) ?? null : null;
+  }
+
+  describeFallen(remains) {
+    const who = remains.name || `A nameless ${remains.className || "delver"}`;
+    const what = `Level ${remains.level} ${remains.className}`.trim();
+    return { who, line: `${what}${remains.cause ? `, slain by ${remains.cause}` : ""}.` };
+  }
+
+  // A little gold and sometimes a potion: whatever the fallen still had on them.
+  searchRemains(remains) {
+    const run = this.state.run;
+    remains.searched = true;
+    const rng = createRng(hashSeed(run.runSeed, run.floorNumber, remains.id, "remains"));
+    const gold = rng.int(3, 6) + run.floorNumber * 2;
+    const { who, line } = this.describeFallen(remains);
+    this.soundPlayer?.play("chest_open");
+    this.showNpcDialog(null, `Here lies ${who}. ${line}`, 3600);
+    this.addGold(gold);
+    this.log(`You search the remains of ${who} and find ${gold} gold.`);
+    if (rng.chance(0.3)) {
+      const deep = run.floorNumber >= 11;
+      const itemId = rng.pick(deep ? ["greater_healing_potion", "greater_mana_potion"] : ["healing_potion", "mana_potion"]);
+      this.addToInventory(itemId, { verb: "Found" });
+      this.log(`Found ${ITEMS[itemId].name}.`);
+    }
   }
 
   getLocalHighScores() {
@@ -718,6 +908,7 @@ export class Game {
       return {
         classId: player.classId,
         heroName: CLASSES[player.classId]?.heroName ?? "",
+        daily: run.daily ?? null,
         className: CLASSES[player.classId]?.name ?? player.classId,
         level: player.level,
         floor: run.floorNumber,
@@ -782,18 +973,20 @@ export class Game {
     return calculateScore({ floor: run.floorNumber, level: run.player.level, kills: run.runStats.kills, gold: run.player.gold, result });
   }
 
-  renderHighScoreList(limit = 10) {
-    const scores = this.getHighScores().slice(0, limit);
+  renderHighScoreList(limit = 10, board = "all") {
+    const scores = this.getHighScores(board).slice(0, limit);
+    const status = this.sharedScoresStatus[board];
+    const everyone = board === "all" ? "Leaderboard for all delvers." : `Everyone's ${this.formatDailyDate(board)} Daily Descent.`;
     // Where these scores come from: everyone (shared leaderboard) or just this browser.
-    const source = this.sharedScores
-      ? "<p class=\"muted scoreboard-source\">Leaderboard for all delvers.</p>"
-      : this.sharedScoresStatus === "loading"
+    const source = this.sharedScores[board]
+      ? `<p class="muted scoreboard-source">${everyone}</p>`
+      : status === "loading"
         ? "<p class=\"muted scoreboard-source\">Loading the leaderboard…</p>"
-        : this.sharedScoresStatus === "offline"
+        : status === "offline"
           ? "<p class=\"muted scoreboard-source\">The shared leaderboard can't be reached. Showing scores saved on this device.</p>"
           : "";
     if (!scores.length) {
-      return `${source}<p class="muted">No delvers recorded yet.</p>`;
+      return `${source}<p class="muted">${board === "all" ? "No delvers recorded yet." : "Nobody has finished today's descent yet."}</p>`;
     }
     // Names and causes can come from other players, so they're always escaped.
     const safe = (text) => this.escapeTooltip(text ?? "").replaceAll("&#10;", " ");
@@ -816,6 +1009,20 @@ export class Game {
     `;
   }
 
+  // The High Scores screen: all-time and today's Daily Descent, as tabs.
+  renderScoresScreen() {
+    const today = dailyDateUTC();
+    const board = this.scoreBoard === "all" ? "all" : today;
+    const tab = (id, label) => `<button class="score-tab${(id === "all") === (board === "all") ? " active" : ""}" data-score-board="${id}">${label}</button>`;
+    return `
+      <div class="score-tabs" role="tablist">
+        ${tab("all", "All Time")}
+        ${tab("daily", `Daily Descent · ${this.formatDailyDate(today)}`)}
+      </div>
+      ${this.renderHighScoreList(12, board)}
+    `;
+  }
+
   buildRunSummary(run, cause, result) {
     return {
       score: this.calculateRunScore(run, result),
@@ -827,6 +1034,7 @@ export class Game {
       className: CLASSES[run.player.classId].name,
       cause,
       result,
+      daily: run.daily ?? null,
     };
   }
 
@@ -847,7 +1055,9 @@ export class Game {
       kills: summary.kills,
       gold: summary.gold,
       turns: summary.turns,
+      daily: summary.daily,
     });
+    this.rememberPlayerName(normalizedName);
     const nextScores = [
       {
         name: normalizedName,
@@ -860,12 +1070,13 @@ export class Game {
         className: summary.className,
         cause: summary.cause,
         result: summary.result,
+        daily: summary.daily,
         recordedAt: new Date().toISOString(),
       },
       ...this.getLocalHighScores(),
     ]
       .sort((a, b) => b.score - a.score || b.floor - a.floor || b.kills - a.kills)
-      .slice(0, 20);
+      .slice(0, 40);
     this.setHighScores(nextScores);
     return { ok: true, name: normalizedName };
   }
@@ -890,19 +1101,21 @@ export class Game {
       <div class="detail-card">
         <div class="detail-header">
           <div>
-            <span class="section-kicker">Leaderboard</span>
-            <h3>Top Delvers</h3>
+            <span class="section-kicker">${summary.daily ? `Daily Descent · ${this.formatDailyDate(summary.daily)}` : "Leaderboard"}</span>
+            <h3>${summary.daily ? "Today's Delvers" : "Top Delvers"}</h3>
           </div>
         </div>
-        ${this.renderHighScoreList(8)}
+        ${this.renderHighScoreList(8, summary.daily ?? "all")}
       </div>
     `;
   }
 
-  openHighScores() {
+  // board: "all" or "daily" (today's Daily Descent).
+  openHighScores(board = this.scoreBoard) {
+    this.scoreBoard = board;
     this.state.mode = "scores";
     this.state.ui.overlay = null;
-    this.refreshSharedScores();
+    this.refreshSharedScores(board === "all" ? "all" : dailyDateUTC());
   }
 
   getXpForLevel(level) {
@@ -961,8 +1174,11 @@ export class Game {
     return player;
   }
 
-  startRun(classId) {
-    const runSeed = hashSeed(classId, Date.now());
+  // options.daily: start today's Daily Descent, whose seed is the date alone.
+  startRun(classId, options = {}) {
+    const daily = options.daily ? dailyDateUTC() : null;
+    if (daily) this.markDailyAttempt(daily, classId);
+    const runSeed = daily ? hashSeed("daily-descent", daily) : hashSeed(classId, Date.now());
     const player = this.createPlayer(classId);
     const floorData = this.createSageChamber(runSeed, classId);
     player.x = floorData.spawn.x;
@@ -970,6 +1186,7 @@ export class Game {
 
     this.state.run = {
       runSeed,
+      daily,
       floorNumber: 0,
       turn: 0,
       player,
@@ -1189,6 +1406,12 @@ export class Game {
     const sage = currentFloor.sage;
     if (sage && !sage.vanished && sage.x === x && sage.y === y) {
       sections.push(`${this.sageName}\nStand beside the sage and press Enter.`);
+    }
+
+    const remains = this.getRemainsAt(x, y);
+    if (remains) {
+      const { who, line } = this.describeFallen(remains);
+      sections.push(`Remains of ${who}\n${line}\n${remains.searched ? "Already searched." : "Stand on them and press Enter to search."}`);
     }
 
     const shrine = this.getShrineAt(x, y);
@@ -2967,6 +3190,12 @@ export class Game {
       return;
     }
 
+    const remains = this.getRemainsAt(player.x, player.y);
+    if (remains && !remains.searched) {
+      this.searchRemains(remains);
+      return;
+    }
+
     if (tile.vendor) {
       const vendor = this.state.run.currentFloor.vendor;
       this.showNpcDialog(vendor?.name ?? "Vendor", this.getVendorGreeting(vendor, this.state.run.runSeed, this.state.run.floorNumber), 2400);
@@ -3173,6 +3402,7 @@ export class Game {
     }
     this.updateVisibility();
     this.markFloorStart();
+    this.loadFallenRemains();
     this.soundPlayer?.play('stairs');
     this.log(`You descend to Floor ${nextFloor}.`);
     this.renderer?.showFloorCard(this.getFloorCard(nextFloor));
@@ -4779,12 +5009,15 @@ export class Game {
     const bossInFight = this.state.run.currentFloor.enemies.find((enemy) => ENEMIES[enemy.templateId]?.behavior === "boss"
       && this.state.run.player.floorFlags?.[`${enemy.templateId}Seen`]);
     if (bossInFight) this.recordBossOutcome(bossInFight.templateId, "killed");
+    this.recordFallen();
+    if (this.state.run.daily) this.refreshSharedScores(this.state.run.daily);
     this.state.mode = "in_game";
     this.openRunEnd();
   }
 
   handleVictory() {
     this.clearSave();
+    if (this.state.run.daily) this.refreshSharedScores(this.state.run.daily);
     this.state.run.endInfo = { result: "victory", cause: "Dungeon Cleared", source: null };
     this.openRunEnd();
   }
@@ -4887,7 +5120,7 @@ export class Game {
         <span class="run-end-kicker">${victory ? "The Abyssal Throne" : "Here lies"}</span>
         <div class="run-end-portrait-frame">${this.renderRunPortrait(run, victory ? null : info.source)}</div>
         <h2 class="run-end-name">${classDef.heroName}</h2>
-        <p class="run-end-class">${classDef.name} · Level ${run.player.level}${boon ? ` · ${boon.name}` : ""}</p>
+        <p class="run-end-class">${classDef.name} · Level ${run.player.level}${boon ? ` · ${boon.name}` : ""}${run.daily ? ` · Daily Descent ${this.formatDailyDate(run.daily)}` : ""}</p>
         <p class="run-end-line">${victory ? "The Abyssal Overlord is slain, and the throne below stands empty." : deathLine}</p>
         <p class="run-end-flavor">${victory ? "Whether you broke the dungeon's cycle or fulfilled its oldest demand remains unclear." : this.getEpitaphLine(run)}</p>
       </div>
@@ -4906,7 +5139,7 @@ export class Game {
           <div class="run-end-details">
             <h3 class="run-end-heading">Run recap</h3>
             ${this.renderRunRecap(run, summary)}
-            ${this.renderScoreSaveSection(summary, { savedName: options.savedName ?? "", feedback: options.feedback ?? "", feedbackTone: options.feedback ? "negative" : "muted" })}
+            ${this.renderScoreSaveSection(summary, { savedName: options.savedName ?? this.getRememberedPlayerName(), feedback: options.feedback ?? "", feedbackTone: options.feedback ? "negative" : "muted" })}
             <div class="run-end-actions">
               <button class="primary" data-action="new-run-from-death">Start New Run</button>
               <button data-action="main-menu">Main Menu</button>
@@ -5002,6 +5235,7 @@ export class Game {
         this.openVendor(this.state.ui.overlay?.selectedIndex ?? 0);
         break;
       case "new-run-from-death":
+        this.pendingDaily = false;
         this.state.mode = "class";
         this.state.ui.overlay = null;
         break;
@@ -5025,6 +5259,8 @@ export class Game {
         const saveResult = this.saveHighScore(payload.playerName, summary);
         if (saveResult.ok) {
           this.state.run.scoreSaved = true;
+          // Land on the board this run was entered into.
+          this.scoreBoard = summary.daily ? "daily" : "all";
           this.state.mode = "scores";
           this.state.ui.overlay = null;
           this.state.run = null;

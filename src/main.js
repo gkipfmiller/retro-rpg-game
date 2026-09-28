@@ -147,13 +147,30 @@ function renderContinueCard() {
   if (!save) return;
   card.dataset.actorId = save.classId;
   document.getElementById("continue-name").textContent = save.heroName;
-  document.getElementById("continue-detail").textContent = [`${save.className} · Level ${save.level}`, save.boonName].filter(Boolean).join(" · ");
+  document.getElementById("continue-detail").textContent = [`${save.className} · Level ${save.level}`, save.boonName, save.daily ? "Daily Descent" : null].filter(Boolean).join(" · ");
   document.getElementById("continue-where").textContent = save.floor === 0 ? "The Sage's Chamber" : `Floor ${save.floor}${save.band ? ` · ${save.band}` : ""}`;
   const hpBar = document.getElementById("continue-hp-bar");
   hpBar.style.width = save.maxHp ? `${Math.max(0, Math.min(100, (save.hp / save.maxHp) * 100))}%` : "100%";
   document.getElementById("continue-hp-text").textContent = save.maxHp ? `${save.hp}/${save.maxHp} HP` : `${save.hp} HP`;
   document.getElementById("continue-meta").textContent = [`${save.kills} kills`, `${save.gold}g`, formatSavedAgo(save.savedAt)].filter(Boolean).join(" · ");
   syncContinuePortrait(0);
+}
+
+// The Daily Descent button: today's date, or a pointer to the standings once today's attempt is used.
+function renderDailyButton() {
+  const status = game.getDailyStatus();
+  document.getElementById("daily-run-detail").textContent = status.attempted
+    ? "Done today · see the standings"
+    : `${game.formatDailyDate(status.date)} · the same dungeon for everyone`;
+}
+
+// The class screen doubles as the Daily Descent's class pick.
+function renderClassHeading() {
+  const note = document.getElementById("class-daily-note");
+  const date = game.getDailyStatus().date;
+  document.getElementById("class-kicker").textContent = game.pendingDaily ? `Daily Descent · ${game.formatDailyDate(date)}` : "Who descends?";
+  note.textContent = game.pendingDaily ? "Everyone faces the same dungeon today, with loot suited to your class. You get one attempt." : "";
+  note.classList.toggle("hidden", !game.pendingDaily);
 }
 
 function syncContinuePortrait(frameIndex) {
@@ -171,7 +188,11 @@ function syncScreens() {
   else if (game.state.mode === "scores") screens.scores.classList.add("visible");
   else screens.game.classList.add("visible");
   menuScene.setActive(game.state.mode !== "in_game");
-  if (game.state.mode === "menu") renderContinueCard();
+  if (game.state.mode === "menu") {
+    renderContinueCard();
+    renderDailyButton();
+  }
+  if (game.state.mode === "class") renderClassHeading();
   renderer.render();
 }
 
@@ -237,13 +258,14 @@ game.onScoresChanged = () => {
     const typed = document.getElementById("score-name-input")?.value;
     game.openRunEnd({ ...(overlay.runEndOptions ?? {}), ...(typed ? { savedName: typed } : {}) });
   }
-  if (game.state.mode === "scores" || onRunEnd) refresh();
+  // In a run, fallen remains may have just been placed (and logged).
+  if (game.state.mode === "scores" || game.state.mode === "in_game") refresh();
 };
 game.refreshSharedScores();
 
 function refresh() {
   if (game.state.mode === "scores") {
-    document.getElementById("high-scores-content").innerHTML = game.renderHighScoreList(12);
+    document.getElementById("high-scores-content").innerHTML = game.renderScoresScreen();
   }
   syncScreens();
   renderer.render();
@@ -301,16 +323,29 @@ document.getElementById("continue-run-button").addEventListener("click", () => {
 });
 
 // Starting over replaces the saved run, so with a save present it asks once first.
-document.getElementById("new-run-button").addEventListener("click", () => {
+function beginNewRun(daily) {
+  game.pendingDaily = daily;
   const save = game.getSaveSummary();
   if (save) {
-    document.getElementById("new-run-confirm-text").textContent = `Starting a new run abandons ${save.heroName}'s run on ${save.floor === 0 ? "the Sage's Chamber" : `Floor ${save.floor}`}.`;
+    document.getElementById("new-run-confirm-text").textContent = `Starting a ${daily ? "Daily Descent" : "new run"} abandons ${save.heroName}'s run on ${save.floor === 0 ? "the Sage's Chamber" : `Floor ${save.floor}`}.`;
     document.getElementById("new-run-confirm").classList.remove("hidden");
     document.getElementById("new-run-confirm-no").focus();
     return;
   }
   game.setMode("class");
   refresh();
+}
+
+document.getElementById("new-run-button").addEventListener("click", () => beginNewRun(false));
+
+// Today's attempt used: the button shows today's standings instead.
+document.getElementById("daily-run-button").addEventListener("click", () => {
+  if (game.getDailyStatus().attempted) {
+    game.openHighScores("daily");
+    refresh();
+    return;
+  }
+  beginNewRun(true);
 });
 
 document.getElementById("new-run-confirm-yes").addEventListener("click", () => {
@@ -330,6 +365,7 @@ document.getElementById("hud-new-items").addEventListener("click", () => {
 });
 
 document.getElementById("class-back-button").addEventListener("click", () => {
+  game.pendingDaily = false;
   game.setMode("menu");
   refresh();
 });
@@ -383,9 +419,17 @@ document.getElementById("high-scores-button").addEventListener("click", () => {
   refresh();
 });
 
+document.getElementById("high-scores-content").addEventListener("click", (event) => {
+  const tab = event.target.closest("[data-score-board]");
+  if (!tab) return;
+  game.openHighScores(tab.dataset.scoreBoard);
+  refresh();
+});
+
 for (const card of document.querySelectorAll(".class-card")) {
   card.addEventListener("click", () => {
-    game.startRun(card.dataset.classId);
+    game.startRun(card.dataset.classId, { daily: game.pendingDaily });
+    game.pendingDaily = false;
     refresh();
   });
 }

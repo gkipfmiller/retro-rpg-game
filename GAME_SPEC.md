@@ -1002,6 +1002,23 @@ Shared leaderboard (deployed on Vercel with Supabase):
 - the game loads the shared list at start and when high scores open, and redraws when it arrives; saving a score keeps a local copy and posts it in the background
 - when the shared list can't be reached (offline, `npm start` locally, or before the function is configured) the lists fall back to this browser's scores and say so; the headless simulator never calls the API
 - names and causes are HTML-escaped wherever scores are shown, since they can come from other players
+- `api/_supabase.js` holds the helpers both functions share (config, headers, error reporting). A failed Supabase request answers 502 with Supabase's status and message (never the key) and logs it to the Vercel function logs. New-style `sb_secret_...` keys are sent only as `apikey`; legacy JWT keys also go in `Authorization`
+- `tools/supabase/scores.sql` is safe to re-run: it only adds missing tables, columns and indexes, so re-running it after an update upgrades the database in place
+
+Daily Descent:
+- one dungeon per UTC day, the same for everyone: the run seed is `hashSeed("daily-descent", date)`, and since floor layouts, props, traps and enemies are generated before class-dependent loot, every class faces the same floors (loot, vendors and boons still suit the class)
+- the main menu's Daily Descent button opens class selection for today's run; the attempt is recorded on this device when the run starts, after which the button shows "Done today" and opens today's standings instead. One attempt per day per device (not enforced by the server)
+- daily scores are saved with `daily_date`; the server only accepts today's or yesterday's date, so a run that crosses midnight still counts. Daily scores also count on the all-time board
+- High Scores has All Time and Daily Descent tabs; a daily run's end screen shows that day's board, and saving lands on it
+- the floor card kicker reads "Daily Descent · …" and the Continue card and epitaph note a daily run
+- the last name used on the leaderboard is remembered and prefilled at the end of the next run
+
+Fallen adventurers:
+- every death on Floor 1+ posts where it happened (`POST /api/fallen`: name, class, level, floor, x, y, cause, daily date) to `public.fallen`. The name is the player's remembered leaderboard name, or blank ("a nameless Ranger")
+- on arriving at a floor the game asks `GET /api/fallen?floor=N` (plus `&daily=` in a Daily Descent) and places remains: in a daily run every recent death on that floor lies exactly where it happened, and the log says how many fell there today; in an ordinary run one or two recent deaths on that floor number are scattered on open tiles out of sight and at least 5 steps from the arrival point
+- remains are a skull and bones with the delver's weapon (sword, staff or bow) and a pale wisp until searched; they don't block movement, show on both minimaps until searched, and describe who fell and to what on hover
+- standing on remains and pressing Enter searches them once: 3-6 + 2×floor gold and a 30% chance of a potion (greater from Floor 11), with the fallen's epitaph shown as narration
+- remains are saved with the floor; the headless simulator and local `npm start` never call the API
 
 ## UI and Feedback
 
@@ -1159,7 +1176,7 @@ Main remaining work:
 - additional boss polish and visual impact effects
 - more distinct biome/theme variation if desired
 - continued stabilization and bug sweep
-- optional deeper leaderboard or shared online score support
+- more uses of the shared database (per-class boards, real-player balance telemetry, global stats)
 
 ## Scope Boundary
 

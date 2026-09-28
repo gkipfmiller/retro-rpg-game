@@ -421,3 +421,80 @@ export function drawGateBars(ctx, x, y, tileSize, drop) {
   }
   ctx.restore();
 }
+
+// ── Fallen adventurers' remains ──
+// A skull and scattered bones with the delver's weapon beside them (sword, staff, or bow by class),
+// and a pale wisp above them until they're searched.
+const REMAINS_BONES = {
+  palette: { b: "#e2dccb", s: "#a39a82", k: "#241e1a" },
+  grid: [
+    "................", "................", "................", "................",
+    "................", "................", "................", "................",
+    "......bbb.......", ".....bbbbb......", ".....bkbkb......", "......bsb...b.b.",
+    "..b.b.......bb..", "...bbbbbb..b.b..", "..b.b.....s.....", "................",
+  ],
+};
+
+const REMAINS_WEAPONS = {
+  Warrior: {
+    palette: { m: "#c9d2dc", d: "#7c8794", h: "#6b4a2a", g: "#c9a24a" },
+    grid: [
+      "................", "................", "................", "................",
+      "................", "................", "................", "................",
+      "................", "................", "................", "................",
+      "................", "..........hgmmmm", "...........g.ddd", "................",
+    ],
+  },
+  Sorceress: {
+    palette: { w: "#6e4a2c", l: "#8e6440", c: "#8fd7ff", o: "#3a78c8" },
+    grid: [
+      "................", "................", "................", "................",
+      "................", "................", "................", "................",
+      "................", "................", "................", "................",
+      "..............oc", "...........llwco", "........wwww....", "................",
+    ],
+  },
+  Ranger: {
+    palette: { w: "#8a5a30", l: "#b07a44", s: "#e8e0c8" },
+    grid: [
+      "................", "................", "................", "................",
+      "................", "................", "................", "................",
+      "................", "................", "................", ".........lwwl...",
+      "........w.....w.", ".........sssss..", "................", "................",
+    ],
+  },
+};
+
+export function drawRemains(ctx, x, y, tileSize, className, searched, seed) {
+  ctx.save();
+  if (searched) ctx.globalAlpha = 0.65;
+  if (seed % 2) {
+    ctx.translate(x + tileSize, y);
+    ctx.scale(-1, 1);
+    x = 0;
+    y = 0;
+  }
+  const weapon = REMAINS_WEAPONS[className];
+  if (weapon) paint(ctx, weapon.grid, weapon.palette, x, y, tileSize);
+  paint(ctx, REMAINS_BONES.grid, REMAINS_BONES.palette, x, y, tileSize);
+  ctx.restore();
+  if (searched) return;
+  // The wisp: a soft pale glow that drifts gently above the skull.
+  const now = performance.now();
+  const bob = reduceMotion() ? 0 : Math.sin(now / 520 + seed) * tileSize * 0.05;
+  const pulse = reduceMotion() ? 0.8 : 0.65 + Math.sin(now / 380 + seed * 1.7) * 0.2;
+  const cx = x + tileSize * (seed % 2 ? 0.56 : 0.44);
+  const cy = y + tileSize * 0.36 + bob;
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, tileSize * 0.34);
+  glow.addColorStop(0, `rgba(200, 230, 255, ${0.55 * pulse})`);
+  glow.addColorStop(0.4, `rgba(140, 190, 255, ${0.22 * pulse})`);
+  glow.addColorStop(1, "rgba(120, 170, 255, 0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(cx - tileSize * 0.4, cy - tileSize * 0.4, tileSize * 0.8, tileSize * 0.8);
+  ctx.fillStyle = `rgba(235, 245, 255, ${0.85 * pulse})`;
+  const dot = Math.max(1, Math.round(tileSize / 16));
+  ctx.fillRect(Math.round(cx - dot), Math.round(cy - dot), dot * 2, dot * 2);
+  ctx.restore();
+}

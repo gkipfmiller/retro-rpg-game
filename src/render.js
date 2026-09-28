@@ -15,7 +15,7 @@ import { clamp } from "./utils.js";
 import { LOG_FILTERS, logText, mergeLogEntries } from "./log.js";
 import { getSpellIconUrl, getSpireCanvas, getStatusIconCanvas, getStatusIconUrl } from "./pixelIcons.js";
 import { SpellFx } from "./spellFx.js";
-import { ARENA_FIRE, drawArenaProp, drawBrazier, drawGateBars, drawHook, drawSeam, drawThrone, drawVoidTile } from "./arenaArt.js";
+import { ARENA_FIRE, drawArenaProp, drawBrazier, drawGateBars, drawHook, drawRemains, drawSeam, drawThrone, drawVoidTile } from "./arenaArt.js";
 
 const COLORS = {
   wall: "#26303d",
@@ -130,6 +130,7 @@ const MINIMAP_COLORS = {
   stairs: "#89d185",
   vendor: "#d8b4fe",
   shrine: "#79e1c9",
+  remains: "#cfe3ff",
   chest: "#d7a54d",
   enemy: "#e05555",
   boss: "#f0d37a",
@@ -557,7 +558,7 @@ function getSewerFloorDecor(x, y, seed) {
 // or shrines stay clear so the detail never competes with something you can interact with.
 function getFloorDetail(theme, tile, x, y, seed) {
   const styles = FLOOR_DETAILS[theme];
-  if (!styles || tile.stairs || tile.chestId || tile.vendor || tile.shrineId || tile.itemIds?.length) return null;
+  if (!styles || tile.stairs || tile.chestId || tile.vendor || tile.shrineId || tile.remainsId || tile.itemIds?.length) return null;
   const roll = hashPoint(x, y, seed ^ 0x5bd1) % 1000;
   let threshold = 0;
   for (const style of styles) {
@@ -609,7 +610,7 @@ function getWallPropPath(manifest, theme, map, x, y) {
 function getFloorPropPath(manifest, theme, map, x, y, options = {}) {
   const { floorNumber = 0, inBossRoom = false } = options;
   const tile = map[y]?.[x];
-  if (!tile || tile.type !== "floor" || tile.stairs || tile.vendor || tile.shrineId || tile.chestId || tile.itemIds?.length || tile.occupant) {
+  if (!tile || tile.type !== "floor" || tile.stairs || tile.vendor || tile.shrineId || tile.remainsId || tile.chestId || tile.itemIds?.length || tile.occupant) {
     return null;
   }
   const roll = hashPoint(x, y, theme.length + floorNumber * 13) % 100;
@@ -629,7 +630,7 @@ function getFloorPropPath(manifest, theme, map, x, y, options = {}) {
 function getFloorDecorSpec(manifest, currentFloor, x, y, options = {}) {
   const { floorNumber = 0, inBossRoom = false, roomType = "normal" } = options;
   const tile = currentFloor.map[y]?.[x];
-  if (!tile || tile.type !== "floor" || tile.stairs || tile.vendor || tile.shrineId || tile.chestId || tile.itemIds?.length || tile.occupant) {
+  if (!tile || tile.type !== "floor" || tile.stairs || tile.vendor || tile.shrineId || tile.remainsId || tile.chestId || tile.itemIds?.length || tile.occupant) {
     return null;
   }
   const roll = hashPoint(x, y, floorNumber * 31 + roomType.length) % 100;
@@ -1003,6 +1004,10 @@ export class Renderer {
         if (tile.visible && tile.seam) drawSeam(ctx, tile.seam, px, py, tileSize);
         if (tile.explored && tile.voidHazard) drawVoidTile(ctx, px, py, tileSize, hashPoint(x, y, 11), tile.visible);
         if (tile.visible && tile.arenaProp && tile.arenaProp !== "throne") drawArenaProp(ctx, tile.arenaProp, px, py, tileSize, hashPoint(x, y, 7));
+        if (tile.visible && tile.remainsId) {
+          const remains = currentFloor.remains?.find((entry) => entry.id === tile.remainsId);
+          if (remains) drawRemains(ctx, px, py, tileSize, remains.className, remains.searched, hashPoint(x, y, 13));
+        }
 
         if (tile.visible) {
           const stairsSprite = this.assets?.images[currentFloor.theme === "sunken_vault" ? this.assets.manifest.ladder : this.assets.manifest.stairs];
@@ -1208,6 +1213,7 @@ export class Renderer {
         else if (tile.stairs) plot(x, y, MINIMAP_COLORS.stairs);
         else if (tile.vendor) plot(x, y, MINIMAP_COLORS.vendor);
         else if (tile.shrineId) plot(x, y, MINIMAP_COLORS.shrine);
+        else if (tile.remainsId && !currentFloor.remains?.find((entry) => entry.id === tile.remainsId)?.searched) plot(x, y, MINIMAP_COLORS.remains);
         else if (tile.chestId) plot(x, y, MINIMAP_COLORS.chest);
         else plot(x, y, tile.visible ? MINIMAP_COLORS.floorVisible : MINIMAP_COLORS.floor);
       }
@@ -1485,6 +1491,9 @@ export class Renderer {
     }));
     const shrine = currentFloor.shrine;
     if (shrine && currentFloor.map[shrine.y]?.[shrine.x]?.explored) dot(shrine.x, shrine.y, MINIMAP_COLORS.shrine, 0.9);
+    for (const remains of currentFloor.remains ?? []) {
+      if (!remains.searched && currentFloor.map[remains.y]?.[remains.x]?.explored) dot(remains.x, remains.y, MINIMAP_COLORS.remains, 0.7);
+    }
     for (const enemy of currentFloor.enemies) {
       if (enemy.disguised || !currentFloor.map[enemy.y][enemy.x].visible) continue;
       dot(enemy.x, enemy.y, ENEMIES[enemy.templateId]?.behavior === "boss" ? MINIMAP_COLORS.boss : MINIMAP_COLORS.enemy, 0.8);
@@ -1594,7 +1603,7 @@ export class Renderer {
     const { map } = currentFloor;
     const { ctx } = this;
     if (tile.type === "floor") {
-      const busy = tile.stairs || tile.chestId || tile.vendor || tile.shrineId || tile.itemIds?.length || tile.prop;
+      const busy = tile.stairs || tile.chestId || tile.vendor || tile.shrineId || tile.remainsId || tile.itemIds?.length || tile.prop;
       const decor = busy ? null : getSewerFloorDecor(x, y, seed);
       if (decor && floorAtlas) {
         const frame = decor.kind === "eyes" && !reduceMotion() ? Math.floor(performance.now() / 700 + (decor.hash % 7)) : decor.hash;
