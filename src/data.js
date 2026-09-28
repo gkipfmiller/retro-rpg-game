@@ -426,6 +426,11 @@ export const ITEMS = {
   greater_healing_potion: { id: "greater_healing_potion", name: "Greater Healing Potion", category: "consumable", rarity: "uncommon", effect: { type: "heal", value: 18 }, value: 24 },
   mana_potion: { id: "mana_potion", name: "Mana Potion", category: "consumable", effect: { type: "mana", value: 8 }, value: 14 },
   greater_mana_potion: { id: "greater_mana_potion", name: "Greater Mana Potion", category: "consumable", rarity: "uncommon", effect: { type: "mana", value: 14 }, value: 26 },
+  // Stat elixirs: +1 to a base stat, permanently. Rare finds, and very expensive at vendors.
+  elixir_might: { id: "elixir_might", name: "Elixir of Might", category: "consumable", rarity: "rare", effect: { type: "stat", stat: "strength", value: 1 }, value: 250, description: "Permanently raises Strength by 1." },
+  elixir_grace: { id: "elixir_grace", name: "Elixir of Grace", category: "consumable", rarity: "rare", effect: { type: "stat", stat: "dexterity", value: 1 }, value: 250, description: "Permanently raises Dexterity by 1." },
+  elixir_fortitude: { id: "elixir_fortitude", name: "Elixir of Fortitude", category: "consumable", rarity: "rare", effect: { type: "stat", stat: "vitality", value: 1 }, value: 250, description: "Permanently raises Vitality by 1." },
+  elixir_insight: { id: "elixir_insight", name: "Elixir of Insight", category: "consumable", rarity: "rare", effect: { type: "stat", stat: "intelligence", value: 1 }, value: 250, description: "Permanently raises Intelligence by 1." },
   scroll_of_escape: { id: "scroll_of_escape", name: "Scroll of Escape", category: "consumable", rarity: "uncommon", effect: { type: "escape" }, value: 28 },
   crypt_vault_key: { id: "crypt_vault_key", name: "Crypt Vault Key", category: "quest", description: "Opens the hidden vault somewhere in Floors 1-9.", value: 0 },
   sunken_vault_key: { id: "sunken_vault_key", name: "Sunken Vault Key", category: "quest", description: "Opens the hidden vault somewhere in Floors 11-19.", value: 0 },
@@ -441,10 +446,41 @@ export const ITEMS = {
   arcane_burst_tome: { id: "arcane_burst_tome", name: "Tome of Arcane Burst", category: "tome", rarity: "uncommon", spellId: "arcane_burst", value: 58 },
 };
 
+// Reforging (at any vendor): every piece of equipment has one "+1" version, made only by paying a
+// vendor to reforge it. They never drop or appear in stock. Each is a modest, single step up:
+//   weapons: +1 to their maximum damage (spell weapons: +1 magic power instead)
+//   armor and hands: +1 defense; accessories: +5 max HP
+// A reforged item can't be reforged again. The price is steep (see getReforgeCost in game.js).
+export const REFORGED_SUFFIX = "_reforged";
+
+function makeReforged(item) {
+  const rarity = item.rarity ?? (item.value >= 60 ? "rare" : item.value >= 28 ? "uncommon" : "common");
+  const reforged = { ...item, id: `${item.id}${REFORGED_SUFFIX}`, name: `${item.name} +1`, baseId: item.id, reforged: true, rarity, value: Math.round(item.value * 1.5) };
+  if (item.slot === "weapon") {
+    if (item.magicPower) reforged.magicPower = item.magicPower + 1;
+    else reforged.damage = [item.damage[0], item.damage[1] + 1];
+  } else if (item.slot === "armor" || item.slot === "hands") {
+    reforged.defense = (item.defense ?? 0) + 1;
+  } else if (item.slot === "accessory") {
+    reforged.bonus = { ...(item.bonus ?? {}), maxHpFlat: (item.bonus?.maxHpFlat ?? 0) + 5 };
+  }
+  return reforged;
+}
+
+for (const item of Object.values(ITEMS)) {
+  if (item.slot && !item.reforged) ITEMS[`${item.id}${REFORGED_SUFFIX}`] = makeReforged(item);
+}
+
+export function getReforgedId(itemId) {
+  const item = ITEMS[itemId];
+  if (!item?.slot || item.reforged) return null;
+  return `${itemId}${REFORGED_SUFFIX}`;
+}
+
 // Depth scaling for ordinary enemies (not bosses, whose numbers are set by hand below): past
 // startFloor, each floor adds hpPerFloor of their base HP, and every damageEveryFloors floors adds
 // +1 to both ends of their damage. Summons and the final sentries scale with the floor they're on.
-export const DEPTH_SCALING = { startFloor: 10, hpPerFloor: 0.015, damageEveryFloors: 99 };
+export const DEPTH_SCALING = { startFloor: 4, hpPerFloor: 0.035, damageEveryFloors: 6 };
 
 export function getDepthHpMultiplier(floorNumber = 1) {
   return 1 + Math.max(0, floorNumber - DEPTH_SCALING.startFloor) * DEPTH_SCALING.hpPerFloor;
@@ -468,9 +504,9 @@ export const ENEMIES = {
   infernal_imp: { id: "infernal_imp", name: "Infernal Imp", behavior: "caster", hp: 18, damage: [4, 7], accuracy: 79, defense: 1, xp: 38, gold: [8, 12], glyph: "I", range: 6 },
   void_stalker: { id: "void_stalker", name: "Void Stalker", behavior: "skirmisher", hp: 24, damage: [6, 9], accuracy: 89, defense: 2, evasion: 5, xp: 42, gold: [9, 14], glyph: "V" },
   doom_ogre: { id: "doom_ogre", name: "Doom Ogre", behavior: "blocker", hp: 33, damage: [7, 10], accuracy: 81, defense: 4, xp: 46, gold: [10, 16], glyph: "O" },
-  abyssal_overlord: { id: "abyssal_overlord", name: "Abyssal Overlord", behavior: "boss", hp: 118, damage: [9, 14], accuracy: 90, defense: 6, xp: 160, gold: [40, 64], glyph: "M", range: 6 },
+  abyssal_overlord: { id: "abyssal_overlord", name: "Abyssal Overlord", behavior: "boss", hp: 170, damage: [10, 15], accuracy: 90, defense: 6, xp: 160, gold: [40, 64], glyph: "M", range: 6 },
   bone_captain: { id: "bone_captain", name: "Super Skeletor", behavior: "boss", hp: 54, damage: [5, 8], accuracy: 85, defense: 3, xp: 60, gold: [16, 27], glyph: "S", range: 5 },
-  patches: { id: "patches", name: "Patches", behavior: "boss", hp: 160, damage: [11, 16], accuracy: 84, defense: 4, xp: 96, gold: [26, 40], glyph: "P", range: 1 },
+  patches: { id: "patches", name: "Patches", behavior: "boss", hp: 200, damage: [12, 17], accuracy: 84, defense: 4, xp: 96, gold: [26, 40], glyph: "P", range: 1 },
   mimic: { id: "mimic", name: "Mimic", behavior: "melee", hp: 28, damage: [5, 9], accuracy: 86, defense: 3, xp: 35, gold: [12, 20], glyph: "M" },
   angel: { id: "angel", name: "Celestial Guardian", behavior: "caster", hp: 30, damage: [7, 10], accuracy: 88, defense: 3, xp: 48, gold: [10, 15], glyph: "A", range: 5 },
   ice_zombie: { id: "ice_zombie", name: "Ice Zombie", behavior: "melee", hp: 28, damage: [6, 9], accuracy: 80, defense: 4, xp: 44, gold: [9, 14], glyph: "Z" },
@@ -562,6 +598,41 @@ export const TRAPS = {
   fire: { id: "fire", name: "Fire Trap", damage: [5, 8], glyph: "*" },
   curse: { id: "curse", name: "Curse Trap", damage: [2, 4], glyph: "C", status: "hexed" },
   alarm: { id: "alarm", name: "Alarm Trap", damage: [0, 0], glyph: "A", alerts: true },
+};
+
+// ── Base stats ──
+export const STAT_KEYS = ["strength", "dexterity", "vitality", "intelligence"];
+export const STAT_LABELS = { strength: "Strength", dexterity: "Dexterity", vitality: "Vitality", intelligence: "Intelligence" };
+export const STAT_SHORT = { strength: "STR", dexterity: "DEX", vitality: "VIT", intelligence: "INT" };
+export const STAT_ELIXIRS = { strength: "elixir_might", dexterity: "elixir_grace", vitality: "elixir_fortitude", intelligence: "elixir_insight" };
+
+// The stats each class actually leans on. Shrine bargains only ever trade between these, so every
+// offer costs something that matters (a Warrior is never offered Strength for his unused Intelligence),
+// and stat elixirs drop from these too.
+export const CLASS_STATS = {
+  warrior: ["strength", "vitality", "dexterity"],
+  wizard: ["intelligence", "vitality", "dexterity"],
+  ranger: ["dexterity", "vitality", "strength"],
+};
+
+// Reaching 10 and 15 in a stat unlocks a perk (see Game.getDerivedStats for where each applies).
+export const STAT_MILESTONES = {
+  strength: [
+    { at: 10, id: "heavyHits", name: "Heavy Hits", description: "Melee critical hits knock the enemy back a tile." },
+    { at: 15, id: "effortlessStrike", name: "Effortless Strike", description: "Power Strike costs no mana." },
+  ],
+  dexterity: [
+    { at: 10, id: "sureAim", name: "Sure Aim", description: "Your first attack on each enemy can't miss." },
+    { at: 15, id: "keenEye", name: "Keen Eye", description: "+10% critical chance with bows." },
+  ],
+  vitality: [
+    { at: 10, id: "secondWind", name: "Second Wind", description: "Recover 5 HP on arriving at each new floor." },
+    { at: 15, id: "hardy", name: "Hardy", description: "Poison and chill wear off twice as fast on you." },
+  ],
+  intelligence: [
+    { at: 10, id: "efficientCasting", name: "Efficient Casting", description: "Spells cost 1 less mana (never below 1)." },
+    { at: 15, id: "deepFocus", name: "Deep Focus", description: "Your first spell on each floor costs no mana." },
+  ],
 };
 
 export const STATUS_DEFINITIONS = {

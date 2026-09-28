@@ -25,6 +25,19 @@
   font-display: swap;
 }
 
+/* The digits 0-9 always come from the regular (400) design: at bolder weights Pixelify's strokes close
+   up, so "2" and "3" read as "8", "5" as "S", "4" as "A". This static digits-only subset (built from
+   the same font with fontTools) is declared for every weight, and being defined last it wins for
+   those characters; letters keep their bold. */
+@font-face {
+  font-family: "Pixelify Sans";
+  src: url("./fonts/PixelifySans-digits.woff2") format("woff2");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0030-0039;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -3564,4 +3577,44 @@ button.danger {
   60% { transform: translate(4px, 3px); }
   75% { transform: translate(-2px, 1px); }
   90% { transform: translate(1px, -1px); }
+}
+
+/* Shrine bargains: each offer is a stacked card (trade, stat change, effect in numbers). */
+.shrine-offers {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.shrine-offer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  padding: 10px 14px;
+  text-align: left;
+}
+
+.shrine-offer strong {
+  font-size: 1.05em;
+}
+
+.shrine-offer-effects {
+  color: var(--text);
+  font-size: 0.92em;
+}
+
+.shrine-offer.rest {
+  border-style: dashed;
+}
+
+/* Stat milestones on the character sheet: reached ones glow, locked ones recede. */
+.milestone-list li.reached strong {
+  color: var(--accent-bright);
+}
+
+.milestone-list li.locked {
+  opacity: 0.55;
 }

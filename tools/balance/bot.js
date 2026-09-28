@@ -233,9 +233,30 @@ export function playRun({ classId, profile = "competent", seed, skillStrategy = 
     closeOverlays();
   }
 
+  // At a shrine: rest when hurt (or low on mana, for the Sorceress at a Shrine of Clarity); otherwise
+  // take the stat trade that most improves the power score, if either does.
+  function chooseShrineOption(shrine) {
+    const p = player();
+    const derived = game.getDerivedStats(p);
+    const hurt = shrine.mode === "healing" ? p.hp / derived.maxHp < 0.6 : p.classId === "wizard" && p.mana / derived.maxMana < 0.4;
+    if (hurt || !settings.useShrines) return "rest";
+    const base = powerScore();
+    let best = { choice: "rest", gain: 0 };
+    game.getShrineOffers(shrine).forEach((offer, index) => {
+      const saved = { ...p.baseStats };
+      p.baseStats[offer.gain] += offer.gainAmount;
+      p.baseStats[offer.lose] = Math.max(1, p.baseStats[offer.lose] - offer.loseAmount);
+      const gain = powerScore() - base;
+      p.baseStats = saved;
+      if (gain > best.gain) best = { choice: String(index), gain };
+    });
+    return best.choice;
+  }
+
   function readTomes() {
     for (const entry of [...player().inventory]) {
-      if (ITEMS[entry.itemId]?.category === "tome") {
+      // Tomes and stat elixirs are used as soon as they're found.
+      if (ITEMS[entry.itemId]?.category === "tome" || ITEMS[entry.itemId]?.effect?.type === "stat") {
         game.useItemById(entry.itemId);
         closeOverlays();
       }
@@ -322,6 +343,15 @@ export function playRun({ classId, profile = "competent", seed, skillStrategy = 
         .filter((entry) => entry.gain > 0.05 && entry.price <= player().gold)
         .sort((a, b) => b.gain / b.price - a.gain / a.price);
       if (candidates.length) buy((itemId) => itemId === candidates[0].itemId);
+      // Reforge equipped gear (weapon first) while keeping a small reserve for potions.
+      for (const slot of ["weapon", "armor", "accessory", "hands"]) {
+        const itemId = player().equipment[slot];
+        if (!itemId || ITEMS[itemId]?.reforged) continue;
+        const cost = game.getReforgeCost(itemId);
+        if (player().gold - cost < 60) continue;
+        game.reforgeEquipped(slot, true);
+        record.bought.push({ itemId: player().equipment[slot], floor: run().floorNumber, price: cost, reforge: true });
+      }
     }
     closeOverlays();
   }
@@ -561,13 +591,15 @@ export function playRun({ classId, profile = "competent", seed, skillStrategy = 
 
     // Shrines.
     const shrine = f.shrine;
+    // Competent bots visit every shrine (to rest or strike a bargain); careless ones only when hurt.
     const wantsShrine = shrine && !shrine.used && tileAt(shrine.x, shrine.y)?.explored
-      && (settings.useShrines ? (p.hp / derived.maxHp < 0.75 || (shrine.mode === "mana" && p.mana / derived.maxMana < 0.5)) : p.hp / derived.maxHp < 0.5)
-      && (shrine.mode === "healing" || p.classId === "wizard" || !settings.useShrines);
+      && (settings.useShrines || p.hp / derived.maxHp < 0.5);
     if (wantsShrine) {
       note("shrine");
       if (manhattan(p, shrine) <= 1) {
         game.interact();
+        game.chooseShrine(chooseShrineOption(shrine));
+        closeOverlays();
         record.shrinesUsed += 1;
         return true;
       }

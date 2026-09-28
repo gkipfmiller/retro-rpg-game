@@ -512,6 +512,13 @@ function getThemeWallAtlasCoord(theme, map, x, y, options = {}) {
   const nwFloor = isFloor(x - 1, y - 1);
   if (!(seFloor || swFloor || neFloor || nwFloor)) return null;
 
+  // Walls on all four sides with floor only on a diagonal: an inside corner of the outline, where the
+  // two edges beside that floor meet (e.g. a block's bottom edge turning down a stem's side). Pick
+  // the corner piece for those two edges.
+  if (joinsEast && joinsSouth && !joinsNorth && !joinsWest) return [1, 0];
+  if (joinsWest && joinsSouth && !joinsNorth && !joinsEast) return [3, 0];
+  if (joinsNorth && joinsEast && !joinsSouth && !joinsWest) return [8, 3];
+  if (joinsNorth && joinsWest && !joinsSouth && !joinsEast) return [11, 3];
   return [2, 0];
 }
 

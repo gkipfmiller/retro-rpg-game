@@ -1,4 +1,4 @@
-import { BOSS_REWARDS, CHEST_TABLE, ENEMIES, FINAL_BOSS_REWARDS, FLOOR20_BOSS_REWARDS, FLOOR_CONFIGS, FLOOR_ENCOUNTERS, ITEMS, ROOM_ENCOUNTERS, TRAPS, getDepthHpMultiplier } from "./data.js";
+import { BOSS_REWARDS, CHEST_TABLE, CLASS_STATS, ENEMIES, FINAL_BOSS_REWARDS, FLOOR20_BOSS_REWARDS, FLOOR_CONFIGS, FLOOR_ENCOUNTERS, ITEMS, ROOM_ENCOUNTERS, STAT_ELIXIRS, TRAPS, getDepthHpMultiplier } from "./data.js";
 import { createRng, hashSeed, isBlockedFloor, toKey } from "./utils.js";
 
 function hashPoint(x, y, seed = 0) {
@@ -414,6 +414,7 @@ function getVaultRewardItemPool(floorNumber, playerClass) {
   const allowedRarities = floorNumber >= 21 ? new Set(["rare", "boss"]) : new Set(["rare"]);
   const items = Object.values(ITEMS).filter((item) =>
     item.slot
+    && !item.reforged
     && allowedRarities.has(item.rarity)
     && (!item.classBias || item.classBias === playerClass)
   );
@@ -510,9 +511,10 @@ function assignRoomTypes(rooms, rng, floorNumber) {
     if (eliteRoom && rng.chance(eliteChance)) eliteRoom.type = "elite";
   }
 
-  if (floorNumber >= 11) {
+  // Shrines (stat bargains or a rest) from Floor 4, more often deeper.
+  if (floorNumber >= 4) {
     const shrineRoom = takeNormalRoom();
-    if (shrineRoom && rng.chance(floorNumber >= 16 ? 0.65 : 0.45)) shrineRoom.type = "shrine";
+    if (shrineRoom && rng.chance(floorNumber >= 16 ? 0.65 : floorNumber >= 11 ? 0.45 : 0.35)) shrineRoom.type = "shrine";
   }
 
   if (floorNumber >= 16) {
@@ -714,6 +716,7 @@ function placeLoot(map, rooms, rng, floorNumber, playerClass, state) {
 
     const chestId = `chest-${room.id}`;
     map[tile.y][tile.x].chestId = chestId;
+    const chestElixir = elixirRng(floorNumber, tile.x, tile.y, playerClass);
     chests.push({
       id: chestId,
       x: tile.x,
@@ -724,6 +727,7 @@ function placeLoot(map, rooms, rng, floorNumber, playerClass, state) {
         ...(floorNumber >= 6 && rng.chance(floorNumber >= 11 ? 0.4 : 0.4) ? [rng.pick([...CHEST_TABLE.rare, ...lootPools.extra])] : []),
         ...(floorNumber >= 12 && rng.chance(floorNumber >= 16 ? 0.45 : 0.4) ? [rng.pick([...CHEST_TABLE.deep, ...lootPools.deep])] : []),
         ...(floorNumber >= 21 && rng.chance(0.6) ? [rng.pick([...CHEST_TABLE.endgame, ...lootPools.endgame])] : []),
+        ...(chestElixir.chance(ELIXIR_CHEST_CHANCE) ? [pickElixir(chestElixir, playerClass)] : []),
       ],
       gold: rng.int(
         6 + floorNumber,
@@ -850,6 +854,9 @@ function placeVendor(map, room, rng, floorNumber, playerClass) {
     stock.push(itemId);
     seen.add(itemId);
   }
+  // Now and then a vendor keeps a stat elixir behind the counter, at a steep price.
+  const vendorElixir = elixirRng(floorNumber, room.x, room.y, playerClass);
+  if (vendorElixir.chance(ELIXIR_VENDOR_CHANCE)) stock.push(pickElixir(vendorElixir, playerClass));
   const archetypes = floorNumber >= 21
     ? [
       { id: "ash_dealer", name: "Ash Dealer", title: "Ash Dealer" },
@@ -888,7 +895,7 @@ function hasAllAdjacentFloors(map, x, y) {
 }
 
 function placeShrine(map, rooms, rng, floorNumber) {
-  if (floorNumber < 11) return null;
+  if (floorNumber < 4) return null;
   const room = rooms.find((candidate) => candidate.type === "shrine");
   if (!room) return null;
   const openTiles = findOpenTilesInRoom(room, map).filter((pos) => hasAllAdjacentFloors(map, pos.x, pos.y));
@@ -1049,7 +1056,7 @@ export function generateBossFloor(runSeed, floorNumber, playerClass) {
       x: 28,
       y: 11,
       opened: false,
-      loot: [rewardItem],
+      loot: [rewardItem, pickElixir(elixirRng(floorNumber, "boss", playerClass), playerClass)],
       gold: rng.int(12, 22),
     },
   ];
@@ -1134,7 +1141,7 @@ export function generateFloor20BossFloor(runSeed, floorNumber, playerClass) {
       x: 30,
       y: 12,
       opened: false,
-      loot: [rewardItem],
+      loot: [rewardItem, pickElixir(elixirRng(floorNumber, "boss", playerClass), playerClass)],
       gold: rng.int(20, 32),
     },
   ];
@@ -1249,7 +1256,7 @@ export function generateFinalBossFloor(runSeed, floorNumber, playerClass) {
     x: 31,
     y: 12,
     opened: false,
-    loot: [rewardItem, rng.pick(bonusRewardPool.length ? bonusRewardPool : CHEST_TABLE.endgame)],
+    loot: [rewardItem, rng.pick(bonusRewardPool.length ? bonusRewardPool : CHEST_TABLE.endgame), pickElixir(elixirRng(floorNumber, "boss", playerClass), playerClass)],
     gold: rng.int(50, 80),
   };
   map[rewardChest.y][rewardChest.x].chestId = rewardChest.id;
@@ -1355,6 +1362,25 @@ export function generateFloor(runSeed, floorNumber, playerClass) {
   throw new Error(`Could not generate floor ${floorNumber}`);
 }
 
+// Stat elixirs: always for a stat the class uses. Rolled on their own seed (not the floor's RNG), so
+// adding them doesn't reshuffle anything else about a floor.
+const ELIXIR_CHEST_CHANCE = 0.2;
+const ELIXIR_VENDOR_CHANCE = 0.25;
+const ELIXIR_ELITE_DROP_CHANCE = 0.05;
+const ELIXIR_ENEMY_DROP_CHANCE = 0.008;
+
+function pickElixir(rng, playerClass) {
+  const stats = CLASS_STATS[playerClass] ?? CLASS_STATS.warrior;
+  return STAT_ELIXIRS[rng.pick(stats)];
+}
+
+function elixirRng(...parts) {
+  return createRng(hashSeed(...parts, "elixir"));
+}
+
+// Share of ordinary enemies that drop gold when they die.
+const ENEMY_GOLD_CHANCE = 0.6;
+
 export function getDropForEnemy(enemy, rng, playerClass) {
   const template = ENEMIES[enemy.templateId];
   if (enemy.templateId === "mimic") {
@@ -1395,8 +1421,13 @@ export function getDropForEnemy(enemy, rng, playerClass) {
 
   const floorNumber = enemy.floorNumber ?? 1;
   const floorGoldBonus = floorNumber >= 21 ? 2 : floorNumber >= 11 ? Math.max(0, Math.floor((floorNumber - 8) / 2)) : Math.max(0, Math.floor((floorNumber - 2) / 2));
+  const gold = rng.int(template.gold[0], template.gold[1]) + floorGoldBonus;
+  const enemyElixir = elixirRng(enemy.id, floorNumber, playerClass);
+  if (enemyElixir.chance(enemy.elite ? ELIXIR_ELITE_DROP_CHANCE : ELIXIR_ENEMY_DROP_CHANCE)) drops.push(pickElixir(enemyElixir, playerClass));
+  // Only some ordinary enemies carry gold (bosses always do), so gold stays worth counting.
+  const carriesGold = template.behavior === "boss" || rng.chance(ENEMY_GOLD_CHANCE);
   return {
-    gold: rng.int(template.gold[0], template.gold[1]) + floorGoldBonus,
+    gold: carriesGold ? gold : 0,
     items: drops.filter((itemId) => ITEMS[itemId]),
   };
 }

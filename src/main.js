@@ -227,6 +227,20 @@ function syncMobileControls() {
   }
 }
 
+// Redraw score lists when the shared leaderboard arrives (see Game.refreshSharedScores), and load it
+// once at start so the run-end screen already has it.
+game.onScoresChanged = () => {
+  const overlay = game.state.ui.overlay;
+  const onRunEnd = (overlay?.type === "death" || overlay?.type === "victory") && game.state.run;
+  if (onRunEnd) {
+    // Keep whatever the player has typed in the name box across the redraw.
+    const typed = document.getElementById("score-name-input")?.value;
+    game.openRunEnd({ ...(overlay.runEndOptions ?? {}), ...(typed ? { savedName: typed } : {}) });
+  }
+  if (game.state.mode === "scores" || onRunEnd) refresh();
+};
+game.refreshSharedScores();
+
 function refresh() {
   if (game.state.mode === "scores") {
     document.getElementById("high-scores-content").innerHTML = game.renderHighScoreList(12);

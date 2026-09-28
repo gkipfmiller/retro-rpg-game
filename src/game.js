@@ -1,6 +1,7 @@
-import { BAND_NAMES, BOONS, BOSS_REWARDS, BOSS_TITLES, CHEST_TABLE, CLASSES, ENEMIES, ITEMS, QUICK_SLOT_COUNT, SKILL_TREES, SPELLS, STATUS_DEFINITIONS, TRAPS, getDepthDamageBonus, getDepthHpMultiplier } from "./data.js";
+import { BAND_NAMES, BOONS, BOSS_REWARDS, BOSS_TITLES, CHEST_TABLE, CLASSES, ENEMIES, ITEMS, QUICK_SLOT_COUNT, SKILL_TREES, SPELLS, STATUS_DEFINITIONS, TRAPS, getDepthDamageBonus, getDepthHpMultiplier, getReforgedId, STAT_KEYS, STAT_LABELS, STAT_SHORT, STAT_MILESTONES, CLASS_STATS } from "./data.js";
 import { attachVaultFeaturesToFloor, generateFloor, getDropForEnemy } from "./generator.js";
 import { getActorSpriteFrame, getEnemySpriteId, getItemSprite } from "./assets.js";
+import { calculateScore, checkPlayerName, containsBlockedNameTerm, normalizePlayerName } from "./scoreRules.js";
 import { getBranchIconUrl, getSpellIconUrl, getStatusIconUrl } from "./pixelIcons.js";
 import { clamp, createRng, deepClone, hashSeed, isBlockedFloor, manhattan, toKey } from "./utils.js";
 import { MAX_LOG_ENTRIES, logText, normalizeLogs } from "./log.js";
@@ -32,6 +33,13 @@ const PATCHES_REND_TURNS = 4;
 // The Abyssal Overlord: HP regained per devoured imp, the Eclipse's damage (ignores armour), and
 // the burn for standing in crumbled void at the end of a turn.
 const OVERLORD_DEVOUR_HEAL = 14;
+// Gold economy. Vendor prices rise with depth; reforging (one "+1" per item) is deliberately steep.
+const VENDOR_PRICE_PER_FLOOR = 0.04;
+// Shrine bargains: how much a trade raises one stat and lowers another.
+const SHRINE_STAT_GAIN = 2;
+const SHRINE_STAT_LOSS = 1;
+const REFORGE_VALUE_MULTIPLIER = 8;
+const REFORGE_MIN_COST = 400;
 const OVERLORD_ECLIPSE_DAMAGE = [20, 26];
 const VOID_BURN = 3;
 
@@ -129,11 +137,12 @@ export class Game {
     this.bossMemoryStorageKey = "dungeon30_boss_memory";
     // Dev only (dungeon30Debug.revealFloor({ all: true })): keep the whole floor in view every turn.
     this.debugSeeAll = false;
-    this.blockedNameTerms = [
-      "fuck", "shit", "bitch", "cunt", "nigger", "nigga", "fag", "faggot", "slut",
-      "whore", "asshole", "motherfucker", "dick", "cock", "pussy", "penis", "vagina",
-      "rape", "rapist", "cum", "jizz", "tits",
-    ];
+    // The shared leaderboard (api/scores.js), once loaded. Until then, or when it can't be reached,
+    // the high-score lists fall back to this browser's own scores.
+    this.sharedScores = null;
+    this.sharedScoresStatus = "idle";
+    // Set by main.js: redraw whatever shows scores when the shared list changes.
+    this.onScoresChanged = null;
   }
 
   attachRenderer(renderer) {
@@ -605,18 +614,60 @@ export class Game {
   }
 
   normalizePlayerName(name) {
-    return String(name ?? "")
-      .trim()
-      .replace(/\s+/g, " ")
-      .slice(0, 18);
+    return normalizePlayerName(name);
   }
 
   containsBlockedNameTerm(name) {
-    const normalized = name.toLowerCase().replace(/[^a-z0-9]/g, "");
-    return this.blockedNameTerms.some((term) => normalized.includes(term));
+    return containsBlockedNameTerm(name);
   }
 
+  // The shared leaderboard lives behind /api/scores (a Vercel function; see api/scores.js). It only
+  // exists when the game is served over http(s) with that function deployed, so local play with
+  // `npm start` (and the headless simulator) quietly keep using this browser's scores.
+  canUseSharedScores() {
+    return typeof fetch === "function" && /^https?:$/.test(globalThis.window?.location?.protocol ?? "");
+  }
+
+  async refreshSharedScores() {
+    if (!this.canUseSharedScores() || this.sharedScoresStatus === "loading") return;
+    this.sharedScoresStatus = "loading";
+    try {
+      const response = await fetch("/api/scores?limit=20", { headers: { Accept: "application/json" } });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const entries = await response.json();
+      if (!Array.isArray(entries)) throw new Error("Bad leaderboard data");
+      this.sharedScores = entries;
+      this.sharedScoresStatus = "online";
+    } catch {
+      this.sharedScoresStatus = "offline";
+    }
+    this.onScoresChanged?.();
+  }
+
+  async submitSharedScore(entry) {
+    if (!this.canUseSharedScores()) return;
+    try {
+      const response = await fetch("/api/scores", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(entry),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      this.sharedScoresStatus = "idle";
+      await this.refreshSharedScores();
+    } catch {
+      this.sharedScoresStatus = "offline";
+      this.onScoresChanged?.();
+    }
+  }
+
+  // Scores to show: the shared leaderboard when it's loaded, otherwise this browser's own.
   getHighScores() {
+    if (this.sharedScores) return this.sharedScores;
+    return this.getLocalHighScores();
+  }
+
+  getLocalHighScores() {
     try {
       const raw = window.localStorage.getItem(this.highScoreStorageKey);
       const parsed = raw ? JSON.parse(raw) : [];
@@ -728,26 +779,32 @@ export class Game {
   }
 
   calculateRunScore(run, result) {
-    const victoryBonus = result === "victory" ? 1500 : 0;
-    return (run.floorNumber * 120)
-      + (run.player.level * 90)
-      + (run.runStats.kills * 12)
-      + run.player.gold
-      + victoryBonus;
+    return calculateScore({ floor: run.floorNumber, level: run.player.level, kills: run.runStats.kills, gold: run.player.gold, result });
   }
 
   renderHighScoreList(limit = 10) {
     const scores = this.getHighScores().slice(0, limit);
+    // Where these scores come from: everyone (shared leaderboard) or just this browser.
+    const source = this.sharedScores
+      ? "<p class=\"muted scoreboard-source\">Leaderboard for all delvers.</p>"
+      : this.sharedScoresStatus === "loading"
+        ? "<p class=\"muted scoreboard-source\">Loading the leaderboard…</p>"
+        : this.sharedScoresStatus === "offline"
+          ? "<p class=\"muted scoreboard-source\">The shared leaderboard can't be reached. Showing scores saved on this device.</p>"
+          : "";
     if (!scores.length) {
-      return "<p class=\"muted\">No delvers recorded yet.</p>";
+      return `${source}<p class="muted">No delvers recorded yet.</p>`;
     }
+    // Names and causes can come from other players, so they're always escaped.
+    const safe = (text) => this.escapeTooltip(text ?? "").replaceAll("&#10;", " ");
     return `
+      ${source}
       <div class="scoreboard">
         ${scores.map((entry, index) => `
           <div class="score-row">
             <div>
-              <strong>#${index + 1} ${entry.name}</strong>
-              <p class="muted">${entry.result === "victory" ? "Dungeon Cleared" : `Killed by ${entry.cause}`}</p>
+              <strong>#${index + 1} ${safe(entry.name)}</strong>
+              <p class="muted">${entry.className ? `${safe(entry.className)} · ` : ""}${entry.result === "victory" ? "Dungeon Cleared" : `Killed by ${safe(entry.cause)}`}</p>
             </div>
             <div class="score-meta">
               <span>${entry.score} pts</span>
@@ -775,12 +832,22 @@ export class Game {
 
   saveHighScore(playerName, summary) {
     const normalizedName = this.normalizePlayerName(playerName);
-    if (normalizedName.length < 2) {
-      return { ok: false, error: "Enter a name with at least 2 characters." };
+    const nameProblem = checkPlayerName(normalizedName);
+    if (nameProblem) {
+      return { ok: false, error: nameProblem };
     }
-    if (this.containsBlockedNameTerm(normalizedName)) {
-      return { ok: false, error: "That name is not allowed. Choose something else." };
-    }
+    // Send it to the shared leaderboard in the background; this browser keeps its own copy either way.
+    this.submitSharedScore({
+      name: normalizedName,
+      className: summary.className,
+      result: summary.result,
+      cause: summary.cause,
+      floor: summary.floor,
+      level: summary.level,
+      kills: summary.kills,
+      gold: summary.gold,
+      turns: summary.turns,
+    });
     const nextScores = [
       {
         name: normalizedName,
@@ -795,7 +862,7 @@ export class Game {
         result: summary.result,
         recordedAt: new Date().toISOString(),
       },
-      ...this.getHighScores(),
+      ...this.getLocalHighScores(),
     ]
       .sort((a, b) => b.score - a.score || b.floor - a.floor || b.kills - a.kills)
       .slice(0, 20);
@@ -835,6 +902,7 @@ export class Game {
   openHighScores() {
     this.state.mode = "scores";
     this.state.ui.overlay = null;
+    this.refreshSharedScores();
   }
 
   getXpForLevel(level) {
@@ -997,6 +1065,10 @@ export class Game {
         break;
     }
 
+    // Gear bonuses to a base stat ("INT +2" is intelligenceFlat) raise the stat itself, so they flow
+    // into every formula below.
+    for (const stat of ["strength", "dexterity", "vitality", "intelligence"]) stats[stat] += stats[`${stat}Flat`] ?? 0;
+
     const maxHp = 14 + stats.vitality * 3 + (player.level - 1) * CLASSES[player.classId].hpGrowth + stats.maxHpFlat;
     const maxMana = 2 + stats.intelligence * 2 + (player.level - 1) * CLASSES[player.classId].manaGrowth + stats.maxManaFlat;
 
@@ -1007,8 +1079,10 @@ export class Game {
       defense: stats.defenseFlat,
       accuracy: 85 + stats.dexterity + stats.accuracyFlat,
       evasion: Math.floor(stats.dexterity / 2) + stats.evasionFlat,
-      meleeBonus: Math.floor(stats.strength / 3),
-      rangedBonus: Math.floor(stats.dexterity / 3),
+      meleeBonus: Math.floor(stats.strength / 2),
+      rangedBonus: Math.floor(stats.dexterity / 2),
+      // Stat milestones reached (STAT_MILESTONES): id -> true, e.g. milestones.heavyHits.
+      milestones: Object.fromEntries(STAT_KEYS.flatMap((stat) => STAT_MILESTONES[stat].filter((m) => stats[stat] >= m.at).map((m) => [m.id, true]))),
       spellBonus: Math.floor(stats.intelligence / 2) + stats.magicPowerFlat + (classDef.spellPowerBonus ?? 0),
     };
   }
@@ -1120,7 +1194,7 @@ export class Game {
     const shrine = this.getShrineAt(x, y);
     if (shrine) {
       const restores = shrine.mode === "healing" ? "HP" : "mana";
-      sections.push(`Shrine of ${shrine.mode === "healing" ? "Healing" : "Clarity"}\n${shrine.used ? "Spent." : `Restores 45% of your ${restores}. Stand beside it and press Enter.`}`);
+      sections.push(`Shrine of ${shrine.mode === "healing" ? "Healing" : "Clarity"}\n${shrine.used ? "Spent." : `Offers to reshape your stats, or restores 45% of your ${restores}. Stand beside it and press Enter.`}`);
     }
 
     const propNames = {
@@ -1332,6 +1406,10 @@ export class Game {
       if (effect?.type === "shortenNegativeStatuses") {
         status.turns = Math.max(1, status.turns - effect.amount);
       }
+      // Hardy (VIT 15): poison and chill wear off twice as fast.
+      if ((status.id === "poisoned" || status.id === "chilled") && this.getDerivedStats(entity).milestones?.hardy) {
+        status.turns = Math.max(1, Math.ceil(status.turns / 2));
+      }
     }
     entity.statuses = entity.statuses ?? [];
     const existing = entity.statuses.find((entry) => entry.id === status.id);
@@ -1497,6 +1575,9 @@ export class Game {
         if (key === "defenseFlat") parts.push(`DEF +${value}`);
         if (key === "accuracyFlat") parts.push(`ACC +${value}`);
         if (key === "magicPowerFlat") parts.push(`MAG +${value}`);
+        if (key === "strengthFlat") parts.push(`STR +${value}`);
+        if (key === "dexterityFlat") parts.push(`DEX +${value}`);
+        if (key === "vitalityFlat") parts.push(`VIT +${value}`);
         if (key === "intelligenceFlat") parts.push(`INT +${value}`);
         if (key === "controlDuration") parts.push(`Control +${value}`);
         if (key === "meleeDamagePct") parts.push(`Melee +${value}%`);
@@ -1575,6 +1656,9 @@ export class Game {
     pushRow("Mana", item.bonus?.maxManaFlat ?? 0, equipped.bonus?.maxManaFlat ?? 0);
     pushRow("DEF+", item.bonus?.defenseFlat ?? 0, equipped.bonus?.defenseFlat ?? 0);
     pushRow("ACC+", item.bonus?.accuracyFlat ?? 0, equipped.bonus?.accuracyFlat ?? 0);
+    pushRow("STR", item.bonus?.strengthFlat ?? 0, equipped.bonus?.strengthFlat ?? 0);
+    pushRow("DEX", item.bonus?.dexterityFlat ?? 0, equipped.bonus?.dexterityFlat ?? 0);
+    pushRow("VIT", item.bonus?.vitalityFlat ?? 0, equipped.bonus?.vitalityFlat ?? 0);
     pushRow("INT", item.bonus?.intelligenceFlat ?? 0, equipped.bonus?.intelligenceFlat ?? 0);
     pushRow("Melee %", item.bonus?.meleeDamagePct ?? 0, equipped.bonus?.meleeDamagePct ?? 0);
     pushRow("Spell %", item.bonus?.spellDamagePct ?? 0, equipped.bonus?.spellDamagePct ?? 0);
@@ -1891,12 +1975,58 @@ export class Game {
     }));
   }
 
+  // Prices rise 4% per floor below the first (about double by Floor 26), so gold keeps its bite deep down.
+  getDepthPriceMultiplier() {
+    return 1 + Math.max(0, (this.state.run?.floorNumber ?? 1) - 1) * VENDOR_PRICE_PER_FLOOR;
+  }
+
   getVendorBuyPrice(itemId) {
     const item = ITEMS[itemId];
     if (!item) return 0;
     const rarity = this.getItemRarity(itemId);
     const multiplier = rarity === "boss" ? 1.75 : rarity === "rare" ? 1.4 : rarity === "uncommon" ? 1.15 : 1;
-    return Math.max(1, Math.floor(item.value * multiplier));
+    return Math.max(1, Math.floor(item.value * multiplier * this.getDepthPriceMultiplier()));
+  }
+
+  // Reforging an item into its "+1" version: four times its value (at least 150g), scaled with depth.
+  getReforgeCost(itemId) {
+    const item = ITEMS[itemId];
+    if (!item) return 0;
+    return Math.round(Math.max(REFORGE_MIN_COST, item.value * REFORGE_VALUE_MULTIPLIER) * this.getDepthPriceMultiplier());
+  }
+
+  // Reforge the item in an equipment slot (at a vendor). Asks once before spending the gold.
+  reforgeEquipped(slot, confirmed = false) {
+    const player = this.state.run.player;
+    const itemId = player.equipment[slot];
+    const reforgedId = getReforgedId(itemId);
+    const cost = this.getReforgeCost(itemId);
+    this.state.ui.vendorConfirm = null;
+    if (!this.state.run.currentFloor.vendor || !reforgedId || player.gold < cost) {
+      if (reforgedId && player.gold < cost) this.soundPlayer?.play("ui_denied");
+      this.openVendor(this.state.ui.overlay?.selectedIndex ?? 0);
+      return;
+    }
+    if (!confirmed) {
+      this.state.ui.vendorConfirm = { type: "reforge", slot };
+      this.openVendor(this.state.ui.overlay?.selectedIndex ?? 0);
+      return;
+    }
+    const previous = this.getDerivedStats(player);
+    player.gold -= cost;
+    player.equipment[slot] = reforgedId;
+    this.applyResourceCapDelta(player, previous, this.getDerivedStats(player));
+    this.soundPlayer?.play("equip_item");
+    this.log(`The vendor reforges your ${ITEMS[itemId].name} into ${ITEMS[reforgedId].name} for ${cost} gold.`);
+    this.openVendor(this.state.ui.overlay?.selectedIndex ?? 0);
+  }
+
+  // What a reforge adds, in words, for the vendor panel.
+  describeReforge(itemId) {
+    const item = ITEMS[itemId];
+    if (item?.slot === "weapon") return item.magicPower ? "+1 magic power" : "+1 max damage";
+    if (item?.slot === "accessory") return "+5 max HP";
+    return "+1 defense";
   }
 
   getVendorStacks() {
@@ -1948,7 +2078,10 @@ export class Game {
     const enemyStats = this.getEnemyCombatStats(enemy);
     const rng = createRng(hashSeed(this.state.run.runSeed, this.state.run.turn, enemy.id, mode.type));
     const enchantment = weapon?.enchantment ?? null;
-    const hitChance = clamp((mode.type === "spell" ? 90 + (derived.spellAccuracyFlat ?? 0) : derived.accuracy) - (enemyStats.evasion ?? 0), 10, 95);
+    // Sure Aim (DEX 10): the first attack on each enemy can't miss.
+    const sureAim = Boolean(derived.milestones?.sureAim) && !enemy.playerHasAttacked;
+    enemy.playerHasAttacked = true;
+    const hitChance = sureAim ? 100 : clamp((mode.type === "spell" ? 90 + (derived.spellAccuracyFlat ?? 0) : derived.accuracy) - (enemyStats.evasion ?? 0), 10, 95);
     // Cosmetic: how the shot looks (Aimed Shot flies straight and fast; special bows have their own trails).
     const ranged = mode.type === "ranged" || mode.type === "ranged_ability";
     const arrowKind = mode.abilityId === "aimed_shot" ? "aimed_arrow" : "arrow";
@@ -2069,7 +2202,9 @@ export class Game {
       if (!spell.cantrip) enemy.firstSpellHitTaken = true;
     }
 
-    const critChance = clamp(5 + (derived.critBonus ?? 0), 5, 45);
+    // Keen Eye (DEX 15): +10% critical chance with bows.
+    const keenEye = derived.milestones?.keenEye && (mode.type === "ranged" || mode.type === "ranged_ability") ? 10 : 0;
+    const critChance = clamp(5 + (derived.critBonus ?? 0) + keenEye, 5, 55);
     const criticalHit = rng.chance(critChance / 100);
     if (criticalHit) {
       damage = Math.max(1, Math.floor(damage * 1.5));
@@ -2165,11 +2300,31 @@ export class Game {
         }
       }
     }
+    // Heavy Hits (STR 10): a melee critical hit knocks a surviving (non-boss) enemy back a tile.
+    if (criticalHit && enemy.hp > 0 && derived.milestones?.heavyHits && (mode.type === "melee" || mode.type === "ability") && ENEMIES[enemy.templateId]?.behavior !== "boss") {
+      this.knockBack(enemy, player);
+    }
     this.state.run.currentTargetId = enemy.id;
     const killed = enemy.hp <= 0;
     if (killed) this.killEnemy(enemy);
     if (endTurn) this.endPlayerTurn();
     return { hit: true, damage, killed, targetId: enemy.id };
+  }
+
+  // Push an enemy one tile directly away from the attacker, if that tile is free.
+  knockBack(enemy, from) {
+    const floor = this.state.run.currentFloor;
+    const dx = Math.sign(enemy.x - from.x);
+    const dy = Math.sign(enemy.y - from.y);
+    const tx = enemy.x + (Math.abs(dx) >= Math.abs(dy) ? dx : 0);
+    const ty = enemy.y + (Math.abs(dx) >= Math.abs(dy) ? 0 : dy);
+    const tile = floor.map[ty]?.[tx];
+    if (!tile || tile.type !== "floor" || isBlockedFloor(tile) || tile.occupant || occupiedByEnemy(floor, tx, ty)) return;
+    floor.map[enemy.y][enemy.x].occupant = null;
+    enemy.x = tx;
+    enemy.y = ty;
+    tile.occupant = enemy.id;
+    this.log(`Heavy Hits: ${enemy.name} is knocked back.`);
   }
 
   killEnemy(enemy) {
@@ -2291,8 +2446,16 @@ export class Game {
     const utilitySpell = spellId === "arcane_shield" || spellId === "blink" || Boolean(spell.utility);
     const utilityDiscount = utilitySpell ? derived.utilityDiscount : 0;
     const freeUtility = utilitySpell && derived.freeUtility && !player.turnFlags.freeUtilityUsed;
-    const free = freeUtility || sageEchoFree;
-    return { cost: free ? 0 : Math.max(0, spell.cost - utilityDiscount), free, freeUtility, sageEchoCount };
+    const milestones = derived.milestones ?? {};
+    // Deep Focus (INT 15): the first spell on each floor is free.
+    const deepFocus = Boolean(milestones.deepFocus) && spell.type === "spell" && spell.cost > 0 && !player.floorFlags?.deepFocusUsed;
+    // Effortless Strike (STR 15): Power Strike is free.
+    const effortless = spellId === "power_strike" && Boolean(milestones.effortlessStrike);
+    const free = freeUtility || sageEchoFree || deepFocus || effortless;
+    let cost = Math.max(0, spell.cost - utilityDiscount);
+    // Efficient Casting (INT 10): spells cost 1 less, never below 1.
+    if (milestones.efficientCasting && spell.type === "spell" && cost > 1) cost -= 1;
+    return { cost: free ? 0 : cost, free, freeUtility, sageEchoCount, deepFocus };
   }
 
   // Everything the hotbar needs to draw one slot: what's in it, its cost or count, and whether it
@@ -2316,11 +2479,13 @@ export class Game {
     const player = this.state.run.player;
     const derived = this.getPlayerCombatSnapshot();
     const spell = SPELLS[spellId];
-    const { cost, freeUtility, sageEchoCount } = this.getSpellCost(spellId);
+    const { cost, freeUtility, sageEchoCount, deepFocus } = this.getSpellCost(spellId);
     if (player.mana < cost) {
       this.log("Not enough mana.");
       return;
     }
+    // Deep Focus is spent only if this cast actually happens (see endPlayerTurn).
+    player.turnFlags.deepFocusTurn = deepFocus ? this.state.run.turn : null;
 
     if (spellId === "arcane_shield") {
       player.lastAction = "spell";
@@ -2695,6 +2860,14 @@ export class Game {
         const amount = this.getRendedHealing(item.effect.value);
         player.hp = Math.min(derived.maxHp, player.hp + amount);
         this.log(`You recover ${amount} HP.${amount < item.effect.value ? " Your rent wounds resist the healing." : ""}`);
+      } else if (item.effect.type === "stat") {
+        // Stat elixirs: a permanent +1. Max HP and mana follow the new stat.
+        const before = this.getDerivedStats(player);
+        player.baseStats[item.effect.stat] += item.effect.value;
+        this.applyResourceCapDelta(player, before, this.getDerivedStats(player));
+        this.soundPlayer?.play("level_up");
+        const reached = this.getNewMilestones(before, this.getDerivedStats(player));
+        this.log(`${STAT_LABELS[item.effect.stat]} rises to ${player.baseStats[item.effect.stat]}.${reached.map((m) => ` Milestone: ${m.name}.`).join("")}`);
       } else if (item.effect.type === "mana") {
         this.soundPlayer?.play('use_item');
         const derived = this.getDerivedStats(player);
@@ -2803,7 +2976,97 @@ export class Game {
 
     const shrine = this.getAdjacentShrine(player.x, player.y);
     if (shrine && !shrine.used) {
-      shrine.used = true;
+      this.openShrine(shrine);
+      return;
+    }
+  }
+
+  // ── Shrine bargains ──
+  // A shrine offers two stat trades (+2 to one of the class's stats, -1 to another; the shrine picks
+  // the pairs, and never touches a stat the class doesn't use) or a rest that restores HP or mana.
+  getShrineOffers(shrine) {
+    if (shrine.offers) return shrine.offers;
+    const player = this.state.run.player;
+    const stats = CLASS_STATS[player.classId] ?? STAT_KEYS;
+    const pairs = [];
+    for (const gain of stats) for (const lose of stats) if (gain !== lose) pairs.push({ gain, lose });
+    const rng = createRng(hashSeed(this.state.run.runSeed, this.state.run.floorNumber, shrine.id, "bargain"));
+    const offers = [];
+    while (offers.length < 2 && pairs.length) {
+      const pair = pairs.splice(rng.int(0, pairs.length - 1), 1)[0];
+      // Two different gains, so the offers feel like a real fork.
+      if (offers.some((offer) => offer.gain === pair.gain)) continue;
+      offers.push({ ...pair, gainAmount: SHRINE_STAT_GAIN, loseAmount: SHRINE_STAT_LOSS });
+    }
+    shrine.offers = offers;
+    return offers;
+  }
+
+  // What a trade would change, in the numbers the player sees (e.g. "+6 max HP", "-1 spell power").
+  describeStatChange(changes) {
+    const player = this.state.run.player;
+    const before = this.getDerivedStats(player);
+    const baseStats = { ...player.baseStats };
+    for (const [stat, delta] of Object.entries(changes)) baseStats[stat] = Math.max(1, baseStats[stat] + delta);
+    const after = this.getDerivedStats({ ...player, baseStats });
+    const lines = [];
+    const diff = (key, label) => {
+      const delta = after[key] - before[key];
+      if (delta) lines.push(`${delta > 0 ? "+" : ""}${delta} ${label}`);
+    };
+    diff("maxHp", "max HP");
+    diff("maxMana", "max mana");
+    diff("meleeBonus", "melee damage");
+    diff("rangedBonus", "ranged damage");
+    diff("spellBonus", "spell power");
+    diff("accuracy", "accuracy");
+    diff("evasion", "evasion");
+    for (const m of this.getNewMilestones(before, after)) lines.push(`gain ${m.name}`);
+    for (const m of this.getNewMilestones(after, before)) lines.push(`lose ${m.name}`);
+    return lines;
+  }
+
+  // Milestones present in "after" but not in "before".
+  getNewMilestones(before, after) {
+    return STAT_KEYS.flatMap((stat) => STAT_MILESTONES[stat]).filter((m) => after.milestones?.[m.id] && !before.milestones?.[m.id]);
+  }
+
+  openShrine(shrine) {
+    const player = this.state.run.player;
+    const derived = this.getDerivedStats(player);
+    const healing = shrine.mode === "healing";
+    const restore = Math.floor((healing ? derived.maxHp : derived.maxMana) * 0.45);
+    const offers = this.getShrineOffers(shrine).map((offer, index) => {
+      const lines = this.describeStatChange({ [offer.gain]: offer.gainAmount, [offer.lose]: -offer.loseAmount });
+      return `
+        <button class="shrine-offer" data-action="shrine-choose" data-choice="${index}">
+          <strong><span class="positive">+${offer.gainAmount} ${STAT_LABELS[offer.gain]}</span> · <span class="negative">−${offer.loseAmount} ${STAT_LABELS[offer.lose]}</span></strong>
+          <span class="muted">${STAT_SHORT[offer.gain]} ${player.baseStats[offer.gain]} → ${player.baseStats[offer.gain] + offer.gainAmount}, ${STAT_SHORT[offer.lose]} ${player.baseStats[offer.lose]} → ${Math.max(1, player.baseStats[offer.lose] - offer.loseAmount)}</span>
+          <span class="shrine-offer-effects">${lines.length ? lines.join(" · ") : "No visible change yet"}</span>
+        </button>`;
+    }).join("");
+    const html = `
+      <p class="muted">The shrine hums, offering to reshape you, or simply to mend. It answers once.</p>
+      <div class="shrine-offers">
+        ${offers}
+        <button class="shrine-offer rest" data-action="shrine-choose" data-choice="rest">
+          <strong>Rest</strong>
+          <span class="muted">Restore ${restore} ${healing ? "HP" : "mana"} (45%).</span>
+        </button>
+      </div>
+      <p><button data-action="close-overlay">Walk away</button> <span class="muted">The shrine will wait.</span></p>
+    `;
+    this.state.ui.overlay = { type: "shrine", title: healing ? "Shrine of Healing" : "Shrine of Clarity", shrineId: shrine.id, html };
+  }
+
+  chooseShrine(choice) {
+    const player = this.state.run.player;
+    const shrine = this.state.run.currentFloor.shrine;
+    if (!shrine || shrine.used || shrine.id !== this.state.ui.overlay?.shrineId) return;
+    shrine.used = true;
+    this.state.ui.overlay = null;
+    this.renderer?.queueEffect({ kind: "shieldUp", x: player.x, y: player.y });
+    if (choice === "rest") {
       if (shrine.mode === "healing") {
         const derived = this.getDerivedStats(player);
         const amount = this.getRendedHealing(Math.floor(derived.maxHp * 0.45));
@@ -2817,6 +3080,17 @@ export class Game {
       }
       return;
     }
+    const offer = this.getShrineOffers(shrine)[Number(choice)];
+    if (!offer) return;
+    const before = this.getDerivedStats(player);
+    player.baseStats[offer.gain] += offer.gainAmount;
+    player.baseStats[offer.lose] = Math.max(1, player.baseStats[offer.lose] - offer.loseAmount);
+    const after = this.getDerivedStats(player);
+    this.applyResourceCapDelta(player, before, after);
+    this.soundPlayer?.play("level_up");
+    const gained = this.getNewMilestones(before, after).map((m) => ` Milestone: ${m.name}.`).join("");
+    const lost = this.getNewMilestones(after, before).map((m) => ` Lost: ${m.name}.`).join("");
+    this.log(`The shrine reshapes you: ${STAT_LABELS[offer.gain]} +${offer.gainAmount}, ${STAT_LABELS[offer.lose]} −${offer.loseAmount}.${gained}${lost}`);
   }
 
   // Loot you've actually seen on this floor but not taken: explored, unopened chests you can open,
@@ -2891,6 +3165,12 @@ export class Game {
     );
     this.state.run.player.x = this.state.run.currentFloor.spawn.x;
     this.state.run.player.y = this.state.run.currentFloor.spawn.y;
+    // Second Wind (VIT 10): recover a little on arriving at each new floor.
+    const arrival = this.getDerivedStats(this.state.run.player);
+    if (arrival.milestones.secondWind && this.state.run.player.hp < arrival.maxHp) {
+      this.state.run.player.hp = Math.min(arrival.maxHp, this.state.run.player.hp + 5);
+      this.log("Second Wind: you recover 5 HP.");
+    }
     this.updateVisibility();
     this.markFloorStart();
     this.soundPlayer?.play('stairs');
@@ -3109,8 +3389,8 @@ export class Game {
     ].join("");
 
     const attributes = [
-      row("Strength", combat.strength, `Strength\n+${combat.meleeBonus} melee damage (1 per 3 Strength).`),
-      row("Dexterity", combat.dexterity, `Dexterity\n+${combat.dexterity} accuracy, +${Math.floor(combat.dexterity / 2)} evasion, +${combat.rangedBonus} ranged damage.`),
+      row("Strength", combat.strength, `Strength\n+${combat.meleeBonus} melee damage (1 per 2 Strength).`),
+      row("Dexterity", combat.dexterity, `Dexterity\n+${combat.dexterity} accuracy, +${Math.floor(combat.dexterity / 2)} evasion, +${combat.rangedBonus} ranged damage (1 per 2).`),
       row("Vitality", combat.vitality, `Vitality\n+${combat.vitality * 3} max HP (3 per point).`),
       row("Intelligence", combat.intelligence, `Intelligence\n+${combat.intelligence * 2} max mana and +${Math.floor(combat.intelligence / 2)} spell power.`),
     ].join("");
@@ -3153,6 +3433,13 @@ export class Game {
           <section>
             <h4>Skills <span class="muted">(${skills.length})</span></h4>
             ${skills.length ? `<ul>${skills.join("")}</ul>` : `<p class="muted">None yet. ${player.skillPoints ? "Press K to spend your skill points." : "Level up to earn skill points."}</p>`}
+          </section>
+          <section>
+            <h4>Stat milestones</h4>
+            <ul class="milestone-list">${STAT_KEYS.flatMap((stat) => STAT_MILESTONES[stat].map((m) => {
+              const reached = combat.milestones?.[m.id];
+              return `<li class="${reached ? "reached" : "locked"}"><strong>${m.name}</strong> <span class="muted">${STAT_SHORT[stat]} ${m.at}${reached ? "" : ` (you have ${combat[stat]})`}: ${m.description}</span></li>`;
+            })).join("")}</ul>
           </section>
           <section>
             <h4>Gear effects</h4>
@@ -3473,6 +3760,7 @@ export class Game {
         </div>
         <div class="compare-detail-pane">
           ${detail}
+          ${this.renderReforgeCard(confirm)}
           <div class="detail-card sell-card">
             <div class="detail-header">
               <div>
@@ -3513,6 +3801,55 @@ export class Game {
     const nextStacks = this.getVendorStacks();
     const nextIndex = this.getStackIndexByItemId(nextStacks, itemId, index);
     this.openVendor(nextIndex >= 0 ? nextIndex : 0);
+  }
+
+  // The vendor's reforge service: each equipped item can be reforged once into its "+1" version.
+  renderReforgeCard(confirm) {
+    const player = this.state.run.player;
+    const rows = ["weapon", "armor", "hands", "accessory"]
+      .filter((slot) => player.equipment[slot])
+      .map((slot) => {
+        const itemId = player.equipment[slot];
+        const item = ITEMS[itemId];
+        const reforgedId = getReforgedId(itemId);
+        const cost = this.getReforgeCost(itemId);
+        const confirming = confirm?.type === "reforge" && confirm.slot === slot;
+        let actions;
+        if (!reforgedId) actions = `<span class="muted">Already reforged</span>`;
+        else if (confirming) {
+          actions = `<span class="sell-confirm-text">Spend ${cost}g?</span>
+            <button class="primary" data-action="vendor-reforge-confirm" data-slot="${slot}">Reforge</button>
+            <button data-action="vendor-cancel">Keep</button>`;
+        } else {
+          actions = `<button data-action="vendor-reforge" data-slot="${slot}" ${player.gold < cost ? "disabled" : ""}>Reforge · ${cost}g</button>`;
+        }
+        const tooltip = reforgedId ? this.getItemTooltip(reforgedId, { includeCompare: false }) : this.getItemTooltip(itemId);
+        return `
+          <div class="sell-row ${this.getItemRarity(itemId)} ${confirming ? "confirming" : ""}" data-tooltip="${this.escapeTooltip(tooltip)}">
+            <div class="sell-row-item">
+              ${this.renderItemIcon(itemId, "sell-row-icon")}
+              <div>
+                <strong>${item.name}</strong>
+                <p class="muted">${reforgedId ? `Becomes ${ITEMS[reforgedId].name}: ${this.describeReforge(itemId)}` : "Each item can be reforged once."}</p>
+              </div>
+            </div>
+            <div class="sell-row-actions">${actions}</div>
+          </div>
+        `;
+      })
+      .join("");
+    return `
+      <div class="detail-card sell-card reforge-card">
+        <div class="detail-header">
+          <div>
+            <span class="section-kicker">Reforge</span>
+            <h3>Your Equipment</h3>
+          </div>
+        </div>
+        <p class="muted">Pay to reforge an equipped item into its +1 version, once per item. It isn't cheap.</p>
+        ${rows || "<p class=\"muted\">Nothing equipped.</p>"}
+      </div>
+    `;
   }
 
   // Rare and boss items ask once before selling (confirmed = true skips the question).
@@ -3600,6 +3937,12 @@ export class Game {
     if (!this.state.run || this.state.mode !== "in_game") return;
     // The player can die during their own action (e.g. a trap); enemies must not act on a corpse.
     if (this.state.run.player.hp <= 0) return;
+    const player = this.state.run.player;
+    if (player.turnFlags.deepFocusTurn === this.state.run.turn && player.lastAction === "spell") {
+      player.floorFlags.deepFocusUsed = true;
+      this.log("Deep Focus: that spell cost no mana.");
+    }
+    player.turnFlags.deepFocusTurn = null;
     this.state.run.turn += 1;
     this.takeSpireTurn();
     this.takeEnemyTurns();
@@ -4552,6 +4895,8 @@ export class Game {
 
     this.state.ui.overlay = {
       type: victory ? "victory" : "death",
+      // Kept so the screen can be redrawn in place when the shared leaderboard arrives.
+      runEndOptions: options,
       variant: victory ? "run-end run-end--victory" : "run-end run-end--death",
       dismissible: false,
       title: victory ? "Dungeon Cleared" : "You Died",
@@ -4639,6 +4984,18 @@ export class Game {
         break;
       case "vendor-sell-junk-confirm":
         this.vendorSellJunk(true);
+        break;
+      case "close-overlay":
+        this.closeOverlay();
+        break;
+      case "shrine-choose":
+        this.chooseShrine(payload.choice);
+        break;
+      case "vendor-reforge":
+        this.reforgeEquipped(payload.slot);
+        break;
+      case "vendor-reforge-confirm":
+        this.reforgeEquipped(payload.slot, true);
         break;
       case "vendor-cancel":
         this.state.ui.vendorConfirm = null;

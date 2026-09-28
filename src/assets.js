@@ -46,6 +46,15 @@ const THEME_ATLAS_RAMPS = {
 // Boss reward chests, recoloured from the standard chest (wood only; the gold trim is kept):
 // bone for Super Skeletor, crimson for Patches, abyssal violet for the Overlord.
 const CHEST_WOOD_HUES = [0.9, 0.1];
+// Stat elixirs are the big green flask with its liquid re-tinted per stat (the glass and cork stay).
+const ELIXIR_FLASK_GREEN = [0.18, 0.5];
+const ELIXIR_RECOLORS = {
+  elixir_might: { hue: 0.03, satMul: 1.1, hueRange: ELIXIR_FLASK_GREEN },
+  elixir_grace: { hue: 0.5, satMul: 1, hueRange: ELIXIR_FLASK_GREEN },
+  elixir_fortitude: { hue: 0.12, satMul: 1.05, valMul: 1.05, hueRange: ELIXIR_FLASK_GREEN },
+  elixir_insight: { hue: 0.76, satMul: 1, hueRange: ELIXIR_FLASK_GREEN },
+};
+
 const CHEST_RECOLORS = {
   bone: { hue: 0.1, satMul: 0.25, valMul: 1.25, hueRange: CHEST_WOOD_HUES },
   crimson: { hue: 0, satMul: 1.1, valMul: 0.9, hueRange: CHEST_WOOD_HUES },
@@ -276,6 +285,11 @@ const assetManifest = {
     greater_healing_potion: `${BASE}/flask_big_red.png`,
     mana_potion: `${BASE}/flask_blue.png`,
     greater_mana_potion: `${BASE}/flask_big_blue.png`,
+    // Loaded as the green flask, then re-tinted per elixir (ELIXIR_RECOLORS).
+    elixir_might: `${BASE}/flask_big_green.png`,
+    elixir_grace: `${BASE}/flask_big_green.png`,
+    elixir_fortitude: `${BASE}/flask_big_green.png`,
+    elixir_insight: `${BASE}/flask_big_green.png`,
     scroll_of_escape: `${EXTRACTED}/scroll_escape_real.png`,
     crypt_vault_key: `${EXTRACTED}/key_crypt.png`,
     sunken_vault_key: `${EXTRACTED}/key_sunken.png`,
@@ -507,6 +521,10 @@ async function buildRecoloredActors(images) {
     }
     assetManifest.themeAtlasSets[theme] = set;
   }
+  for (const [itemId, palette] of Object.entries(ELIXIR_RECOLORS)) {
+    const frames = await recolorFrames(images, [`${BASE}/flask_big_green.png`], palette);
+    if (frames) assetManifest.items[itemId] = frames[0];
+  }
   assetManifest.chestVariants = {};
   for (const [variant, palette] of Object.entries(CHEST_RECOLORS)) {
     const frames = await recolorFrames(images, [assetManifest.chestClosed], palette);
@@ -543,7 +561,8 @@ export function getActorSprite(manifest, actorId) {
 }
 
 export function getItemSprite(manifest, itemId) {
-  return manifest.items[itemId] ?? null;
+  // Reforged "+1" items use their base item's sprite.
+  return manifest.items[itemId] ?? manifest.items[ITEMS[itemId]?.baseId] ?? null;
 }
 
 export function getTrapSprite(manifest, trapId) {

@@ -345,6 +345,37 @@ Current boon design goals:
 - make the Grey Witness feel like he is granting a bargain, not a blessing
 - keep the chosen boon visible in the main HUD during play
 
+## Stats
+
+Four base stats (Strength, Dexterity, Vitality, Intelligence) feed combat through `getDerivedStats`:
+- Strength: +1 melee damage per 2
+- Dexterity: +1 accuracy per point, +1 evasion per 2, +1 ranged damage per 2
+- Vitality: +3 max HP per point
+- Intelligence: +2 max mana per point, +1 spell power per 2
+- gear bonuses to a stat (`strengthFlat`, `dexterityFlat`, `vitalityFlat`, `intelligenceFlat`, shown as e.g. "INT +2") raise the stat itself
+- levelling still grows stats by class; shrines, elixirs, and gear are how a player shapes them
+
+Each class leans on three stats (`CLASS_STATS` in data.js): Warrior STR/VIT/DEX, Sorceress INT/VIT/DEX, Ranger DEX/VIT/STR.
+
+Shrines (from Floor 4; about 35% of floors through 10, 45% through 15, 65% deeper):
+- using one opens a bargain instead of healing at once: two stat trades, or Rest
+- each trade is +2 to one of the class's stats and −1 to another of them (`SHRINE_STAT_GAIN` / `SHRINE_STAT_LOSS`); the shrine picks the pairs (seeded per shrine) with two different gains, and never offers a trade against a stat the class doesn't use, so no trade is free
+- each offer shows its effect in the numbers that change (max HP, damage, spell power, accuracy, evasion) and any milestone gained or lost
+- Rest restores 45% of HP (Shrine of Healing) or mana (Shrine of Clarity), as shrines always did
+- a shrine answers once; walking away keeps it for later
+
+Stat elixirs (Might, Grace, Fortitude, Insight: +1 STR / DEX / VIT / INT, permanent):
+- only ever for one of the class's three stats; rolled on their own seed so they don't reshuffle floors
+- 20% of chests carry one; every boss reward chest includes one; a quarter of vendors stock one (value 250, rare: about 350g early to 700g deep); elites drop one 5% of the time, other enemies 0.8%
+- simulated competent runs find about one every 2-3 floors
+- drawn as the big flask re-tinted per stat (`ELIXIR_RECOLORS` in assets.js)
+
+Stat milestones (`STAT_MILESTONES`; listed on the character sheet, reached ones highlighted):
+- Strength 10 Heavy Hits: melee critical hits knock a (non-boss) enemy back a tile; 15 Effortless Strike: Power Strike costs no mana
+- Dexterity 10 Sure Aim: the first attack on each enemy can't miss; 15 Keen Eye: +10% critical chance with bows
+- Vitality 10 Second Wind: recover 5 HP on arriving at each new floor; 15 Hardy: poison and chill on you last half as long
+- Intelligence 10 Efficient Casting: spells cost 1 less mana (never below 1); 15 Deep Focus: the first spell on each floor costs no mana
+
 ## Leveling and Progression
 
 - Max level: 10
@@ -678,6 +709,14 @@ Current drop direction:
 - enemy drops, mimic drops, chests, vaults, and boss rewards all use class-specific pools for each of the three classes
 - mimics: from Floor 3, each treasure chest has a 5% chance to be a mimic; its HP grows 8% per floor past Floor 3 and its damage by +1 per 6 floors past Floor 3 (5-9 on Floor 3, 7-11 on Floor 15, 9-13 on Floor 27); it always drops one class-suited item from a depth-tiered pool, has a 35% chance of a potion, and drops 12-20 gold plus a depth bonus
 
+Gold economy:
+- ordinary enemies drop gold only 60% of the time (`ENEMY_GOLD_CHANCE` in generator.js); bosses and mimics always do
+- vendor buy prices rise 4% per floor below Floor 1 (`VENDOR_PRICE_PER_FLOOR`), about double by Floor 26; sell values stay at 15% of an item's value
+- reforging: at any vendor, each equipped item can be reforged once into its "+1" version for 8x its value, at least 400g, scaled by the same depth multiplier (`REFORGE_*` in game.js); the vendor window has a Reforge panel with a confirm step
+  - the +1 items are generated in data.js (`ITEMS["<id>_reforged"]`, name "<Name> +1", `baseId`, `reforged: true`, same rarity, 1.5x value). Weapons gain +1 max damage (spell weapons +1 magic power), armor and hands +1 defense, accessories +5 max HP
+  - they never drop or appear in stock (excluded from vault pools), use their base item's sprite, and can't be reforged again
+- simulator (competent bots): gold on hand is about 450g at Floor 10, 700g at Floor 20, 900g at Floor 30 (was 670g / 2,400g / 5,100g); runs reaching Floor 25 spend about 2,650g, including about 3 reforges, the first around Floor 14
+
 Implemented vault reward layer:
 - one locked treasure vault exists somewhere in Floors 1-9
 - one locked treasure vault exists somewhere in Floors 11-19
@@ -902,7 +941,7 @@ Each boss floor carries `floor.arena` (built by `dressArena` in the generator): 
 - Stitch Up: once, at half HP, he walks to the nearest free stitching post and sews himself up for 3 turns, healing 8 HP a turn. Taking 12 or more damage between his turns tears the stitches and staggers him for a turn
 - Enrage: at 30% HP his seams burst (a red name plate "The seams burst · Patches is enraged", red tint and steam, red braziers); on alternate turns he strikes twice or moves twice
 - Rend: his fists and slam can leave the player Rended for 4 turns (60%), halving healing from potions and shrines
-- numbers: 160 HP, 11-16 damage; Ground Slam at most every 3 turns (constants `PATCHES_*` in game.js)
+- numbers: 200 HP, 12-17 damage; Ground Slam at most every 3 turns (constants `PATCHES_*` in game.js)
 
 ### The Abyssal Overlord, Sovereign of the Abyssal Throne (Floor 30)
 
@@ -915,7 +954,7 @@ He waits before his throne on the arena's north wall. Three phases by HP; each c
 
 ### Enemy depth scaling
 
-Ordinary enemies (including summons and the Floor 30 sentries, not bosses) gain HP with depth: +1.5% of their base HP per floor past Floor 10 (`DEPTH_SCALING` in data.js). The damage bonus is present but disabled (`damageEveryFloors: 99`); simulated damage bonuses made melee classes collapse. Mimics keep their own steeper scaling.
+Ordinary enemies (including summons and the Floor 30 sentries, not bosses) scale with depth past Floor 4 (`DEPTH_SCALING` in data.js): +3.5% of their base HP per floor, and +1 to both ends of their damage every 6 floors. This was raised when shrines, elixirs, and milestones made players grow through a run; stat growth is now part of keeping pace. Mimics keep their own steeper scaling.
 
 ## Save and Continue
 
@@ -954,6 +993,15 @@ Current score model:
 Current save-flow rule:
 - a completed run can only submit one score entry
 - after a successful save, the game-over or victory overlay closes and moves to High Scores
+
+
+Shared leaderboard (deployed on Vercel with Supabase):
+- `api/scores.js` is a Vercel serverless function: `GET /api/scores?limit=N` returns the top scores; `POST /api/scores` records a run. It talks to Supabase with the service-role key from Vercel environment variables (`D30_SUPABASE_URL`, `D30_SUPABASE_SERVICE_ROLE_KEY`; the unprefixed names also work), so no key reaches the browser
+- the table (`public.scores`) and its settings are in `tools/supabase/scores.sql`; row level security is on with no policies, so only the function can read or write it
+- the server recomputes every score from the run's numbers with the same formula as the game (`src/scoreRules.js`, shared by both), checks each field's range (floor 0-30, and a victory must be Floor 30), and applies the same name rules; a tampered score is ignored. It can't prove a run happened
+- the game loads the shared list at start and when high scores open, and redraws when it arrives; saving a score keeps a local copy and posts it in the background
+- when the shared list can't be reached (offline, `npm start` locally, or before the function is configured) the lists fall back to this browser's scores and say so; the headless simulator never calls the API
+- names and causes are HTML-escaped wherever scores are shown, since they can come from other players
 
 ## UI and Feedback
 
