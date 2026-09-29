@@ -71,10 +71,10 @@ export const SKILL_TREES = {
       name: "Weapon Mastery",
       skills: [
         { id: "warrior_weapon_1", name: "Heavy Swing", description: "+10% melee damage.", effect: { stat: "meleeDamagePct", value: 10 } },
-        { id: "warrior_weapon_2", name: "Battle Rhythm", description: "Gain momentum after a kill.", effect: { stat: "killMomentum", value: 2 } },
-        { id: "warrior_weapon_3", name: "Crushing Blows", description: "+10% crit chance.", effect: { stat: "critBonus", value: 10 } },
-        { id: "warrior_weapon_4", name: "Cleaving Strike", description: "Power Strike deals splash damage.", effect: { stat: "cleave", value: 0.25 } },
-        { id: "warrior_weapon_5", name: "Executioner", description: "+25% damage to low-health enemies.", effect: { stat: "executioner", value: 25 } },
+        { id: "warrior_weapon_2", name: "Battle Rhythm", description: "After a kill, your next hit deals +2 damage.", effect: { stat: "killMomentum", value: 2 } },
+        { id: "warrior_weapon_3", name: "Crushing Blows", description: "+10% critical chance.", effect: { stat: "critBonus", value: 10 } },
+        { id: "warrior_weapon_4", name: "Cleaving Strike", description: "Power Strike also hits enemies next to the target for 25% of its damage.", effect: { stat: "cleave", value: 0.25 } },
+        { id: "warrior_weapon_5", name: "Executioner", description: "+25% damage to enemies below 35% health.", effect: { stat: "executioner", value: 25 } },
       ],
     },
     {
@@ -83,9 +83,9 @@ export const SKILL_TREES = {
       skills: [
         { id: "warrior_guard_1", name: "Toughness", description: "+10 max HP.", effect: { stat: "maxHpFlat", value: 10 } },
         { id: "warrior_guard_2", name: "Armor Training", description: "+2 defense.", effect: { stat: "defenseFlat", value: 2 } },
-        { id: "warrior_guard_3", name: "Shielded Stance", description: "Waiting grants guard.", effect: { stat: "waitDefense", value: 2 } },
-        { id: "warrior_guard_4", name: "Unyielding", description: "Reduce the first hit on each floor.", effect: { stat: "firstHitReduction", value: 0.5 } },
-        { id: "warrior_guard_5", name: "Juggernaut", description: "Gain damage when badly wounded.", effect: { stat: "lowHpDamagePct", value: 15 } },
+        { id: "warrior_guard_3", name: "Shielded Stance", description: "Waiting gives +2 defense until your next turn.", effect: { stat: "waitDefense", value: 2 } },
+        { id: "warrior_guard_4", name: "Unyielding", description: "The first hit you take on each floor deals half damage.", effect: { stat: "firstHitReduction", value: 0.5 } },
+        { id: "warrior_guard_5", name: "Juggernaut", description: "+15% damage while below 30% HP.", effect: { stat: "lowHpDamagePct", value: 15 } },
       ],
     },
     {
@@ -95,8 +95,8 @@ export const SKILL_TREES = {
         { id: "warrior_tactic_1", name: "Combat Footing", description: "+5 accuracy.", effect: { stat: "accuracyFlat", value: 5 } },
         { id: "warrior_tactic_2", name: "Brace", description: "-25% trap damage.", effect: { stat: "trapReductionPct", value: 25 } },
         { id: "warrior_tactic_3", name: "Charge", description: "Power Strike reaches 2 tiles in a line.", effect: { stat: "chargeRange", value: 2 } },
-        { id: "warrior_tactic_4", name: "Disrupting Strike", description: "Melee hits weaken enemies.", effect: { stat: "weakenOnHit", value: 1 } },
-        { id: "warrior_tactic_5", name: "Warlord's Advance", description: "Gain +15% damage after moving into melee.", effect: { stat: "advanceDamagePct", value: 15 } },
+        { id: "warrior_tactic_4", name: "Disrupting Strike", description: "Melee hits weaken enemies for 2 turns (they deal 2 less damage).", effect: { stat: "weakenOnHit", value: 1 } },
+        { id: "warrior_tactic_5", name: "Warlord's Advance", description: "+15% damage when you attack right after moving.", effect: { stat: "advanceDamagePct", value: 15 } },
       ],
     },
   ],
@@ -107,9 +107,9 @@ export const SKILL_TREES = {
       skills: [
         { id: "wizard_power_1", name: "Empowered Casting", description: "+10% spell damage.", effect: { stat: "spellDamagePct", value: 10 } },
         { id: "wizard_power_2", name: "Fireball", description: "Learn Fireball: 7-11 damage to everything in a 3x3 area, and it burns for 3 turns.", effect: { grantSpell: "fireball" } },
-        { id: "wizard_power_3", name: "Elemental Surge", description: "First spell in combat deals more damage.", effect: { stat: "firstSpellPct", value: 25 } },
+        { id: "wizard_power_3", name: "Elemental Surge", description: "Your first spell against each enemy deals +25% damage.", effect: { stat: "firstSpellPct", value: 25 } },
         { id: "wizard_power_4", name: "Arcane Overflow", description: "20% chance for damage spells to cost 0 mana.", effect: { stat: "freeCastChance", value: 0.2 } },
-        { id: "wizard_power_5", name: "Master Evocation", description: "Bonus damage to healthy or weak enemies.", effect: { stat: "evocationBonus", value: 20 } },
+        { id: "wizard_power_5", name: "Master Evocation", description: "+20% spell damage to enemies above 75% or below 25% health.", effect: { stat: "evocationBonus", value: 20 } },
       ],
     },
     {
@@ -118,9 +118,9 @@ export const SKILL_TREES = {
       skills: [
         { id: "wizard_ward_1", name: "Arcane Reserves", description: "+10 max mana.", effect: { stat: "maxManaFlat", value: 10 } },
         { id: "wizard_ward_2", name: "Mana Barrier", description: "Arcane Shield becomes a barrier that absorbs the next 10 damage (+1 per level) over 4 turns.", effect: { stat: "manaBarrier", value: 10 } },
-        { id: "wizard_ward_3", name: "Steady Mind", description: "Utility spells cost 1 less mana.", effect: { stat: "utilityDiscount", value: 1 } },
+        { id: "wizard_ward_3", name: "Steady Mind", description: "Utility spells (Arcane Shield, Blink, Frost Nova) cost 1 less mana.", effect: { stat: "utilityDiscount", value: 1 } },
         { id: "wizard_ward_4", name: "Reactive Ward", description: "The first time you are hit each floor, recover 6 HP.", effect: { stat: "reactiveWard", value: 6 } },
-        { id: "wizard_ward_5", name: "Archmage's Barrier", description: "Emergency damage reduction once per floor.", effect: { stat: "archmageBarrier", value: 0.25 } },
+        { id: "wizard_ward_5", name: "Archmage's Barrier", description: "Once per floor, a hit taken while below 30% HP deals 25% less damage.", effect: { stat: "archmageBarrier", value: 0.25 } },
       ],
     },
     {
@@ -129,11 +129,11 @@ export const SKILL_TREES = {
       skills: [
         // Array order is the unlock order. Ids stay with their skill (saves store them), so they no
         // longer match the tier numbers after the reorder.
-        { id: "wizard_control_2", name: "Lingering Hex", description: "Control effects last longer.", effect: { stat: "controlDuration", value: 1 } },
+        { id: "wizard_control_2", name: "Lingering Hex", description: "Your chill, weaken and hex effects last 1 turn longer.", effect: { stat: "controlDuration", value: 1 } },
         { id: "wizard_control_1", name: "Frost Nova", description: "Learn Frost Nova: freeze every enemy around you for 2 turns and chill them.", effect: { grantSpell: "frost_nova" } },
-        { id: "wizard_control_4", name: "Frailty Curse", description: "Control spells expose enemies.", effect: { stat: "frailtyCurse", value: 15 } },
+        { id: "wizard_control_4", name: "Frailty Curse", description: "+15% spell damage to chilled or weakened enemies.", effect: { stat: "frailtyCurse", value: 15 } },
         { id: "wizard_control_3", name: "Summon Spire", description: "Learn Summon Spire: an arcane spire fires bolts at your foes for 5 turns.", effect: { grantSpell: "summon_spire" } },
-        { id: "wizard_control_5", name: "Battlefield Savant", description: "First utility spell each fight is free.", effect: { stat: "freeUtility", value: 1 } },
+        { id: "wizard_control_5", name: "Battlefield Savant", description: "Your first utility spell (Arcane Shield, Blink, Frost Nova) in each fight costs no mana. Resets once no enemy is hunting you.", effect: { stat: "freeUtility", value: 1 } },
       ],
     },
   ],
@@ -143,10 +143,10 @@ export const SKILL_TREES = {
       name: "Deadshot",
       skills: [
         { id: "ranger_dead_1", name: "Steady Hand", description: "+10% ranged damage.", effect: { stat: "rangedDamagePct", value: 10 } },
-        { id: "ranger_dead_2", name: "Bullseye", description: "+10% crit chance.", effect: { stat: "critBonus", value: 10 } },
-        { id: "ranger_dead_3", name: "Quick Nock", description: "Gain momentum after a kill.", effect: { stat: "killMomentum", value: 2 } },
+        { id: "ranger_dead_2", name: "Bullseye", description: "+10% critical chance.", effect: { stat: "critBonus", value: 10 } },
+        { id: "ranger_dead_3", name: "Quick Nock", description: "After a kill, your next hit deals +2 damage.", effect: { stat: "killMomentum", value: 2 } },
         { id: "ranger_dead_4", name: "Piercing Shot", description: "Aimed Shot ignores 2 defense.", effect: { stat: "aimedShotArmorPen", value: 2 } },
-        { id: "ranger_dead_5", name: "Deadeye", description: "+25% damage to low-health enemies.", effect: { stat: "executioner", value: 25 } },
+        { id: "ranger_dead_5", name: "Deadeye", description: "+25% damage to enemies below 35% health.", effect: { stat: "executioner", value: 25 } },
       ],
     },
     {
@@ -155,9 +155,9 @@ export const SKILL_TREES = {
       skills: [
         { id: "ranger_wind_1", name: "Attunement", description: "+8% spell damage.", effect: { stat: "spellDamagePct", value: 8 } },
         { id: "ranger_wind_2", name: "Nature's Gift", description: "+8 max mana.", effect: { stat: "maxManaFlat", value: 8 } },
-        { id: "ranger_wind_3", name: "Venomtip", description: "Ranged hits have 15% chance to poison.", effect: { stat: "rangedPoisonChance", value: 0.15 } },
+        { id: "ranger_wind_3", name: "Venomtip", description: "Ranged hits have a 15% chance to poison.", effect: { stat: "rangedPoisonChance", value: 0.15 } },
         { id: "ranger_wind_4", name: "Windshot", description: "Aimed Shot gains +1 range.", effect: { stat: "aimedShotRange", value: 1 } },
-        { id: "ranger_wind_5", name: "Primal Surge", description: "First spell each combat deals +20% damage.", effect: { stat: "firstSpellPct", value: 20 } },
+        { id: "ranger_wind_5", name: "Primal Surge", description: "Your first spell against each enemy deals +20% damage.", effect: { stat: "firstSpellPct", value: 20 } },
       ],
     },
     {
@@ -165,10 +165,10 @@ export const SKILL_TREES = {
       name: "Pathfinder",
       skills: [
         { id: "ranger_path_1", name: "Fleet Foot", description: "+3 evasion.", effect: { stat: "evasionFlat", value: 3 } },
-        { id: "ranger_path_2", name: "Trap Sense", description: "Reveal nearby traps sooner.", effect: { stat: "trapSense", value: 2 } },
+        { id: "ranger_path_2", name: "Trap Sense", description: "+2 sight range, and you spot traps from 2 tiles farther away.", effect: { stat: "trapSense", value: 2 } },
         { id: "ranger_path_3", name: "Nimble Dodge", description: "-30% trap damage.", effect: { stat: "trapReductionPct", value: 30 } },
         { id: "ranger_path_4", name: "Shadow Step", description: "Evasive Step gains +1 range.", effect: { stat: "evasiveStepRange", value: 1 } },
-        { id: "ranger_path_5", name: "Opportunist", description: "+15% damage after moving.", effect: { stat: "advanceDamagePct", value: 15 } },
+        { id: "ranger_path_5", name: "Opportunist", description: "+15% damage when you attack right after moving.", effect: { stat: "advanceDamagePct", value: 15 } },
       ],
     },
   ],
@@ -181,7 +181,7 @@ export const SPELLS = {
     type: "ability",
     cost: 1,
     range: 1,
-    description: "Heavy melee strike with bonus damage.",
+    description: "A heavy melee strike that deals +3 damage.",
   },
   guard_break: {
     id: "guard_break",
@@ -189,7 +189,7 @@ export const SPELLS = {
     type: "ability",
     cost: 2,
     range: 1,
-    description: "A crushing melee hit that sunders enemy defense.",
+    description: "A crushing melee hit (+1 damage) that sunders the enemy: −2 defense for 3 turns.",
   },
   magic_missile: {
     id: "magic_missile",
@@ -198,7 +198,7 @@ export const SPELLS = {
     cost: 3,
     range: 4,
     damage: [4, 7],
-    description: "Reliable ranged spell.",
+    description: "A bolt of arcane force. Your dependable ranged attack.",
   },
   arcane_shield: {
     id: "arcane_shield",
@@ -215,7 +215,7 @@ export const SPELLS = {
     cost: 4,
     range: 5,
     damage: [6, 9],
-    description: "A stronger ranged spell that chills and strikes hard.",
+    description: "A hard-hitting shard of ice that chills the target for 2 turns (−6 accuracy).",
   },
   blink: {
     id: "blink",
@@ -232,7 +232,7 @@ export const SPELLS = {
     cost: 4,
     range: 5,
     damage: [4, 7],
-    description: "Lightning arcs to a nearby second target for reduced damage.",
+    description: "Lightning strikes the target, then arcs to a second enemy nearby for 60% damage.",
   },
   arcane_pulse: {
     id: "arcane_pulse",
@@ -241,7 +241,7 @@ export const SPELLS = {
     cost: 5,
     range: 0,
     damage: [5, 8],
-    description: "A close-range burst that strikes all adjacent enemies.",
+    description: "A burst of force that strikes every adjacent enemy.",
   },
   ice_shatter: {
     id: "ice_shatter",
@@ -250,7 +250,7 @@ export const SPELLS = {
     cost: 5,
     range: 5,
     damage: [5, 8],
-    description: "Shatters chilled targets for heavy damage and consumes the chill.",
+    description: "Deals +4 damage to a chilled target, consuming the chill.",
   },
   frailty_hex: {
     id: "frailty_hex",
@@ -259,7 +259,7 @@ export const SPELLS = {
     cost: 4,
     range: 5,
     damage: [2, 4],
-    description: "A weakening curse that leaves enemies hexed and frail.",
+    description: "A curse that hexes the target (−2 defense) and weakens it (−2 damage) for 2 turns.",
   },
   arcane_burst: {
     id: "arcane_burst",
@@ -268,7 +268,7 @@ export const SPELLS = {
     cost: 6,
     range: 4,
     damage: [8, 12],
-    description: "Explosive arcane blast with heavy single-target damage.",
+    description: "A concentrated arcane blast: heavy damage to one target, which is weakened for 2 turns (−2 damage).",
   },
   // A free cantrip. It gains half of flat spell power (INT and magic power, rounded down) plus the
   // full spell-damage %, so it keeps pace with gear while staying well below Magic Missile.
@@ -382,7 +382,7 @@ export const ITEMS = {
   iron_cuirass: { id: "iron_cuirass", name: "Iron Cuirass", category: "armor", slot: "armor", defense: 3, rarity: "uncommon", value: 26 },
   bastion_mail: { id: "bastion_mail", name: "Bastion Mail", category: "armor", slot: "armor", defense: 4, bonus: { maxHpFlat: 6 }, rarity: "uncommon", value: 46 },
   guardian_plate: { id: "guardian_plate", name: "Guardian Plate", category: "armor", slot: "armor", defense: 5, bonus: { maxHpFlat: 12 }, rarity: "uncommon", value: 64 },
-  emberguard_cuirass: { id: "emberguard_cuirass", name: "Emberguard Cuirass", category: "armor", slot: "armor", classBias: "warrior", defense: 5, bonus: { maxHpFlat: 10, lowHpDamagePct: 10 }, rarity: "rare", value: 74, description: "Enchantment: fortified plates grant +10 max HP and +10% damage while critically wounded." },
+  emberguard_cuirass: { id: "emberguard_cuirass", name: "Emberguard Cuirass", category: "armor", slot: "armor", classBias: "warrior", defense: 5, bonus: { maxHpFlat: 10, lowHpDamagePct: 10 }, rarity: "rare", value: 74, description: "Enchantment: fortified plates grant +10 max HP and +10% damage while below 30% HP." },
   vanguard_warplate: { id: "vanguard_warplate", name: "Vanguard Warplate", category: "armor", slot: "armor", classBias: "warrior", defense: 4, bonus: { meleeDamagePct: 8, waitDefense: 2 }, rarity: "rare", value: 76, description: "Enchantment: gain +8% melee damage, and waiting braces you for +2 defense next turn." },
   abyssal_plate: { id: "abyssal_plate", name: "Abyssal Plate", category: "armor", slot: "armor", defense: 6, bonus: { maxHpFlat: 16, defenseFlat: 1 }, rarity: "boss", value: 94 },
   bulwark_armor: { id: "bulwark_armor", name: "Bulwark Armor", category: "armor", slot: "armor", defense: 4, bonus: { maxHpFlat: 8 }, rarity: "boss", value: 80 },
@@ -640,16 +640,16 @@ export const STAT_MILESTONES = {
 };
 
 export const STATUS_DEFINITIONS = {
-  chilled: { id: "chilled", name: "Chilled", icon: "C", description: "Accuracy is reduced while frost clings to the target." },
-  sundered: { id: "sundered", name: "Sundered", icon: "S", description: "Defense is lowered, making incoming hits bite harder." },
-  weakened: { id: "weakened", name: "Weakened", icon: "W", description: "Outgoing damage is reduced until the effect fades." },
-  hexed: { id: "hexed", name: "Hexed", icon: "H", description: "Defense is cursed downward, leaving the target exposed." },
-  poisoned: { id: "poisoned", name: "Poisoned", icon: "P", description: "Lose 1 HP each action until the poison wears off. Waiting helps you recover faster." },
-  arcane_shield: { id: "arcane_shield", name: "Arcane Shield", icon: "A", description: "A temporary magical ward grants bonus defense." },
-  mana_barrier: { id: "mana_barrier", name: "Mana Barrier", icon: "M", description: "A barrier soaks up incoming damage until it breaks or fades." },
-  burning: { id: "burning", name: "Burning", icon: "B", description: "Takes fire damage at the end of each turn." },
-  frozen: { id: "frozen", name: "Frozen", icon: "F", description: "Frozen solid: takes no turns until the ice melts." },
-  rended: { id: "rended", name: "Rended", icon: "R", description: "Ragged wounds: healing from potions and shrines is halved." },
+  chilled: { id: "chilled", name: "Chilled", icon: "C", description: "−6 accuracy." },
+  sundered: { id: "sundered", name: "Sundered", icon: "S", description: "−2 defense." },
+  weakened: { id: "weakened", name: "Weakened", icon: "W", description: "Deals 2 less damage." },
+  hexed: { id: "hexed", name: "Hexed", icon: "H", description: "−2 defense." },
+  poisoned: { id: "poisoned", name: "Poisoned", icon: "P", description: "Loses 1 HP each turn. Waiting makes your poison wear off twice as fast." },
+  arcane_shield: { id: "arcane_shield", name: "Arcane Shield", icon: "A", description: "+2 defense." },
+  mana_barrier: { id: "mana_barrier", name: "Mana Barrier", icon: "M", description: "Absorbs incoming damage until it breaks or fades." },
+  burning: { id: "burning", name: "Burning", icon: "B", description: "Takes 2 fire damage at the end of each turn." },
+  frozen: { id: "frozen", name: "Frozen", icon: "F", description: "Takes no turns until the ice melts." },
+  rended: { id: "rended", name: "Rended", icon: "R", description: "Healing from potions and shrines is halved." },
 };
 
 export const BOONS = {
@@ -658,7 +658,7 @@ export const BOONS = {
     category: "offense",
     name: "Vicious Star",
     description: "A jagged omen burns overhead. Your strikes bite deeper.",
-    summary: "+12% critical strike chance.",
+    summary: "+12% critical chance.",
   },
   ward_of_ash: {
     id: "ward_of_ash",
@@ -671,8 +671,8 @@ export const BOONS = {
     id: "iron_remnant",
     category: "defense",
     name: "Iron Remnant",
-    description: "The sage presses a fragment of old armor into your palm.",
-    summary: "+2 permanent defense.",
+    description: "The Grey Witness presses a fragment of old armor into your palm.",
+    summary: "+2 defense.",
   },
   crimson_hunger: {
     id: "crimson_hunger",
@@ -685,7 +685,7 @@ export const BOONS = {
     id: "fortunes_ledger",
     category: "fortune",
     name: "Fortune's Ledger",
-    description: "Merchants recognize your mark and open their best packs.",
+    description: "Vendors recognize your mark and open their best packs.",
     summary: "Vendors stock 2 extra items.",
   },
   sages_echo: {
@@ -700,14 +700,14 @@ export const BOONS = {
     category: "defense",
     name: "Stoneblood",
     description: "Your heart slows, hardens, and endures.",
-    summary: "+18 maximum HP.",
+    summary: "+18 max HP.",
   },
   deep_wells: {
     id: "deep_wells",
     category: "arcane",
     name: "Deep Wells",
     description: "Arcane reservoirs open in the dark places of your mind.",
-    summary: "+14 maximum mana.",
+    summary: "+14 max mana.",
   },
   relentless_step: {
     id: "relentless_step",

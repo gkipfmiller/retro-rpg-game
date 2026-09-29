@@ -3102,12 +3102,22 @@ button.danger {
 .mobile-menu-btn {
   position: relative;
   font-family: var(--font-pixel);
+  /* Tight enough for full-word labels (Items, Skills, Options) between the D-pad and action buttons. */
+  padding-inline: 0.35rem;
+  letter-spacing: 0;
+  white-space: nowrap;
 }
 
 .mobile-menu-strip {
   display: grid;
-  grid-template-columns: repeat(3, auto);
+  /* Two columns leave room for full-word labels even on a 360px-wide phone. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-content: end;
+}
+
+/* The fifth button (Options) takes the whole last row. */
+.mobile-menu-btn[data-action="settings"] {
+  grid-column: 1 / -1;
 }
 
 .mobile-badge {
@@ -3439,6 +3449,7 @@ button.danger {
 .legend-enemy { background: #e05555; }
 .legend-boss { background: #f0d37a; }
 .legend-chest { background: #d7a54d; }
+.legend-remains { background: #cfe3ff; }
 .legend-vendor { background: #d8b4fe; }
 .legend-shrine { background: #79e1c9; }
 

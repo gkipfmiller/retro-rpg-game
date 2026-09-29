@@ -1036,7 +1036,7 @@ Implemented screens:
 - Character
 - Skill Tree
 - Vendor
-- Quick Slot Loadout
+- Quick Slots (the loadout screen)
 - Death Screen
 - Victory Screen
 - Floor Transition Banner
@@ -1051,8 +1051,8 @@ Current HUD and input layout:
 - pickups, chest loot, vault keys, and gold show short notices over the top-left of the map (item icon and rarity colour; consecutive gold merges into one "+N gold"); found items are marked new with a dot in the inventory until it's closed, and the HUD shows "N new items in your pack (I)" (a badge on the touch Inv button)
 - taking the stairs shows a self-dismissing floor summary (kills, items, gold found, % explored, turns) that never blocks play; if you've seen an unopened chest you can open, or walked past an unvisited vendor, the first Enter on the stairs shows a one-line reminder and the second descends (once per floor, and nothing hidden is revealed)
 - the main menu shows a Continue card for a saved run (animated hero, name, class, level, boon, floor and band, HP bar, kills, gold, and how long ago it was saved); New Run steps back to a secondary button and asks before abandoning the saved run
-- touch layout: a full-width row of six quick slots above the d-pad, Inv / Char / Skills / Map / Opt buttons (badges for new items and unspent skill points; Map toggles the minimap, Opt opens settings), the player's status effects in the mobile HUD, pixel type, and a compact notice stack showing the newest three
-- the Quick Slot Loadout lists all six slots with icons and a Clear button each; every assignable spell or consumable has a row of numbered buttons (its current slot highlighted), and hovering or focusing an entry then pressing 1-6 assigns it
+- touch layout: a full-width row of six quick slots above the d-pad, Items / Hero / Skills / Map / Options buttons in two columns, Options spanning the last row (badges for new items and unspent skill points; Map toggles the minimap, Options opens settings), Fire / Use / Close action buttons, the player's status effects in the mobile HUD, pixel type, and a compact notice stack showing the newest three
+- the Quick Slots screen lists all six slots with icons and a Clear button each; every assignable spell or consumable has a row of numbered buttons (its current slot highlighted), and hovering or focusing an entry then pressing 1-6 assigns it
 - the HUD shows a highlighted "skill points to spend (K)" prompt whenever skill points are unspent; clicking it opens the skill tree
 - the skill tree shows all three branches side by side, with unlocked, available, and locked skills visually distinct
 - a Settings panel (main menu button, or O in game) holds mute, master volume, and the minimap toggle, remembered per browser
@@ -1063,6 +1063,8 @@ Current HUD and input layout:
 - the combat log keeps the last 300 lines and scrolls back freely (it only sticks to the bottom while you're at the bottom); lines are coloured by kind (damage dealt, damage taken, misses, kills, healing, statuses, loot, progression), repeated lines merge into "×N", lines from before your latest action are dimmed, and All / Combat / Loot chips filter it (remembered per browser)
 - inventory: an equipped strip (click or arrow to an equipped item to see it and Unequip), All / Gear / Consumables / Other filters, Recent / Rarity / Type sorting, a denser 4-column grid, double-click to use or equip, ▲ / ▼ / ◆ marks for upgrade, downgrade, or trade-off against the equipped item, and dimmed tiles for another class's gear
 - vendor: the same gear marks on stock and sell rows, unaffordable prices in red, price shown beside your gold, a "Sell junk" button (gear worse than equipped, spare copies of equipped gear, or another class's gear; consumables, tomes and keys never count) that previews the list and total before selling, a confirm step before selling rare or boss items, and vault keys are no longer sellable
+- terminology is kept consistent in all player-facing text: "the Grey Witness" for the NPC (the room is "The Sage's Chamber"), "boon", "vendor", "quick slots", "critical chance", "max HP" / "max mana", and "defense" (never "guard"); skill, spell and status descriptions state their numbers and real triggers (e.g. "your first spell against each enemy", not "in combat")
+- known gap: Weakened and Sundered only have an effect on enemies. When an enemy applies them to the player (cultists, Super Skeletor, a mace smash) they show on the HUD but change nothing
 - item stats name what they affect: a weapon's damage reads "Melee DMG" (or "Ranged DMG" for bows) since it only applies when attacking with the weapon, magic power reads "Spell Power", and percentage bonuses read "Melee/Ranged/Spell DMG +x%"; the compare-with-equipped rows use the same names
 - the sidebar shows the power the class's main attack uses (Warrior "Melee Power", Ranger "Ranged Power", Sorceress "Spell Power"); its tooltip lists all three and where each comes from
 - the character sheet shows derived numbers with hover breakdowns: weapon damage range, accuracy, crit chance, spell damage, spell power, "Always hits", and spell critical chance from gear (when you have a damage spell), max HP and mana, defense, evasion, what each attribute currently gives, your boon, unlocked skills, and enchanted gear effects

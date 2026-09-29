@@ -184,7 +184,7 @@ export class Game {
       30: "The Abyssal Throne",
     };
     const daily = this.state.run?.daily ? "Daily Descent · " : "";
-    if (floorNumber === 0) return { kicker: `${daily}Prelude`, title: "The Sage Waits", subtitle: "Choose a gift before the descent", boss: false };
+    if (floorNumber === 0) return { kicker: `${daily}Prelude`, title: "The Grey Witness Waits", subtitle: "Choose a boon before the descent", boss: false };
     if (bossFloors[floorNumber]) return { kicker: `${daily}Floor ${floorNumber}`, title: bossFloors[floorNumber], subtitle: band, boss: true };
     return { kicker: `${daily}${floorNumber} of 30`, title: `Floor ${floorNumber}`, subtitle: band, boss: false };
   }
@@ -326,7 +326,7 @@ export class Game {
     const vault = this.state.run?.vaultPlan?.find((entry) => entry.keyItemId === itemId);
     if (!vault || vault.keyCollected) return;
     vault.keyCollected = true;
-    this.log(`You uncover the ${ITEMS[itemId].name}.`);
+    this.log(`Found the ${ITEMS[itemId].name}.`);
     this.notify({ kind: "item", itemId, verb: "Found" });
     this.showNpcDialog(null, `${ITEMS[itemId].name} found. Somewhere below, ${vault.label.toLowerCase()} can now be opened.`, 2600);
   }
@@ -593,7 +593,7 @@ export class Game {
 
   // Adds an item to the pack. Found items are marked new (a dot in the inventory until it's closed)
   // and announced, unless quiet is set (starting kit, unequipped gear).
-  addToInventory(itemId, { quiet = false, verb = "Picked up" } = {}) {
+  addToInventory(itemId, { quiet = false, verb = "Found" } = {}) {
     const player = this.state.run.player;
     player.inventory.push({ id: `inv-${Date.now()}-${itemId}-${Math.random().toString(36).slice(2, 7)}`, itemId, isNew: !quiet });
     if (quiet) return;
@@ -1214,7 +1214,7 @@ export class Game {
     this.updateVisibility();
     this.resetLogs(
       `${this.sageName} waits before the first descent.`,
-      "Approach the sage and press Enter to choose a boon.",
+      "Stand beside the Grey Witness and press Enter to choose a boon.",
     );
     this.state.ui.overlay = null;
     this.state.mode = "in_game";
@@ -1417,12 +1417,12 @@ export class Game {
     }
 
     if (tile.vendor && currentFloor.vendor) {
-      sections.push(`${currentFloor.vendor.name ?? "Vendor"}\nMerchant. Stand here and press Enter to trade.`);
+      sections.push(`${currentFloor.vendor.name ?? "Vendor"}\nVendor. Stand here and press Enter to trade.`);
     }
 
     const sage = currentFloor.sage;
     if (sage && !sage.vanished && sage.x === x && sage.y === y) {
-      sections.push(`${this.sageName}\nStand beside the sage and press Enter.`);
+      sections.push(`${this.sageName}\nStand beside him and press Enter to choose a boon.`);
     }
 
     const remains = this.getRemainsAt(x, y);
@@ -1440,8 +1440,6 @@ export class Game {
     const propNames = {
       pillar: "Stone pillar",
       pillar_slime: "Slime-streaked pillar",
-      crate_small: "Crate",
-      crate_large: "Heavy crate",
       cauldron: "Sludge cauldron",
       rocks: "Mossy rubble",
     };
@@ -1753,7 +1751,7 @@ export class Game {
         continue;
       }
       this.addToInventory(itemId);
-      this.log(`Picked up ${ITEMS[itemId].name}.`);
+      this.log(`Found ${ITEMS[itemId].name}.`);
     }
     tile.itemIds = [];
   }
@@ -1808,7 +1806,7 @@ export class Game {
     if (item.damage) parts.push(`${item.range ? "Ranged" : "Melee"} DMG ${item.damage[0]}-${item.damage[1]}`);
     if (item.range) parts.push(`RNG ${item.range}`);
     if (typeof item.defense === "number") parts.push(`DEF ${item.defense}`);
-    if (item.magicPower) parts.push(`Spell Power +${item.magicPower}`);
+    if (item.magicPower) parts.push(`Spell power +${item.magicPower}`);
     if (item.accuracy) parts.push(`ACC ${item.accuracy > 0 ? `+${item.accuracy}` : item.accuracy}`);
     if (item.evasion) parts.push(`EVA ${item.evasion > 0 ? `+${item.evasion}` : item.evasion}`);
     if (item.bonus) {
@@ -1817,7 +1815,7 @@ export class Game {
         if (key === "maxManaFlat") parts.push(`Mana +${value}`);
         if (key === "defenseFlat") parts.push(`DEF +${value}`);
         if (key === "accuracyFlat") parts.push(`ACC +${value}`);
-        if (key === "magicPowerFlat") parts.push(`Spell Power +${value}`);
+        if (key === "magicPowerFlat") parts.push(`Spell power +${value}`);
         if (key === "strengthFlat") parts.push(`STR +${value}`);
         if (key === "dexterityFlat") parts.push(`DEX +${value}`);
         if (key === "vitalityFlat") parts.push(`VIT +${value}`);
@@ -1825,7 +1823,7 @@ export class Game {
         if (key === "controlDuration") parts.push(`Control +${value}`);
         if (key === "meleeDamagePct") parts.push(`Melee DMG +${value}%`);
         if (key === "spellDamagePct") parts.push(`Spell DMG +${value}%`);
-        if (key === "spellCritPct") parts.push(`Spell crit +${value}%`);
+        if (key === "spellCritPct") parts.push(`Spell critical +${value}%`);
         if (key === "rangedDamagePct") parts.push(`Ranged DMG +${value}%`);
         if (key === "evasionFlat") parts.push(`EVA +${value}`);
       }
@@ -1893,7 +1891,7 @@ export class Game {
       pushRow(item.range || (!item.damage && equipped.range) ? "Avg ranged DMG" : "Avg melee DMG", candidate, current);
     }
     pushRow("Defense", item.defense ?? 0, equipped.defense ?? 0);
-    pushRow("Spell Power", item.magicPower ?? 0, equipped.magicPower ?? 0);
+    pushRow("Spell power", item.magicPower ?? 0, equipped.magicPower ?? 0);
     pushRow("Accuracy", item.accuracy ?? 0, equipped.accuracy ?? 0);
     pushRow("Evasion", item.evasion ?? 0, equipped.evasion ?? 0);
     pushRow("HP", item.bonus?.maxHpFlat ?? 0, equipped.bonus?.maxHpFlat ?? 0);
@@ -1906,7 +1904,7 @@ export class Game {
     pushRow("INT", item.bonus?.intelligenceFlat ?? 0, equipped.bonus?.intelligenceFlat ?? 0);
     pushRow("Melee DMG %", item.bonus?.meleeDamagePct ?? 0, equipped.bonus?.meleeDamagePct ?? 0);
     pushRow("Spell DMG %", item.bonus?.spellDamagePct ?? 0, equipped.bonus?.spellDamagePct ?? 0);
-    pushRow("Spell Crit %", item.bonus?.spellCritPct ?? 0, equipped.bonus?.spellCritPct ?? 0);
+    pushRow("Spell critical %", item.bonus?.spellCritPct ?? 0, equipped.bonus?.spellCritPct ?? 0);
     pushRow("Range", item.range ?? 0, equipped.range ?? 0);
     pushRow("Ranged DMG %", item.bonus?.rangedDamagePct ?? 0, equipped.bonus?.rangedDamagePct ?? 0);
     pushRow("EVA+", item.bonus?.evasionFlat ?? 0, equipped.bonus?.evasionFlat ?? 0);
@@ -1964,14 +1962,14 @@ export class Game {
     const item = ITEMS[itemId];
     if (!item?.slot) return "";
     const equippedId = this.state.run.player.equipment[item.slot];
-    if (!equippedId) return "Open slot.";
+    if (!equippedId) return "Nothing equipped in this slot.";
     const rows = this.getComparisonRows(itemId);
     return rows.length
       ? rows
         .slice(0, 3)
         .map((row) => `${row.label} ${row.delta > 0 ? `+${row.delta}` : row.delta}`)
         .join(" | ")
-      : "Sidegrade.";
+      : "Same stats as what you have equipped.";
   }
 
   escapeTooltip(text) {
@@ -2300,12 +2298,12 @@ export class Game {
     const player = this.state.run.player;
     const weapon = ITEMS[player.equipment.weapon];
     if (!weapon?.range) {
-      this.log("You need a ranged weapon to fire.");
+      this.log("You need a ranged weapon.");
       return;
     }
     const target = this.findNearestVisibleEnemy(weapon.range);
     if (!target) {
-      this.log("No target in range.");
+      this.log("No enemy in range.");
       return;
     }
     player.lastAction = "attack";
@@ -2506,7 +2504,7 @@ export class Game {
     if (mode.type !== "spell" && enchantment?.type === "sunderChance" && rng.chance(enchantment.chance)) {
       this.upsertStatus(enemy, { id: "sundered", turns: enchantment.turns, value: enchantment.value });
       this.renderer?.queueEffect({ kind: "crack", x: enemy.x, y: enemy.y, targetId: enemy.id, angle: Math.atan2(enemy.y - player.y, enemy.x - player.x), delay: meleeDelay, duration: 320 });
-      this.log(`${weapon.name} tears through ${enemy.name}'s guard.`);
+      this.log(`${weapon.name} sunders ${enemy.name}'s defense.`);
     }
     if (mode.type === "spell" && !SPELLS[mode.spellId]?.cantrip && enchantment?.type === "manaRefundChance" && rng.chance(enchantment.chance)) {
       player.mana = Math.min(derived.maxMana, player.mana + enchantment.value);
@@ -2619,7 +2617,7 @@ export class Game {
     const rng = createRng(hashSeed(this.state.run.runSeed, this.state.run.turn, enemy.id, "drop"));
     const drop = getDropForEnemy(enemy, rng, this.state.run.player.classId);
     this.addGold(drop.gold);
-    if (drop.gold) this.log(`You gather ${drop.gold} gold.`);
+    if (drop.gold) this.log(`You collect ${drop.gold} gold.`);
     for (const itemId of drop.items) {
       floor.map[enemy.y][enemy.x].itemIds.push(itemId);
       this.log(`${ITEMS[itemId].name} drops to the floor.`);
@@ -2847,7 +2845,7 @@ export class Game {
       const range = (spell.range ?? 5) + (derived.aimedShotRange ?? 0);
       const target = this.findNearestVisibleEnemy(range);
       if (!target) {
-        this.log("No target in range.");
+        this.log("No enemy in range.");
         return;
       }
       if (!weapon?.range) {
@@ -2901,7 +2899,7 @@ export class Game {
 
     const target = this.findNearestVisibleEnemy(spell.range);
     if (!target) {
-      this.log("No visible target in range.");
+      this.log("No enemy in range.");
       return;
     }
 
@@ -3091,7 +3089,6 @@ export class Game {
     const player = this.state.run.player;
     const index = player.inventory.findIndex((entry) => entry.itemId === itemId);
     if (index === -1) {
-      this.log("Item not in inventory.");
       return;
     }
 
@@ -3139,11 +3136,11 @@ export class Game {
       player.lastAction = "item";
       if (!player.learnedSpells.includes(item.spellId)) {
         player.learnedSpells.push(item.spellId);
-        this.log(`Learned ${SPELLS[item.spellId].name}.`);
+        this.log(`You learn ${SPELLS[item.spellId].name}.`);
         const firstEmptySlot = player.quickSlots.findIndex((entry) => entry === null);
         if (firstEmptySlot !== -1) {
           player.quickSlots[firstEmptySlot] = item.spellId;
-          this.log(`${SPELLS[item.spellId].name} was placed into quick slot ${firstEmptySlot + 1}.`);
+          this.log(`${SPELLS[item.spellId].name} is on quick slot ${firstEmptySlot + 1}.`);
         }
       }
       player.inventory.splice(index, 1);
@@ -3715,6 +3712,7 @@ export class Game {
       ["loot", "Item"],
       ["vendor", "Vendor"],
       ["shrine", "Shrine"],
+      ["remains", "Remains"],
     ];
     const summary = this.getFloorSummary();
     this.state.ui.overlay = {
@@ -3780,14 +3778,14 @@ export class Game {
         </div>
       </div>
     `;
-    this.state.ui.overlay = { type: "loadout", title: "Quick Slot Loadout", html };
+    this.state.ui.overlay = { type: "loadout", title: "Quick Slots", html };
   }
 
   assignQuickSlot(slotIndex, entryId) {
     const player = this.state.run.player;
     if (!(entryId in SPELLS) && !(entryId in ITEMS)) return;
     player.quickSlots[slotIndex] = entryId;
-    this.log(`Assigned ${SPELLS[entryId]?.name ?? ITEMS[entryId]?.name} to slot ${slotIndex + 1}.`);
+    this.log(`${SPELLS[entryId]?.name ?? ITEMS[entryId]?.name} is on quick slot ${slotIndex + 1}.`);
     this.openLoadout();
   }
 
@@ -3860,7 +3858,7 @@ export class Game {
       this.log(`Unlocked ${branch.skills[index].name}.`);
       for (const spellId of this.syncSkillSpells(player)) {
         const slot = player.quickSlots.indexOf(spellId);
-        this.log(`You learn ${SPELLS[spellId].name}.${slot >= 0 ? ` It's on hotbar slot ${slot + 1}.` : " Add it to your hotbar from the loadout."}`);
+        this.log(`You learn ${SPELLS[spellId].name}.${slot >= 0 ? ` It's on quick slot ${slot + 1}.` : " Add it to a quick slot from the Character screen (C)."}`);
       }
       this.openSkills();
       return;
@@ -4218,7 +4216,7 @@ export class Game {
           player.hp = Math.max(0, player.hp - 1);
           this.recordDamage("taken", 1);
           this.renderer?.queueDamagePopup({ x: player.x, y: player.y, damage: 1, type: "player" });
-          this.log("Poisoned deals 1 damage.");
+          this.log("You take 1 poison damage.");
           const turnLoss = player.lastAction === "wait" ? 2 : 1;
           return { ...status, turns: status.turns - turnLoss };
         }
@@ -4981,7 +4979,7 @@ export class Game {
     }
     if ((mode === "slam" || mode === "groundSlam") && enemy.templateId === "patches" && rng.chance(0.45)) {
       this.upsertStatus(player, { id: "sundered", turns: 2, value: 1 });
-      this.log("The smash leaves your guard sundered.");
+      this.log("The smash sunders your defense.");
     }
     if (mode === "spell" && enemy.templateId === "shaman" && rng.chance(0.5)) {
       this.upsertStatus(player, { id: "hexed", turns: 2, value: 1, source: "enemySpell" });
@@ -4993,7 +4991,7 @@ export class Game {
     }
     if (mode === "spell" && enemy.templateId === "infernal_imp" && rng.chance(0.4)) {
       this.upsertStatus(player, { id: "chilled", turns: 2, value: 1, source: "enemySpell" });
-      this.log("Scorching cinders blind and chill you.");
+      this.log("Scorching cinders sting your eyes. Your aim falters (Chilled).");
     }
     if (mode === "spell" && enemy.templateId === "bone_captain" && rng.chance(0.45)) {
       this.upsertStatus(player, { id: "weakened", turns: 2, value: 1, source: "enemySpell" });

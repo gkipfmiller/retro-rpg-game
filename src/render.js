@@ -651,7 +651,7 @@ function renderStatusBadges(statuses = []) {
   if (!statuses.length) return `<span class="status-badge muted-badge">None</span>`;
   return statuses.map((status) => {
     const def = STATUS_DEFINITIONS[status.id];
-    const tooltip = [def?.name ?? status.id, def?.description ?? "No description available.", status.turns ? `Turns remaining: ${status.turns}` : ""]
+    const tooltip = [def?.name ?? status.id, def?.description ?? "", status.turns ? `Turns remaining: ${status.turns}` : ""]
       .filter(Boolean)
       .join("&#10;");
     const iconUrl = getStatusIconUrl(status.id);
@@ -667,29 +667,6 @@ function renderOptionalStatusBadges(statuses = []) {
   return `<div class="status-badge-row">${renderStatusBadges(statuses)}</div>`;
 }
 
-function formatEntryTooltip(entryId) {
-  if (SPELLS[entryId]) {
-    const spell = SPELLS[entryId];
-    const parts = [spell.name, spell.description];
-    if (typeof spell.cost === "number") parts.push(`Cost: ${spell.cost} mana`);
-    if (typeof spell.range === "number") parts.push(`Range: ${spell.range === 0 ? "Self" : spell.range}`);
-    if (spell.damage) parts.push(`Damage: ${spell.damage[0]}-${spell.damage[1]}`);
-    return parts.join("\n");
-  }
-
-  if (ITEMS[entryId]) {
-    const item = ITEMS[entryId];
-    const parts = [item.name];
-    if (item.effect?.type === "heal") parts.push(`Restores ${item.effect.value} HP`);
-    else if (item.effect?.type === "mana") parts.push(`Restores ${item.effect.value} mana`);
-    else if (item.effect?.type === "escape") parts.push("Teleports you to the floor's start room");
-    else if (item.category === "tome" && item.spellId) parts.push(`Teaches ${SPELLS[item.spellId]?.name ?? item.spellId}`);
-    else if (item.description) parts.push(item.description);
-    return parts.join("\n");
-  }
-
-  return "";
-}
 
 function escapeTooltip(text) {
   return String(text ?? "")
@@ -1689,6 +1666,12 @@ export class Renderer {
     ctx.restore();
   }
 
+  // Tooltip text for a spell or item: the same text the game shows everywhere else.
+  entryTooltip(entryId) {
+    if (SPELLS[entryId]) return this.game.getSpellTooltip(entryId);
+    return ITEMS[entryId] ? this.game.getItemTooltip(entryId) : "";
+  }
+
   // Pixel-art floor details on the 16px source grid (scaled to the tile). Fogged tiles draw dimmed.
   drawFloorDetail(detail, px, py, tileSize, visible) {
     const { ctx } = this;
@@ -2441,37 +2424,37 @@ export class Renderer {
 
     weaponLine.dataset.tooltip = (
       equippedWeapon
-        ? `${equippedWeapon.name}\nMain weapon. Improves melee or spell output depending on the item.\n${formatEntryTooltip(equippedWeapon.id)}`
+        ? `${this.entryTooltip(equippedWeapon.id)}\n\nWeapon slot. Its damage is used when you attack with it; spell power boosts your spells.`
         : "Weapon slot\nNo weapon equipped."
     );
     armorLine.dataset.tooltip = (
       equippedArmor
-        ? `${equippedArmor.name}\nArmor reduces incoming damage and may grant bonus stats.\n${formatEntryTooltip(equippedArmor.id)}`
+        ? `${this.entryTooltip(equippedArmor.id)}\n\nArmor slot. Its defense is subtracted from every hit you take.`
         : "Armor slot\nNo armor equipped."
     );
     handsLine.dataset.tooltip = (
       equippedHands
-        ? `${equippedHands.name}\nHands slot for gloves, wraps, and gauntlets with tactical status effects or wards.\n${formatEntryTooltip(equippedHands.id)}`
+        ? `${this.entryTooltip(equippedHands.id)}\n\nHands slot: gloves, wraps, and gauntlets with status effects or wards.`
         : "Hands slot\nNo hands item equipped."
     );
     accessoryLine.dataset.tooltip = (
       equippedAccessory
-        ? `${equippedAccessory.name}\nAccessory slot for passive stat bonuses.\n${formatEntryTooltip(equippedAccessory.id)}`
+        ? `${this.entryTooltip(equippedAccessory.id)}\n\nAccessory slot: rings, charms, and amulets with passive bonuses.`
         : "Accessory slot\nNo accessory equipped."
     );
     boonLine.dataset.tooltip = boon
       ? `${boon.name}\n${boon.description}\n${boon.summary}`
       : "Boon\nNo boon chosen yet.";
-    strengthLine.dataset.tooltip = "Strength\nImproves melee damage.";
-    dexterityLine.dataset.tooltip = "Dexterity\nImproves accuracy and helps with evasion.";
-    vitalityLine.dataset.tooltip = "Vitality\nRaises maximum HP.";
-    intelligenceLine.dataset.tooltip = "Intelligence\nImproves spell damage and maximum mana.";
-    defenseLine.dataset.tooltip = "Defense\nReduces incoming damage from enemy attacks.";
+    strengthLine.dataset.tooltip = "Strength\n+1 melee power per 2 Strength.";
+    dexterityLine.dataset.tooltip = "Dexterity\n+1 accuracy per point, and +1 evasion and +1 ranged power per 2 Dexterity.";
+    vitalityLine.dataset.tooltip = "Vitality\n+3 max HP per point.";
+    intelligenceLine.dataset.tooltip = "Intelligence\n+2 max mana per point, and +1 spell power per 2 Intelligence.";
+    defenseLine.dataset.tooltip = "Defense\nSubtracted from every hit you take (minimum 1 damage).";
     const powerLine = document.getElementById("hud-power");
     // Each class sees the power its main attack uses; the tooltip lists all three.
     const mainPower = player.classId === "wizard"
-      ? `Spell Power: +${derived.spellBonus}`
-      : player.classId === "ranger" ? `Ranged Power: +${derived.rangedBonus}` : `Melee Power: +${derived.meleeBonus}`;
+      ? `Spell power: +${derived.spellBonus}`
+      : player.classId === "ranger" ? `Ranged power: +${derived.rangedBonus}` : `Melee power: +${derived.meleeBonus}`;
     powerLine.textContent = mainPower;
     // Rewritten only on change so a hovered badge keeps its tooltip.
     const statusMarkup = player.statuses.length ? renderStatusBadges(player.statuses) : "";
@@ -2547,7 +2530,7 @@ export class Renderer {
     button.disabled = !slot.entryId;
     button.classList.toggle("unusable", Boolean(slot.entryId) && !slot.usable);
     if (slot.entryId) {
-      button.dataset.tooltip = `${formatEntryTooltip(slot.entryId)}${slot.reason ? `\n${slot.reason}` : ""}`;
+      button.dataset.tooltip = `${this.entryTooltip(slot.entryId)}${slot.reason ? `\n${slot.reason}` : ""}`;
     } else {
       button.removeAttribute("data-tooltip");
     }

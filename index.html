@@ -58,17 +58,17 @@
             <p><strong>Move:</strong> Arrow keys or WASD</p>
             <p><strong>Wait:</strong> Space</p>
             <p><strong>Fire Ranged Weapon:</strong> F (targets nearest visible enemy)</p>
-            <p><strong>Interact:</strong> Enter (stairs, vendors, shrines, remains)</p>
-            <p><strong>Daily Descent:</strong> one shared dungeon a day, one attempt, its own leaderboard</p>
+            <p><strong>Interact:</strong> Enter (stairs, chests, vendors, shrines, remains, the Grey Witness)</p>
+            <p><strong>Daily Descent:</strong> One shared dungeon a day, one attempt, its own leaderboard</p>
             <p><strong>Inventory:</strong> I</p>
             <p><strong>Character:</strong> C</p>
             <p><strong>Skills:</strong> K</p>
             <p><strong>Minimap:</strong> M (toggle)</p>
             <p><strong>Full Map:</strong> Tab</p>
-            <p><strong>Inspect:</strong> hover the map for enemy odds and what's on a tile</p>
+            <p><strong>Inspect:</strong> Hover the map for enemy odds and what's on a tile</p>
             <p><strong>Quick Slots:</strong> 1-6 (manage from Character screen)</p>
             <p><strong>Settings:</strong> O</p>
-            <p><strong>Close Overlay:</strong> Escape</p>
+            <p><strong>Close Menu:</strong> Escape</p>
           </div>
         </div>
       </section>
@@ -94,8 +94,8 @@
             </button>
             <button class="class-card" data-class-id="wizard">
               <span class="class-portrait">
-                <img id="class-sprite-wizard" class="class-sprite hidden" alt="Wizard sprite" />
-                <span class="class-icon class-icon-fallback">Z</span>
+                <img id="class-sprite-wizard" class="class-sprite hidden" alt="Sorceress sprite" />
+                <span class="class-icon class-icon-fallback">S</span>
               </span>
               <span class="class-role">Sorceress</span>
               <strong class="class-name">Selara Ashveil</strong>
@@ -112,7 +112,7 @@
               <strong class="class-name">Sydor Alamasy</strong>
               <span class="class-flavor">A keen-eyed wanderer who picks apart foes from afar, blending bowcraft with subtle nature magic and a survivalist's instinct.</span>
               <span class="class-stats" data-class-stats="ranger"></span>
-              <span class="class-traits"><span class="trait trait-good"><span class="trait-label">Strong</span> Ranged attacks, high accuracy, good evasion.</span><span class="trait trait-bad"><span class="trait-label">Weak</span> Moderate HP, weaker in melee, split stat scaling.</span></span>
+              <span class="class-traits"><span class="trait trait-good"><span class="trait-label">Strong</span> Ranged attacks, high accuracy, good evasion.</span><span class="trait trait-bad"><span class="trait-label">Weak</span> Moderate HP, weaker in melee, needs both Dexterity and Intelligence.</span></span>
             </button>
           </div>
           <button id="class-back-button">Back</button>
@@ -132,7 +132,7 @@
         <aside class="sidebar left">
           <div class="panel hud-block hud-character-panel">
             <div class="hud-row">
-              <span id="hud-class">Class</span>
+              <span id="hud-class"></span>
               <span id="hud-floor">Floor 1</span>
             </div>
             <div class="hud-row">
@@ -232,7 +232,7 @@
           <div class="panel hud-block">
             <h3>Target</h3>
             <div id="target-panel">
-              <p>No target</p>
+              <p>No enemies in sight.</p>
             </div>
           </div>
 
@@ -314,16 +314,16 @@
             <button class="dpad-btn dpad-down" data-dir="down" aria-label="Move down"></button>
           </div>
           <div class="mobile-menu-strip">
-            <button class="mobile-menu-btn" data-action="inventory">Inv<span id="mobile-inv-badge" class="mobile-badge hidden"></span></button>
-            <button class="mobile-menu-btn" data-action="character">Char</button>
+            <button class="mobile-menu-btn" data-action="inventory">Items<span id="mobile-inv-badge" class="mobile-badge hidden"></span></button>
+            <button class="mobile-menu-btn" data-action="character">Hero</button>
             <button class="mobile-menu-btn" data-action="skills">Skills<span id="mobile-skill-badge" class="mobile-badge hidden"></span></button>
             <button class="mobile-menu-btn" data-action="map">Map</button>
-            <button class="mobile-menu-btn" data-action="settings">Opt</button>
+            <button class="mobile-menu-btn" data-action="settings">Options</button>
           </div>
           <div class="mobile-actions">
             <button class="action-btn action-fire" data-action="fire" aria-label="Fire ranged weapon">Fire</button>
-            <button class="action-btn action-interact" data-action="interact" aria-label="Interact">Act</button>
-            <button class="action-btn action-close" data-action="close" aria-label="Close overlay">Esc</button>
+            <button class="action-btn action-interact" data-action="interact" aria-label="Interact">Use</button>
+            <button class="action-btn action-close" data-action="close" aria-label="Close menu">Close</button>
           </div>
         </div>
       </section>
