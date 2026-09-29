@@ -15,6 +15,7 @@ import { clamp } from "./utils.js";
 import { LOG_FILTERS, logText, mergeLogEntries } from "./log.js";
 import { getSpellIconUrl, getSpireCanvas, getStatusIconCanvas, getStatusIconUrl } from "./pixelIcons.js";
 import { SpellFx } from "./spellFx.js";
+import { drawFungalFloorDetail, drawFungalGlow, drawFungalWallFeature, FUNGAL_GLOWS, getFungalWallFeature, pickFungalGlow } from "./fungalArt.js";
 import { ARENA_FIRE, drawArenaProp, drawBrazier, drawGateBars, drawHook, drawRemains, drawSeam, drawThrone, drawVoidTile } from "./arenaArt.js";
 
 const COLORS = {
@@ -53,7 +54,7 @@ const LIGHT_TINTS = {
   sage: "10, 8, 20",
   crypt: "6, 8, 14",
   ember_halls: "20, 6, 2",
-  fungal_depths: "3, 14, 6",
+  fungal_depths: "10, 6, 22",
   sunken_vault: "2, 14, 9",
   necropolis: "16, 3, 14",
   stitchworks: "16, 10, 3",
@@ -66,6 +67,8 @@ const LIGHT_OUTER_DARKNESS = 0.38;
 // Endgame floor details, drawn as pixel art on a share of floor tiles (hash-picked, so each floor's
 // layout is stable). Chance is out of 1000 per tile.
 const FLOOR_DETAILS = {
+  // Moss, pale mycelium threads, and small glowing mushroom clusters (see fungalArt.js).
+  fungal_depths: [{ kind: "moss", chance: 110 }, { kind: "mycelium", chance: 45 }, { kind: "shrooms", chance: 42 }],
   void_deep: [{ kind: "stars", chance: 120 }, { kind: "rift", chance: 25 }],
   obsidian_reach: [{ kind: "crack", chance: 90 }, { kind: "vent", chance: 25 }],
   abyssal_throne: [{ kind: "gilt", chance: 70 }],
@@ -98,6 +101,8 @@ const SEWER_FLOOR_DECOR = [
 // Drifting motes over visible floor, per band. Speeds are in tiles per second. A band can list several
 // layers (the sewer has falling drips and a slow mist).
 const MOTE_STYLES = {
+  // Glowing spores rising slowly from the mushrooms.
+  fungal_depths: { count: 28, colors: ["#a4f7e8", "#eaa6ff", "#e6fffa"], vx: [-0.1, 0.1], vy: [-0.16, -0.03], life: [3500, 7500], twinkle: true },
   sunken_vault: [
     { count: 16, colors: ["#9fd6c8", "#cdeee4"], vx: [0, 0], vy: [2.4, 3.4], life: [450, 850], twinkle: false, height: 2 },
     { count: 14, colors: ["#7fbf9a", "#9fd0b0"], vx: [-0.12, 0.12], vy: [-0.04, 0.04], life: [5000, 9000], twinkle: false, size: 3, alpha: 0.16 },
@@ -177,15 +182,20 @@ const FLOOR_THEMES = {
     wallOverlayVisible: "rgba(154, 90, 58, 0.12)",
     wallOverlayFog: "rgba(98, 56, 38, 0.12)",
   },
+  // Damp, mossy stone in violet-blue shade, so the glowing fungi carry the colour.
   fungal_depths: {
-    floorVisible: "#141d17",
-    floorFog: "#101812",
-    wallVisible: "#223026",
-    wallFog: "#17211a",
-    floorOverlayVisible: "rgba(86, 154, 90, 0.14)",
-    floorOverlayFog: "rgba(58, 108, 62, 0.14)",
-    wallOverlayVisible: "rgba(94, 142, 102, 0.12)",
-    wallOverlayFog: "rgba(60, 96, 68, 0.12)",
+    floorVisible: "#12161a",
+    floorFog: "#0e1115",
+    wallVisible: "#1f2430",
+    wallFog: "#161a23",
+    floorOverlayVisible: "rgba(12, 14, 26, 0.2)",
+    floorOverlayFog: "rgba(30, 32, 60, 0.18)",
+    wallOverlayVisible: "rgba(40, 36, 80, 0.14)",
+    wallOverlayFog: "rgba(40, 40, 80, 0.14)",
+    // The shared crypt sprites are warm brown; these re-hue them (keeping their shading) to damp
+    // violet-grey stone, so the glowing fungi and moss carry the colour.
+    floorHue: { color: "rgb(104, 100, 128)", alpha: 0.55 },
+    wallHue: { color: "rgb(100, 88, 138)", alpha: 0.42 },
   },
   sunken_vault: {
     floorVisible: "#141a1f",
@@ -558,7 +568,7 @@ function getSewerFloorDecor(x, y, seed) {
 // or shrines stay clear so the detail never competes with something you can interact with.
 function getFloorDetail(theme, tile, x, y, seed) {
   const styles = FLOOR_DETAILS[theme];
-  if (!styles || tile.stairs || tile.chestId || tile.vendor || tile.shrineId || tile.remainsId || tile.itemIds?.length) return null;
+  if (!styles || tile.stairs || tile.chestId || tile.vendor || tile.shrineId || tile.remainsId || tile.hole || tile.itemIds?.length) return null;
   const roll = hashPoint(x, y, seed ^ 0x5bd1) % 1000;
   let threshold = 0;
   for (const style of styles) {
@@ -590,7 +600,7 @@ function getWallPropPath(manifest, theme, map, x, y) {
     case "ember_halls":
       return null;
     case "fungal_depths":
-      if (roll < 8) return manifest.props.wallGoo;
+      // Shelf fungi and roots are drawn instead (see fungalArt.js).
       return null;
     case "sunken_vault":
       return null;
@@ -620,10 +630,7 @@ function getFloorPropPath(manifest, theme, map, x, y, options = {}) {
   if (floorNumber === 20 && inBossRoom) {
     return null;
   }
-  if (theme === "fungal_depths") {
-    if (tile.hole) return manifest.props.floorHole;
-    if (roll < 4) return manifest.props.floorGoo;
-  }
+  if (theme === "fungal_depths" && tile.hole) return manifest.props.floorHole;
   return null;
 }
 
@@ -840,6 +847,8 @@ export class Renderer {
     const sewerSheet = currentFloor.theme === "sunken_vault" ? this.assets?.images[this.assets.manifest.themeAtlases.sewerItems] : null;
     const sewerFloorAtlas = sewerSheet ? this.assets.images[this.assets.manifest.themeAtlases.sunkenVaultFloor] : null;
     const sewerStanding = [];
+    // Fungal Depths wall growth (shelf fungi, roots), drawn after all tiles so it can overhang the floor.
+    const fungalStanding = [];
     const torchLights = [];
     const chestsById = new Map((currentFloor.chests ?? []).map((chest) => [chest.id, chest]));
     const bossAlive = currentFloor.enemies.some((enemy) => ENEMIES[enemy.templateId]?.behavior === "boss");
@@ -905,6 +914,7 @@ export class Renderer {
           }
           ctx.drawImage(floorSprite, px, py, tileSize, tileSize);
           ctx.restore();
+          if (floorTheme.floorHue) this.applyTileHue(floorTheme.floorHue, px, py, tileSize, tile.visible);
           ctx.save();
           ctx.fillStyle = tile.visible ? floorTheme.floorOverlayVisible : floorTheme.floorOverlayFog;
           ctx.fillRect(px, py, tileSize, tileSize);
@@ -927,6 +937,7 @@ export class Renderer {
           }
           ctx.drawImage(wallSprite, px, py, tileSize, tileSize);
           ctx.restore();
+          if (floorTheme.wallHue) this.applyTileHue(floorTheme.wallHue, px, py, tileSize, tile.visible);
           ctx.save();
           ctx.fillStyle = tile.visible ? floorTheme.wallOverlayVisible : floorTheme.wallOverlayFog;
           ctx.fillRect(px, py, tileSize, tileSize);
@@ -980,6 +991,18 @@ export class Renderer {
             ctx.lineTo(cx - tileSize * 0.16, cy + tileSize * 0.16);
             ctx.stroke();
             ctx.restore();
+          }
+        }
+
+        if (currentFloor.theme === "fungal_depths" && tile.type === "wall") {
+          const hash = hashPoint(x, y, floorTileSeed ^ 0x6c3);
+          const feature = getFungalWallFeature(currentFloor.map, x, y, hash);
+          if (feature) {
+            fungalStanding.push({ feature, px, py, hash, visible: tile.visible });
+            if (feature.kind === "shelf") {
+              torchLights.push({ x, y: y + 0.9, radius: 2.3, color: FUNGAL_GLOWS[feature.glow].light, strength: 0.1 });
+              if (tile.visible) glowingDetails.push({ detail: { kind: "fungalShelf", glow: feature.glow, hash }, px, py });
+            }
           }
         }
 
@@ -1088,6 +1111,7 @@ export class Renderer {
     for (const standing of sewerStanding.sort((a, b) => a.y - b.y)) {
       this.drawSewerSprite(sewerSheet, standing, tileSize);
     }
+    for (const growth of fungalStanding) drawFungalWallFeature(ctx, growth.feature, growth.px, growth.py, tileSize, growth.hash, growth.visible);
 
     for (const enemy of currentFloor.enemies) {
       if (enemy.disguised) continue;
@@ -1654,6 +1678,17 @@ export class Renderer {
     ctx.restore();
   }
 
+  // Re-hues a tile's sprite with the "color" blend, which keeps its light and shade.
+  applyTileHue(hue, px, py, tileSize, visible) {
+    const { ctx } = this;
+    ctx.save();
+    ctx.globalCompositeOperation = "color";
+    ctx.globalAlpha = visible ? hue.alpha : hue.alpha * 0.8;
+    ctx.fillStyle = hue.color;
+    ctx.fillRect(px, py, tileSize, tileSize);
+    ctx.restore();
+  }
+
   // Pixel-art floor details on the 16px source grid (scaled to the tile). Fogged tiles draw dimmed.
   drawFloorDetail(detail, px, py, tileSize, visible) {
     const { ctx } = this;
@@ -1665,7 +1700,9 @@ export class Renderer {
     const h = detail.hash;
     ctx.save();
     if (!visible) ctx.globalAlpha = 0.35;
-    if (detail.kind === "stars") {
+    if (detail.kind === "moss" || detail.kind === "mycelium" || detail.kind === "shrooms") {
+      drawFungalFloorDetail(ctx, detail.kind, px, py, tileSize, h);
+    } else if (detail.kind === "stars") {
       // Two or three pale specks scattered across the stone.
       const count = 2 + (h % 2);
       for (let index = 0; index < count; index += 1) {
@@ -1735,6 +1772,8 @@ export class Renderer {
     if (detail.kind === "vent") glow("255, 130, 60", tileSize * 0.8, 0.22 + Math.sin(now / 260 + phase * 6) * 0.08);
     if (detail.kind === "gilt") glow("242, 196, 107", tileSize * 0.35, 0.05);
     if (detail.kind === "torch") glow("120, 240, 110", tileSize * 0.75, 0.2 + Math.sin(now / 90 + phase * 6) * 0.04);
+    if (detail.kind === "shrooms") drawFungalGlow(ctx, pickFungalGlow(detail.hash), cx, py + tileSize * 0.7, tileSize * 0.6, detail.hash, 0.9);
+    if (detail.kind === "fungalShelf") drawFungalGlow(ctx, detail.glow, cx, py + tileSize * 0.8, tileSize * 1.1, detail.hash, 1.1);
     if (detail.kind === "eyes") glow("120, 240, 110", tileSize * 0.45, 0.1 + Math.sin(now / 700 + phase * 6) * 0.05);
     if (detail.kind === "stars" && !reduceMotion()) {
       // Now and then one speck glints.
