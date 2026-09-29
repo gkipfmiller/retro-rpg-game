@@ -270,15 +270,19 @@ export const SPELLS = {
     damage: [8, 12],
     description: "Explosive arcane blast with heavy single-target damage.",
   },
-  // A free cantrip. It gains the percentage spell-damage bonus but not flat spell power, so it stays
-  // a fallback for when the mana runs dry rather than a free Magic Missile.
+  // A free cantrip. It gains half of flat spell power (INT and magic power, rounded down) plus the
+  // full spell-damage %, so it keeps pace with gear while staying well below Magic Missile.
+  // BALANCE NOTE: set generously while the Sorceress is the weakest class. If she becomes too strong,
+  // the fallback is a third of spell power plus ignoring 2 enemy armour (about a third of Magic
+  // Missile's damage against armoured foes), and range 3 again. The ratio is
+  // CANTRIP_SPELL_POWER_SHARE in game.js.
   arcane_spark: {
     id: "arcane_spark",
     name: "Arcane Spark",
     type: "spell",
     cantrip: true,
     cost: 0,
-    range: 3,
+    range: 4,
     damage: [2, 4],
     description: "A free flicker of arcane force. Weak, but it never runs dry.",
   },
@@ -359,7 +363,7 @@ export const ITEMS = {
   sage_wand: { id: "sage_wand", name: "Sage Wand", category: "weapon", slot: "weapon", classBias: "wizard", damage: [2, 4], magicPower: 4, rarity: "rare", value: 64, enchantment: { type: "manaRefundChance", chance: 0.35, value: 2 }, description: "Enchantment: spells have a 35% chance to refund 2 mana after hitting." },
   storm_wand: { id: "storm_wand", name: "Storm Wand", category: "weapon", slot: "weapon", classBias: "wizard", damage: [2, 4], magicPower: 5, bonus: { spellDamagePct: 8 }, rarity: "uncommon", value: 60 },
   voidglass_staff: { id: "voidglass_staff", name: "Voidglass Staff", category: "weapon", slot: "weapon", classBias: "wizard", damage: [4, 6], magicPower: 6, rarity: "boss", value: 96, bonus: { spellDamagePct: 12 }, enchantment: { type: "spellBonusDamage", value: 3 }, description: "Enchantment: spells strike with 3 extra void damage." },
-  astral_wand: { id: "astral_wand", name: "Astral Wand", category: "weapon", slot: "weapon", classBias: "wizard", damage: [3, 5], magicPower: 6, rarity: "boss", value: 98, bonus: { spellAccuracyFlat: 6 }, enchantment: { type: "manaRefundChance", chance: 0.45, value: 3 }, description: "Enchantment: precise spell hits often refund 3 mana." },
+  astral_wand: { id: "astral_wand", name: "Astral Wand", category: "weapon", slot: "weapon", classBias: "wizard", damage: [3, 5], magicPower: 6, rarity: "boss", value: 98, bonus: { spellCritPct: 6 }, enchantment: { type: "manaRefundChance", chance: 0.35, value: 3 }, description: "Enchantment: spell hits often refund 3 mana." },
   ember_staff: { id: "ember_staff", name: "Ember Staff", category: "weapon", slot: "weapon", classBias: "wizard", damage: [2, 4], magicPower: 3, rarity: "boss", bonus: { spellDamagePct: 10 }, value: 72 },
   short_bow: { id: "short_bow", name: "Short Bow", category: "weapon", slot: "weapon", classBias: "ranger", damage: [2, 4], accuracy: 3, range: 4, value: 14 },
   hunting_bow: { id: "hunting_bow", name: "Hunting Bow", category: "weapon", slot: "weapon", classBias: "ranger", damage: [3, 5], accuracy: 4, range: 4, value: 20 },
@@ -386,10 +390,10 @@ export const ITEMS = {
   apprentice_robes: { id: "apprentice_robes", name: "Apprentice Robes", category: "armor", slot: "armor", defense: 1, bonus: { maxManaFlat: 4 }, value: 18 },
   dusk_robe: { id: "dusk_robe", name: "Dusk Robe", category: "armor", slot: "armor", defense: 2, bonus: { maxManaFlat: 8 }, rarity: "uncommon", value: 28 },
   enchanted_robe: { id: "enchanted_robe", name: "Enchanted Robe", category: "armor", slot: "armor", defense: 1, bonus: { maxManaFlat: 5 }, rarity: "uncommon", value: 30 },
-  runespun_robe: { id: "runespun_robe", name: "Runespun Robe", category: "armor", slot: "armor", defense: 2, bonus: { maxManaFlat: 10, spellAccuracyFlat: 4 }, rarity: "uncommon", value: 48 },
+  runespun_robe: { id: "runespun_robe", name: "Runespun Robe", category: "armor", slot: "armor", defense: 2, bonus: { maxManaFlat: 10, spellDamagePct: 4 }, rarity: "uncommon", value: 48 },
   archmage_robe: { id: "archmage_robe", name: "Archmage Robe", category: "armor", slot: "armor", defense: 2, bonus: { maxManaFlat: 12, intelligenceFlat: 1 }, rarity: "uncommon", value: 66 },
   spellweave_mantle: { id: "spellweave_mantle", name: "Spellweave Mantle", category: "armor", slot: "armor", classBias: "wizard", defense: 2, bonus: { maxManaFlat: 12, spellDamagePct: 10 }, rarity: "rare", value: 74, description: "Enchantment: woven sigils grant +12 max mana and +10% spell damage." },
-  hexwoven_robe: { id: "hexwoven_robe", name: "Hexwoven Robe", category: "armor", slot: "armor", classBias: "wizard", defense: 2, bonus: { spellAccuracyFlat: 5, controlDuration: 1, utilityDiscount: 1 }, rarity: "rare", value: 76, description: "Enchantment: hex-stitched threads sharpen spell aim, extend control effects, and reduce utility spell costs by 1." },
+  hexwoven_robe: { id: "hexwoven_robe", name: "Hexwoven Robe", category: "armor", slot: "armor", classBias: "wizard", defense: 2, bonus: { spellDamagePct: 5, controlDuration: 1, utilityDiscount: 1 }, rarity: "rare", value: 76, description: "Enchantment: hex-stitched threads strengthen spells, extend control effects, and reduce utility spell costs by 1." },
   starweave_robe: { id: "starweave_robe", name: "Starweave Robe", category: "armor", slot: "armor", defense: 3, bonus: { maxManaFlat: 16, intelligenceFlat: 2 }, rarity: "boss", value: 94 },
   robe_of_the_adept: { id: "robe_of_the_adept", name: "Robe of the Adept", category: "armor", slot: "armor", defense: 1, bonus: { maxManaFlat: 10, intelligenceFlat: 1 }, rarity: "boss", value: 80 },
   trackers_vest: { id: "trackers_vest", name: "Tracker's Vest", category: "armor", slot: "armor", classBias: "ranger", defense: 2, evasion: 2, value: 18 },

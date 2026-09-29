@@ -350,6 +350,8 @@ Current boon design goals:
 Four base stats (Strength, Dexterity, Vitality, Intelligence) feed combat through `getDerivedStats`:
 - Strength: +1 melee damage per 2
 - Dexterity: +1 accuracy per point, +1 evasion per 2, +1 ranged damage per 2
+- spells never miss: every damaging spell (and the Arcane Spire's bolts) always hits, so mana is never spent on a miss. Evasion only works against weapon attacks, whose hit chance is 85 + Dexterity + gear accuracy − the enemy's evasion, capped at 95%
+- gear that used to raise spell accuracy now gives something else: Runespun Robe +4% spell damage, Hexwoven Robe +5% spell damage, and Astral Wand +6% spell critical chance (a spell-only crit bonus, `spellCritPct`), with its mana refund lowered from 45% to 35% since it now triggers on every spell hit
 - Vitality: +3 max HP per point
 - Intelligence: +2 max mana per point, +1 spell power per 2
 - gear bonuses to a stat (`strengthFlat`, `dexterityFlat`, `vitalityFlat`, `intelligenceFlat`, shown as e.g. "INT +2") raise the stat itself
@@ -436,8 +438,10 @@ Player actions:
   - reliable low-cost ranged damage
 
 - Arcane Spark (starting spell)
-  - free cantrip: 0 mana, range 3, 2-4 damage
-  - gains the percentage spell-damage bonus but not flat spell power, the first-spell bonus, spell enchantments, or mana refunds
+  - free cantrip: 0 mana, range 4 (same as Magic Missile), 2-4 damage
+  - gains half of flat spell power (INT and magic power, rounded down) and the full percentage spell-damage bonus, but not the first-spell bonus, spell enchantments, or mana refunds
+  - balance note: this is set generously while the Sorceress is the weakest class. If she becomes too strong, the planned fallback is a third of spell power plus ignoring 2 enemy armour (`CANTRIP_SPELL_POWER_SHARE` in `src/game.js`), and range 3 again
+  - with typical gear it averages about 5 damage per hit on Floor 1, 9-13 mid-game, and 11-15 late, against armour 0-4 (Magic Missile: 7-12, 21-26, 25-29)
   - never counts toward Sage's Echo or Arcane Overflow
   - the Sorceress's fallback when her mana runs dry, instead of staff melee
 
@@ -460,7 +464,7 @@ Player actions:
 - Summon Spire (Control and Insight tier 4)
   - 7 mana; raises an Arcane Spire on the open tile next to the Sorceress that can shoot the most enemies
   - the spire fires one bolt at the nearest enemy it can see within 4 tiles at the start of each of her turns, 5 turns in all, then crumbles
-  - bolt damage: Magic Missile's 4-7 roll plus half her flat spell power, scaled by her spell damage %; hit chance 90% minus evasion
+  - bolt damage: Magic Missile's 4-7 roll plus half her flat spell power, scaled by her spell damage %; never misses
   - one spire at a time (recasting replaces it); it blocks enemies like a pillar and enemies ignore it; walking into it swaps places
 
 - Frost Shard
@@ -1059,7 +1063,9 @@ Current HUD and input layout:
 - the combat log keeps the last 300 lines and scrolls back freely (it only sticks to the bottom while you're at the bottom); lines are coloured by kind (damage dealt, damage taken, misses, kills, healing, statuses, loot, progression), repeated lines merge into "×N", lines from before your latest action are dimmed, and All / Combat / Loot chips filter it (remembered per browser)
 - inventory: an equipped strip (click or arrow to an equipped item to see it and Unequip), All / Gear / Consumables / Other filters, Recent / Rarity / Type sorting, a denser 4-column grid, double-click to use or equip, ▲ / ▼ / ◆ marks for upgrade, downgrade, or trade-off against the equipped item, and dimmed tiles for another class's gear
 - vendor: the same gear marks on stock and sell rows, unaffordable prices in red, price shown beside your gold, a "Sell junk" button (gear worse than equipped, spare copies of equipped gear, or another class's gear; consumables, tomes and keys never count) that previews the list and total before selling, a confirm step before selling rare or boss items, and vault keys are no longer sellable
-- the character sheet shows derived numbers with hover breakdowns: weapon damage range, accuracy, crit chance, spell damage, spell power and accuracy (when you have a damage spell), max HP and mana, defense, evasion, what each attribute currently gives, your boon, unlocked skills, and enchanted gear effects
+- item stats name what they affect: a weapon's damage reads "Melee DMG" (or "Ranged DMG" for bows) since it only applies when attacking with the weapon, magic power reads "Spell Power", and percentage bonuses read "Melee/Ranged/Spell DMG +x%"; the compare-with-equipped rows use the same names
+- the sidebar shows the power the class's main attack uses (Warrior "Melee Power", Ranger "Ranged Power", Sorceress "Spell Power"); its tooltip lists all three and where each comes from
+- the character sheet shows derived numbers with hover breakdowns: weapon damage range, accuracy, crit chance, spell damage, spell power, "Always hits", and spell critical chance from gear (when you have a damage spell), max HP and mana, defense, evasion, what each attribute currently gives, your boon, unlocked skills, and enchanted gear effects
 
 Current visual identity:
 - warm stone-and-iron palette across every screen (bronze-bordered stone panels, iron buttons, gold accent), replacing the earlier blue glass look

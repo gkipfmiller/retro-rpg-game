@@ -41,6 +41,13 @@ const SHRINE_STAT_LOSS = 1;
 const REFORGE_VALUE_MULTIPLIER = 8;
 const REFORGE_MIN_COST = 400;
 const OVERLORD_ECLIPSE_DAMAGE = [20, 26];
+// Share of flat spell power a cantrip (Arcane Spark) gets; see the balance note on arcane_spark in data.js.
+export const CANTRIP_SPELL_POWER_SHARE = 1 / 2;
+
+// Flat spell power a spell adds to its roll: all of it, or a share for cantrips.
+export function getSpellFlatPower(spell, spellBonus) {
+  return spell?.cantrip ? Math.floor(spellBonus * CANTRIP_SPELL_POWER_SHARE) : spellBonus;
+}
 const VOID_BURN = 3;
 // Fallen adventurers (other players' deaths, from api/fallen.js): how many sets of remains an
 // ordinary floor shows, and how far from the arrival point they must lie.
@@ -1245,6 +1252,8 @@ export class Game {
       rangedDamagePct: 0,
       spellDamagePct: classDef.spellDamageBonusPct ?? 0,
       critBonus: 0,
+      // Extra critical chance for spells only (Astral Wand).
+      spellCritPct: 0,
       utilityDiscount: 0,
       trapReductionPct: 0,
       waitDefense: 0,
@@ -1574,7 +1583,8 @@ export class Game {
       },
       spell: spell ? {
         label: spell.name,
-        hitChance: clamp(90 + (derived.spellAccuracyFlat ?? 0) - evasion, 10, 95),
+        // Spells never miss.
+        hitChance: 100,
         damage: [spellHit(spell.damage[0]), spellHit(spell.damage[1])],
         inRange: distance <= spell.range,
       } : null,
@@ -1793,10 +1803,12 @@ export class Game {
     const item = ITEMS[itemId];
     if (!item) return "";
     const parts = [];
-    if (item.damage) parts.push(`DMG ${item.damage[0]}-${item.damage[1]}`);
+    // Weapon damage is only used when attacking with the weapon itself: bows shoot (ranged), anything
+    // else hits in melee. It never affects spells, which use Spell Power.
+    if (item.damage) parts.push(`${item.range ? "Ranged" : "Melee"} DMG ${item.damage[0]}-${item.damage[1]}`);
     if (item.range) parts.push(`RNG ${item.range}`);
     if (typeof item.defense === "number") parts.push(`DEF ${item.defense}`);
-    if (item.magicPower) parts.push(`MAG ${item.magicPower}`);
+    if (item.magicPower) parts.push(`Spell Power +${item.magicPower}`);
     if (item.accuracy) parts.push(`ACC ${item.accuracy > 0 ? `+${item.accuracy}` : item.accuracy}`);
     if (item.evasion) parts.push(`EVA ${item.evasion > 0 ? `+${item.evasion}` : item.evasion}`);
     if (item.bonus) {
@@ -1805,15 +1817,16 @@ export class Game {
         if (key === "maxManaFlat") parts.push(`Mana +${value}`);
         if (key === "defenseFlat") parts.push(`DEF +${value}`);
         if (key === "accuracyFlat") parts.push(`ACC +${value}`);
-        if (key === "magicPowerFlat") parts.push(`MAG +${value}`);
+        if (key === "magicPowerFlat") parts.push(`Spell Power +${value}`);
         if (key === "strengthFlat") parts.push(`STR +${value}`);
         if (key === "dexterityFlat") parts.push(`DEX +${value}`);
         if (key === "vitalityFlat") parts.push(`VIT +${value}`);
         if (key === "intelligenceFlat") parts.push(`INT +${value}`);
         if (key === "controlDuration") parts.push(`Control +${value}`);
-        if (key === "meleeDamagePct") parts.push(`Melee +${value}%`);
-        if (key === "spellDamagePct") parts.push(`Spell +${value}%`);
-        if (key === "rangedDamagePct") parts.push(`Ranged +${value}%`);
+        if (key === "meleeDamagePct") parts.push(`Melee DMG +${value}%`);
+        if (key === "spellDamagePct") parts.push(`Spell DMG +${value}%`);
+        if (key === "spellCritPct") parts.push(`Spell crit +${value}%`);
+        if (key === "rangedDamagePct") parts.push(`Ranged DMG +${value}%`);
         if (key === "evasionFlat") parts.push(`EVA +${value}`);
       }
     }
@@ -1877,10 +1890,10 @@ export class Game {
     if (item.damage || equipped.damage) {
       const candidate = item.damage ? (item.damage[0] + item.damage[1]) / 2 : 0;
       const current = equipped.damage ? (equipped.damage[0] + equipped.damage[1]) / 2 : 0;
-      pushRow("Avg DMG", candidate, current);
+      pushRow(item.range || (!item.damage && equipped.range) ? "Avg ranged DMG" : "Avg melee DMG", candidate, current);
     }
     pushRow("Defense", item.defense ?? 0, equipped.defense ?? 0);
-    pushRow("Magic", item.magicPower ?? 0, equipped.magicPower ?? 0);
+    pushRow("Spell Power", item.magicPower ?? 0, equipped.magicPower ?? 0);
     pushRow("Accuracy", item.accuracy ?? 0, equipped.accuracy ?? 0);
     pushRow("Evasion", item.evasion ?? 0, equipped.evasion ?? 0);
     pushRow("HP", item.bonus?.maxHpFlat ?? 0, equipped.bonus?.maxHpFlat ?? 0);
@@ -1891,11 +1904,11 @@ export class Game {
     pushRow("DEX", item.bonus?.dexterityFlat ?? 0, equipped.bonus?.dexterityFlat ?? 0);
     pushRow("VIT", item.bonus?.vitalityFlat ?? 0, equipped.bonus?.vitalityFlat ?? 0);
     pushRow("INT", item.bonus?.intelligenceFlat ?? 0, equipped.bonus?.intelligenceFlat ?? 0);
-    pushRow("Melee %", item.bonus?.meleeDamagePct ?? 0, equipped.bonus?.meleeDamagePct ?? 0);
-    pushRow("Spell %", item.bonus?.spellDamagePct ?? 0, equipped.bonus?.spellDamagePct ?? 0);
-    pushRow("Spell Acc", item.bonus?.spellAccuracyFlat ?? 0, equipped.bonus?.spellAccuracyFlat ?? 0);
+    pushRow("Melee DMG %", item.bonus?.meleeDamagePct ?? 0, equipped.bonus?.meleeDamagePct ?? 0);
+    pushRow("Spell DMG %", item.bonus?.spellDamagePct ?? 0, equipped.bonus?.spellDamagePct ?? 0);
+    pushRow("Spell Crit %", item.bonus?.spellCritPct ?? 0, equipped.bonus?.spellCritPct ?? 0);
     pushRow("Range", item.range ?? 0, equipped.range ?? 0);
-    pushRow("Ranged %", item.bonus?.rangedDamagePct ?? 0, equipped.bonus?.rangedDamagePct ?? 0);
+    pushRow("Ranged DMG %", item.bonus?.rangedDamagePct ?? 0, equipped.bonus?.rangedDamagePct ?? 0);
     pushRow("EVA+", item.bonus?.evasionFlat ?? 0, equipped.bonus?.evasionFlat ?? 0);
     return rows;
   }
@@ -1977,7 +1990,7 @@ export class Game {
     const player = this.state.run?.player;
     const barrier = entryId === "arcane_shield" && player ? this.getDerivedStats(player).manaBarrier : 0;
     if (barrier) parts[1] = `Mana Barrier: absorbs the next ${barrier + player.level} damage over 4 turns.`;
-    if (spell.cantrip) parts.push("Free. Gains your spell damage % but not flat spell power.");
+    if (spell.cantrip) parts.push("Free. Gains half your spell power (rounded down) and all of your spell damage %.");
     if (typeof spell.cost === "number" && !spell.cantrip) parts.push(`Cost: ${spell.cost} mana`);
     if (typeof spell.range === "number") parts.push(`Range: ${spell.range === 0 ? "Self" : spell.range}`);
     if (spell.damage) parts.push(`Damage: ${spell.damage[0]}-${spell.damage[1]}`);
@@ -2255,7 +2268,7 @@ export class Game {
   // What a reforge adds, in words, for the vendor panel.
   describeReforge(itemId) {
     const item = ITEMS[itemId];
-    if (item?.slot === "weapon") return item.magicPower ? "+1 magic power" : "+1 max damage";
+    if (item?.slot === "weapon") return item.magicPower ? "+1 spell power" : "+1 max damage";
     if (item?.slot === "accessory") return "+5 max HP";
     return "+1 defense";
   }
@@ -2312,7 +2325,8 @@ export class Game {
     // Sure Aim (DEX 10): the first attack on each enemy can't miss.
     const sureAim = Boolean(derived.milestones?.sureAim) && !enemy.playerHasAttacked;
     enemy.playerHasAttacked = true;
-    const hitChance = sureAim ? 100 : clamp((mode.type === "spell" ? 90 + (derived.spellAccuracyFlat ?? 0) : derived.accuracy) - (enemyStats.evasion ?? 0), 10, 95);
+    // Spells never miss: evasion only works against weapons.
+    const hitChance = sureAim || mode.type === "spell" ? 100 : clamp(derived.accuracy - (enemyStats.evasion ?? 0), 10, 95);
     // Cosmetic: how the shot looks (Aimed Shot flies straight and fast; special bows have their own trails).
     const ranged = mode.type === "ranged" || mode.type === "ranged_ability";
     const arrowKind = mode.abilityId === "aimed_shot" ? "aimed_arrow" : "arrow";
@@ -2413,9 +2427,10 @@ export class Game {
         targetId: enemy.id,
         fromId: projectileFromId,
       });
-      // Cantrips (Arcane Spark) skip flat spell power, the first-spell bonus, and spell enchantments.
+      // Cantrips (Arcane Spark) get only part of flat spell power, and skip the first-spell bonus and
+      // spell enchantments.
       const firstSpellBonus = !spell.cantrip && !enemy.firstSpellHitTaken && derived.firstSpellPct ? derived.firstSpellPct / 100 : 0;
-      const flatPower = spell.cantrip ? 0 : derived.spellBonus;
+      const flatPower = getSpellFlatPower(spell, derived.spellBonus);
       const base = rng.int(spell.damage[0], spell.damage[1]) + flatPower + (player.turnFlags.boonBattleTrance ?? 0);
       damage = Math.max(1, Math.floor(base * (1 + derived.spellDamagePct / 100 + firstSpellBonus)) - enemyStats.defense);
       if (derived.evocationBonus && (enemy.hp / enemy.maxHp >= 0.75 || enemy.hp / enemy.maxHp <= 0.25)) {
@@ -2435,7 +2450,8 @@ export class Game {
 
     // Keen Eye (DEX 15): +10% critical chance with bows.
     const keenEye = derived.milestones?.keenEye && (mode.type === "ranged" || mode.type === "ranged_ability") ? 10 : 0;
-    const critChance = clamp(5 + (derived.critBonus ?? 0) + keenEye, 5, 55);
+    const spellCrit = mode.type === "spell" ? derived.spellCritPct ?? 0 : 0;
+    const critChance = clamp(5 + (derived.critBonus ?? 0) + keenEye + spellCrit, 5, 55);
     const criticalHit = rng.chance(critChance / 100);
     if (criticalHit) {
       damage = Math.max(1, Math.floor(damage * 1.5));
@@ -2990,18 +3006,15 @@ export class Game {
       target.alerted = true;
       target.lastKnownPlayerPosition ??= { x: player.x, y: player.y };
       this.wakeGuard(target);
-      if (!rng.chance(clamp(90 - (stats.evasion ?? 0), 10, 95) / 100)) {
-        this.log(`The spire's bolt misses ${target.name}.`);
-      } else {
-        // Magic Missile's roll with half the Sorceress's flat spell power.
-        const base = rng.int(roll[0], roll[1]) + Math.floor(derived.spellBonus / 2);
-        const damage = Math.max(1, Math.floor(base * (1 + derived.spellDamagePct / 100)) - stats.defense);
-        target.hp -= damage;
-        this.recordDamage("dealt", damage);
-        this.renderer?.queueDamagePopup({ x: target.x, y: target.y, damage, type: "enemy", targetId: target.id, delay: this.renderer?.getProjectileDuration?.("spire_bolt") ?? 0 });
-        this.log(`The spire strikes ${target.name} for ${damage} damage.`);
-        if (target.hp <= 0) this.killEnemy(target);
-      }
+      // Like the Sorceress's own spells, the spire's bolts never miss.
+      // Magic Missile's roll with half the Sorceress's flat spell power.
+      const base = rng.int(roll[0], roll[1]) + Math.floor(derived.spellBonus / 2);
+      const damage = Math.max(1, Math.floor(base * (1 + derived.spellDamagePct / 100)) - stats.defense);
+      target.hp -= damage;
+      this.recordDamage("dealt", damage);
+      this.renderer?.queueDamagePopup({ x: target.x, y: target.y, damage, type: "enemy", targetId: target.id, delay: this.renderer?.getProjectileDuration?.("spire_bolt") ?? 0 });
+      this.log(`The spire strikes ${target.name} for ${damage} damage.`);
+      if (target.hp <= 0) this.killEnemy(target);
     }
     spire.turnsLeft -= 1;
     if (spire.turnsLeft <= 0) {
@@ -3605,18 +3618,19 @@ export class Game {
     const spellId = [...player.quickSlots, ...player.learnedSpells].find((entryId) => SPELLS[entryId]?.type === "spell" && SPELLS[entryId].damage);
     const spell = spellId ? SPELLS[spellId] : null;
     const spellEnchant = weapon?.enchantment?.type === "spellBonusDamage" ? weapon.enchantment.value : 0;
-    const spellDamage = spell?.damage.map((roll) => Math.floor((roll + combat.spellBonus) * (1 + combat.spellDamagePct / 100)) + spellEnchant);
+    const spellDamage = spell?.damage.map((roll) => Math.floor((roll + getSpellFlatPower(spell, combat.spellBonus)) * (1 + combat.spellDamagePct / 100)) + (spell.cantrip ? 0 : spellEnchant));
     const xpNeeded = this.getXpForLevel(player.level + 1);
 
     const offense = [
       row(ranged ? "Ranged damage" : "Melee damage", range(weaponDamage), `${weapon?.name ?? "Unarmed"}\nDamage per hit before the enemy's defense and crits.\nWeapon ${range(weaponRoll)}, +${bonus} from ${ranged ? "Dexterity" : "Strength"}${damagePct ? `, +${damagePct}% from gear and skills` : ""}${enchantBonus ? `, +${enchantBonus} enchantment` : ""}.`),
       row("Accuracy", `${Math.min(95, combat.accuracy)}%`, "Accuracy\nWeapon hit chance before the enemy's evasion (capped at 95%).\n85 base + Dexterity + gear."),
       row("Critical chance", `${critChance}%`, "Critical hits\nDeal 1.5× damage. 5% base, capped at 45%."),
-      spell ? row(`${spell.name} damage`, range(spellDamage), `${spell.name}\nDamage per hit before the enemy's defense and crits.\nSpell ${range(spell.damage)}, +${combat.spellBonus} spell power${combat.spellDamagePct ? `, +${combat.spellDamagePct}% spell damage` : ""}.`) : "",
+      spell ? row(`${spell.name} damage`, range(spellDamage), `${spell.name}\nDamage per hit before the enemy's defense and crits.\nSpell ${range(spell.damage)}, +${getSpellFlatPower(spell, combat.spellBonus)} spell power${combat.spellDamagePct ? `, +${combat.spellDamagePct}% spell damage` : ""}.`) : "",
       // Spell numbers only matter once you have a damaging spell.
       spell ? row("Spell power", `+${combat.spellBonus}`, "Spell power\nAdded to every spell's damage roll.\nIntelligence ÷ 2 + gear + class.") : "",
       spell && combat.spellDamagePct ? row("Spell damage", `+${combat.spellDamagePct}%`, "Spell damage\nMultiplies spell damage after spell power.") : "",
-      spell ? row("Spell accuracy", `${Math.min(95, 90 + (combat.spellAccuracyFlat ?? 0))}%`, "Spell accuracy\nSpell hit chance before the enemy's evasion (capped at 95%).") : "",
+      spell ? row("Spell accuracy", "Always hits", "Spell accuracy\nSpells never miss; evasion only works against weapons.") : "",
+      spell && combat.spellCritPct ? row("Spell critical chance", `${clamp(critChance + combat.spellCritPct, 5, 55)}%`, "Spell critical hits\nYour critical chance plus the spell-only bonus from gear.") : "",
     ].join("");
 
     const defense = [

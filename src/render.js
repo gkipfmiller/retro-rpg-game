@@ -2468,7 +2468,11 @@ export class Renderer {
     intelligenceLine.dataset.tooltip = "Intelligence\nImproves spell damage and maximum mana.";
     defenseLine.dataset.tooltip = "Defense\nReduces incoming damage from enemy attacks.";
     const powerLine = document.getElementById("hud-power");
-    powerLine.textContent = `Power: ${derived.meleeBonus}/${derived.spellBonus}`;
+    // Each class sees the power its main attack uses; the tooltip lists all three.
+    const mainPower = player.classId === "wizard"
+      ? `Spell Power: +${derived.spellBonus}`
+      : player.classId === "ranger" ? `Ranged Power: +${derived.rangedBonus}` : `Melee Power: +${derived.meleeBonus}`;
+    powerLine.textContent = mainPower;
     // Rewritten only on change so a hovered badge keeps its tooltip.
     const statusMarkup = player.statuses.length ? renderStatusBadges(player.statuses) : "";
     for (const statusRow of [document.getElementById("hud-statuses"), document.getElementById("mobile-hud-statuses")]) {
@@ -2477,7 +2481,7 @@ export class Renderer {
       statusRow.dataset.markup = statusMarkup;
       statusRow.classList.toggle("hidden", !statusMarkup);
     }
-    powerLine.dataset.tooltip = "Power\nFirst value is melee power.\nSecond value is spell power.";
+    powerLine.dataset.tooltip = `Power (added to each hit's damage roll)\nMelee: +${derived.meleeBonus} (Strength ÷ 2)\nRanged: +${derived.rangedBonus} (Dexterity ÷ 2)\nSpell: +${derived.spellBonus} (Intelligence ÷ 2 + gear)`;
 
     // Desktop hotbar and the touch quick-slot row share the same slot rendering.
     player.quickSlots.forEach((entry, index) => {

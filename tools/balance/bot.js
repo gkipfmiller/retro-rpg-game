@@ -9,6 +9,8 @@
 //               equips only clear upgrades, and buys a couple of potions.
 
 import { startSeededRun, data, utils } from "./headless.js";
+// Loaded after headless.js has set up the browser stand-ins the game module expects.
+const { getSpellFlatPower } = await import("../../src/game.js");
 
 const { ITEMS, SPELLS, ENEMIES, SKILL_TREES } = data;
 const { isBlockedFloor } = utils;
@@ -390,7 +392,7 @@ export function playRun({ classId, profile = "competent", seed, skillStrategy = 
 
   function spellEstimate(spell, enemy, snapshot) {
     const { defense } = game.getEnemyCombatStats(enemy);
-    const flat = spell.cantrip ? 0 : snapshot.spellBonus;
+    const flat = getSpellFlatPower(spell, snapshot.spellBonus);
     const roll = (value) => Math.max(1, Math.floor((value + flat) * (1 + snapshot.spellDamagePct / 100)) - defense);
     return { min: roll(spell.damage[0]), avg: roll(spellAvg(spell)) };
   }
