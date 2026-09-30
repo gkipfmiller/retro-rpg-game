@@ -55,6 +55,12 @@ const ELIXIR_RECOLORS = {
   elixir_insight: { hue: 0.76, satMul: 1, hueRange: ELIXIR_FLASK_GREEN },
 };
 
+// Items drawn as a recoloured copy of another item's icon: { source item id, palette }.
+const ITEM_RECOLORS = {
+  // Super Skeletor's reward for the Ranger: Stalker's Hide dyed a deep night violet.
+  nightstalker_garb: { from: "stalkers_hide", palette: { hue: 0.74, satMul: 1.15, valMul: 0.95 } },
+};
+
 const CHEST_RECOLORS = {
   bone: { hue: 0.1, satMul: 0.25, valMul: 1.25, hueRange: CHEST_WOOD_HUES },
   crimson: { hue: 0, satMul: 1.1, valMul: 0.9, hueRange: CHEST_WOOD_HUES },
@@ -523,6 +529,10 @@ async function buildRecoloredActors(images) {
   }
   for (const [itemId, palette] of Object.entries(ELIXIR_RECOLORS)) {
     const frames = await recolorFrames(images, [`${BASE}/flask_big_green.png`], palette);
+    if (frames) assetManifest.items[itemId] = frames[0];
+  }
+  for (const [itemId, { from, palette }] of Object.entries(ITEM_RECOLORS)) {
+    const frames = await recolorFrames(images, [assetManifest.items[from]], palette);
     if (frames) assetManifest.items[itemId] = frames[0];
   }
   assetManifest.chestVariants = {};

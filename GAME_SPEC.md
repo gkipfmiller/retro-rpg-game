@@ -438,9 +438,9 @@ Player actions:
   - reliable low-cost ranged damage
 
 - Arcane Spark (starting spell)
-  - free cantrip: 0 mana, range 4 (same as Magic Missile), 2-4 damage
+  - free cantrip: 0 mana, range 3 (one less than Magic Missile), 2-4 damage
   - gains half of flat spell power (INT and magic power, rounded down) and the full percentage spell-damage bonus, but not the first-spell bonus, spell enchantments, or mana refunds
-  - balance note: this is set generously while the Sorceress is the weakest class. If she becomes too strong, the planned fallback is a third of spell power plus ignoring 2 enemy armour (`CANTRIP_SPELL_POWER_SHARE` in `src/game.js`), and range 3 again
+  - balance note: this is set generously while the Sorceress is the weakest class. If she becomes too strong, the planned fallback is a third of spell power plus ignoring 2 enemy armour (`CANTRIP_SPELL_POWER_SHARE` in `src/game.js`). Range was briefly 4 and went back to 3 after playtesting
   - with typical gear it averages about 5 damage per hit on Floor 1, 9-13 mid-game, and 11-15 late, against armour 0-4 (Magic Missile: 7-12, 21-26, 25-29)
   - never counts toward Sage's Echo or Arcane Overflow
   - the Sorceress's fallback when her mana runs dry, instead of staff melee
@@ -690,6 +690,14 @@ Enchantment UX:
 - shown in inventory detail
 - shown in vendor detail
 - affects gameplay directly in combat resolution
+
+Body armor:
+- any class can wear any armor; class-made pieces only show a "Made for the …" warning
+- evasion is worth 2% per point off every enemy's chance to hit you (`EVASION_PER_POINT_PCT`), so the Ranger's evasive armor and Dexterity pull their weight against plain defense. It isn't capped yet; see Remaining Work
+- open question: plate has no drawback for the Sorceress or Ranger, so the best defense is the same for every class. A "heavy armor" caster/archer penalty was tried and removed pending a rethink
+- defense ladder: robes 1 (starting) / 2 (early uncommon) / 3 (mid, including Robe of the Adept) / 4 (Starweave Robe); Ranger armor 2-4 plus evasion; mail and plate 3 (Iron Cuirass, Chain) / 4 (Bastion Mail, Guardian Plate) / 5 (Emberguard, Vanguard, Bulwark) / 6 (Abyssal Plate). Uncommons sit below rares of the same band
+- rarity rule: a lower-rarity item is never as good or better on every stat than a higher-rarity item for the same slot and class, unless it only appears on later floors (checked across all gear; the one near-tie, Gauntlets of Rime vs Sundergrip Gauntlets, is separated by the rare's stronger effect)
+- Floor 10 boss armor rewards: Bulwark Armor (Warrior, 5 defense, +14 HP), Robe of the Adept (Sorceress, 3 defense, +16 mana, +1 INT), and Nightstalker Garb (Ranger, 4 defense, +3 evasion, +8 HP, +6% ranged damage; its icon is Stalker's Hide recoloured violet)
 
 ## Loot Economy and Reward Rules
 
@@ -1014,6 +1022,7 @@ Daily Descent:
 - the main menu's Daily Descent button opens class selection for today's run; the attempt is recorded on this device when the run starts, after which the button shows "Done today" and opens today's standings instead. One attempt per day per device (not enforced by the server)
 - daily scores are saved with `daily_date`; the server only accepts today's or yesterday's date, so a run that crosses midnight still counts. Daily scores also count on the all-time board
 - High Scores has All Time and Daily Descent tabs; a daily run's end screen shows that day's board, and saving lands on it
+- the leaderboard is edge-cached (10 s, plus 30 s stale-while-revalidate), so right after a save the game adds the saved entry (returned by the API) to the boards it shows, refreshes with a cache-busting `fresh=` parameter, and keeps that entry on screen for two minutes even if a refresh returns an older cached copy. Saving a daily run lands on that run's own date, even if it has since passed midnight UTC
 - the floor card kicker reads "Daily Descent · …" and the Continue card and epitaph note a daily run
 - the last name used on the leaderboard is remembered and prefilled at the end of the next run
 
@@ -1186,6 +1195,8 @@ Main remaining work:
 - more distinct biome/theme variation if desired
 - continued stabilization and bug sweep
 - more uses of the shared database (per-class boards, real-player balance telemetry, global stats)
+- consider capping evasion's total effect (e.g. at 20 percentage points): at 2% per point a late Ranger stacks 15+ evasion, and simulated Ranger wins went from 17% to 66%
+- rethink how to give plate a drawback for non-Warriors (a "heavy" spell/ranged penalty was tried and removed)
 
 ## Scope Boundary
 

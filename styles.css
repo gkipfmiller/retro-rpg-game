@@ -3676,3 +3676,8 @@ button.danger {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent), inset 0 -2px 0 rgba(0, 0, 0, 0.35);
 }
+
+/* The class's main power ("Ranged power: +3") gets the whole row, so it never wraps. */
+#hud-power {
+  grid-column: 1 / -1;
+}

@@ -41,6 +41,13 @@ const SHRINE_STAT_LOSS = 1;
 const REFORGE_VALUE_MULTIPLIER = 8;
 const REFORGE_MIN_COST = 400;
 const OVERLORD_ECLIPSE_DAMAGE = [20, 26];
+// Each point of the player's evasion takes this much off an enemy's chance to hit (percentage points).
+// TODO(balance): consider capping evasion's total effect (e.g. at 20 points). A late Ranger stacks 15+
+// evasion from Dexterity, armor and Fleet Foot; in simulation 2% per point took her from 17% to 66% wins.
+export const EVASION_PER_POINT_PCT = 2;
+// How long a score this player just saved stays on the shared boards even if a refresh (possibly an
+// edge-cached copy) comes back without it.
+const JUST_SAVED_KEEP_MS = 2 * 60 * 1000;
 // Share of flat spell power a cantrip (Arcane Spark) gets; see the balance note on arcane_spark in data.js.
 export const CANTRIP_SPELL_POWER_SHARE = 1 / 2;
 
@@ -647,17 +654,22 @@ export class Game {
     return typeof fetch === "function" && /^https?:$/.test(globalThis.window?.location?.protocol ?? "");
   }
 
-  // board: "all", or a Daily Descent date.
-  async refreshSharedScores(board = "all") {
+  // board: "all", or a Daily Descent date. fresh: skip Vercel's edge cache (a unique query string
+  // is a new cache key), for right after this player has posted a score.
+  async refreshSharedScores(board = "all", { fresh = false } = {}) {
     if (!this.canUseSharedScores() || this.sharedScoresStatus[board] === "loading") return;
     this.sharedScoresStatus[board] = "loading";
     try {
-      const query = board === "all" ? "limit=20" : `limit=20&daily=${encodeURIComponent(board)}`;
+      const query = `${board === "all" ? "limit=20" : `limit=20&daily=${encodeURIComponent(board)}`}${fresh ? `&fresh=${Date.now()}` : ""}`;
       const response = await fetch(`/api/scores?${query}`, { headers: { Accept: "application/json" } });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const entries = await response.json();
       if (!Array.isArray(entries)) throw new Error("Bad leaderboard data");
+      // Keep a score this player just saved if the response predates it (a cached copy can be up
+      // to ~40 seconds old).
+      const pending = (this.sharedScores[board] ?? []).filter((entry) => entry.justSaved && Date.now() - entry.justSaved < JUST_SAVED_KEEP_MS);
       this.sharedScores[board] = entries;
+      for (const entry of pending) this.insertSharedScore(board, entry);
       this.sharedScoresStatus[board] = "online";
     } catch {
       this.sharedScoresStatus[board] = "offline";
@@ -675,12 +687,27 @@ export class Game {
         body: JSON.stringify(entry),
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      // Show the new score at once: the leaderboard is edge-cached for a few seconds, so a refresh
+      // straight after posting can come back without it.
+      const saved = (await response.json().catch(() => null))?.entry;
+      if (saved) for (const board of boards) this.insertSharedScore(board, { ...saved, justSaved: Date.now() });
+      this.onScoresChanged?.();
       for (const board of boards) this.sharedScoresStatus[board] = "idle";
-      await Promise.all(boards.map((board) => this.refreshSharedScores(board)));
+      await Promise.all(boards.map((board) => this.refreshSharedScores(board, { fresh: true })));
     } catch {
       for (const board of boards) this.sharedScoresStatus[board] = "offline";
       this.onScoresChanged?.();
     }
+  }
+
+  // Adds a just-saved score to a loaded shared board, in rank order (the same order the API uses).
+  insertSharedScore(board, entry) {
+    const list = this.sharedScores[board];
+    if (!list) return;
+    const same = (other) => other.name === entry.name && other.score === entry.score && other.turns === entry.turns;
+    this.sharedScores[board] = [...list.filter((other) => !same(other)), entry]
+      .sort((a, b) => b.score - a.score || b.floor - a.floor || b.kills - a.kills)
+      .slice(0, 20);
   }
 
   // Scores to show: the shared leaderboard when it's loaded, otherwise this browser's own.
@@ -1027,12 +1054,13 @@ export class Game {
   // The High Scores screen: all-time and today's Daily Descent, as tabs.
   renderScoresScreen() {
     const today = dailyDateUTC();
-    const board = this.scoreBoard === "all" ? "all" : today;
+    // "daily" means today's board; a date means that day's (a daily run begun before midnight UTC).
+    const board = this.scoreBoard === "all" ? "all" : this.scoreBoard === "daily" ? today : this.scoreBoard;
     const tab = (id, label) => `<button class="score-tab${(id === "all") === (board === "all") ? " active" : ""}" data-score-board="${id}">${label}</button>`;
     return `
       <div class="score-tabs" role="tablist">
         ${tab("all", "All Time")}
-        ${tab("daily", `Daily Descent · ${this.formatDailyDate(today)}`)}
+        ${tab("daily", `Daily Descent · ${this.formatDailyDate(board === "all" ? today : board)}`)}
       </div>
       ${this.renderHighScoreList(12, board)}
     `;
@@ -1130,7 +1158,7 @@ export class Game {
     this.scoreBoard = board;
     this.state.mode = "scores";
     this.state.ui.overlay = null;
-    this.refreshSharedScores(board === "all" ? "all" : dailyDateUTC());
+    this.refreshSharedScores(board === "all" ? "all" : board === "daily" ? dailyDateUTC() : board);
   }
 
   getXpForLevel(level) {
@@ -1569,7 +1597,7 @@ export class Game {
       distance,
       statuses: enemy.statuses ?? [],
       threat: {
-        hitChance: clamp(stats.accuracy - derived.evasion, 10, 95),
+        hitChance: clamp(stats.accuracy - derived.evasion * EVASION_PER_POINT_PCT, 10, 95),
         damage: [Math.max(1, stats.damage[0] - playerDefense), Math.max(1, stats.damage[1] - playerDefense)],
         range,
       },
@@ -3634,7 +3662,7 @@ export class Game {
       row("Max HP", combat.maxHp, `Max HP\n14 base + 3 per Vitality + ${CLASSES[player.classId].hpGrowth} per level + gear.`),
       row("Max mana", combat.maxMana, `Max mana\n2 base + 2 per Intelligence + ${CLASSES[player.classId].manaGrowth} per level + gear.`),
       row("Defense", combat.defense, "Defense\nSubtracted from every hit you take (minimum 1 damage)."),
-      row("Evasion", combat.evasion, "Evasion\nSubtracted from each enemy's chance to hit you.\nDexterity ÷ 2 + gear."),
+      row("Evasion", combat.evasion, `Evasion\nEach point takes ${EVASION_PER_POINT_PCT}% off every enemy's chance to hit you (${combat.evasion * EVASION_PER_POINT_PCT}% now).\nDexterity ÷ 2 + gear.`),
     ].join("");
 
     const attributes = [
@@ -4862,7 +4890,7 @@ export class Game {
     const template = this.getEnemyCombatStats(enemy);
     const derived = this.getPlayerCombatSnapshot();
     const rng = createRng(hashSeed(this.state.run.runSeed, this.state.run.turn, enemy.id, mode));
-    const hitChance = clamp(template.accuracy - derived.evasion, 10, 95);
+    const hitChance = clamp(template.accuracy - derived.evasion * EVASION_PER_POINT_PCT, 10, 95);
     const enemyCast = mode === "spell" || mode === "abyssal_bolt";
     const areaCast = mode === "rift" || mode === "eclipse";
     this.renderer?.queueNudge({ id: enemy.id, toward: player, kind: enemyCast || areaCast ? "recoil" : "lunge", delay: ENEMY_BEAT_MS });
@@ -5284,7 +5312,7 @@ export class Game {
           this.recordFallen(saveResult.name);
           this.state.run.scoreSaved = true;
           // Land on the board this run was entered into.
-          this.scoreBoard = summary.daily ? "daily" : "all";
+          this.scoreBoard = summary.daily ?? "all";
           this.state.mode = "scores";
           this.state.ui.overlay = null;
           this.state.run = null;

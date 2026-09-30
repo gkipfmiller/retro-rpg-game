@@ -198,7 +198,8 @@ export function playRun({ classId, profile = "competent", seed, skillStrategy = 
     } else {
       offense = ((weaponAvg + derived.meleeBonus) * (1 + derived.meleeDamagePct / 100) + enchant) * hit;
     }
-    const effectiveHp = derived.maxHp * (1 + derived.defense * 0.14) * (1 + derived.evasion / 60);
+    // Each evasion point takes 2% off enemy hit chance (EVASION_PER_POINT_PCT).
+    const effectiveHp = derived.maxHp * (1 + derived.defense * 0.14) * (1 + derived.evasion / 30);
     return offense * Math.pow(effectiveHp, 0.8);
   }
 
