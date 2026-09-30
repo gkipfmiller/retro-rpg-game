@@ -45,6 +45,27 @@ const OVERLORD_ECLIPSE_DAMAGE = [20, 26];
 // TODO(balance): consider capping evasion's total effect (e.g. at 20 points). A late Ranger stacks 15+
 // evasion from Dexterity, armor and Fleet Foot; in simulation 2% per point took her from 17% to 66% wins.
 export const EVASION_PER_POINT_PCT = 2;
+
+// ── Status effects on enemies ──
+// Hex and Sunder are lasting wounds: they stack and stay until the enemy dies. Chill builds toward a
+// freeze and fades a stack at a time. Bosses stack to 2 and are never slowed or frozen by chill.
+export const STATUS_STACK_CAP = { hexed: 3, sundered: 3, chilled: 3 };
+export const BOSS_STATUS_STACK_CAP = 2;
+// Hexed: extra damage taken from every source, per stack.
+export const HEX_DAMAGE_TAKEN_PCT = 15;
+// Sundered: defense lost per stack (never below 0).
+export const SUNDER_DEFENSE_PER_STACK = 2;
+// Weakened: less damage dealt (enemies and you), and how long it lasts on enemies.
+export const WEAKENED_DAMAGE_PCT = 30;
+export const WEAKENED_TURNS = 4;
+// Chilled (enemies): slowed, acting every other turn; loses a stack this often; at the cap it
+// becomes Frozen for this long. Bosses (and you) get the old accuracy penalty instead.
+export const CHILL_DECAY_TURNS = 2;
+export const CHILL_FREEZE_TURNS = 1;
+export const CHILL_ACCURACY_PENALTY = 6;
+// Status payoffs: Power Strike's bonus per Sunder stack on the target; Executioner and Deadeye also
+// count a fully sundered enemy as finishable.
+export const POWER_STRIKE_PER_SUNDER = 2;
 // How long a score this player just saved stays on the shared boards even if a refresh (possibly an
 // edge-cached copy) comes back without it.
 const JUST_SAVED_KEEP_MS = 2 * 60 * 1000;
@@ -60,6 +81,11 @@ const VOID_BURN = 3;
 // ordinary floor shows, and how far from the arrival point they must lie.
 const FALLEN_PER_FLOOR = [1, 2];
 const FALLEN_MIN_SPAWN_DISTANCE = 5;
+
+// Weakened: 30% less damage, never below 1.
+function weakenDamage(amount) {
+  return Math.max(1, Math.floor(amount * (1 - WEAKENED_DAMAGE_PCT / 100)));
+}
 
 function occupiedByEnemy(floor, x, y) {
   return floor.enemies.find((enemy) => enemy.x === x && enemy.y === y && !enemy.disguised);
@@ -1412,7 +1438,13 @@ export class Game {
       ];
       if (intel.spell) lines.push(`${intel.spell.label}: ${intel.spell.hitChance}% for ${range(intel.spell.damage)}${intel.spell.inRange ? "" : " (out of range)"}`);
       if (intel.statuses.length) {
-        lines.push(`Status: ${intel.statuses.map((status) => `${STATUS_DEFINITIONS[status.id]?.name ?? status.id}${status.turns ? ` (${status.turns})` : ""}`).join(", ")}`);
+        // Stacking statuses show their stacks ("Hexed ×2"); timed ones their turns left ("Weakened (3)").
+        const statusLabel = (status) => {
+          const name = STATUS_DEFINITIONS[status.id]?.name ?? status.id;
+          if (["hexed", "sundered", "chilled"].includes(status.id) && (status.value ?? 1) > 1) return `${name} ×${status.value}`;
+          return status.permanent || !status.turns ? name : `${name} (${status.turns})`;
+        };
+        lines.push(`Status: ${intel.statuses.map(statusLabel).join(", ")}`);
       }
       sections.push(lines.join("\n"));
     }
@@ -1520,9 +1552,9 @@ export class Game {
 
   getEnemyCombatStats(enemy) {
     const template = ENEMIES[enemy.templateId];
-    const sundered = this.getStatusValue(enemy, "sundered");
-    const hexedPenalty = this.hasStatus(enemy, "hexed") ? 2 : 0;
-    const chilled = this.hasStatus(enemy, "chilled");
+    const sundered = this.getStatusValue(enemy, "sundered") * SUNDER_DEFENSE_PER_STACK;
+    // Non-boss enemies are slowed by chill instead (see skipsTurnFromChill).
+    const chilled = this.hasStatus(enemy, "chilled") && this.isBoss(enemy);
     const weakened = this.hasStatus(enemy, "weakened");
     const eliteDamageBonus = enemy.elite ? 1 : 0;
     const phaseAccuracyBonus = enemy.templateId === "abyssal_overlord" && enemy.phaseTwo ? 4 : 0;
@@ -1536,10 +1568,10 @@ export class Game {
       : template.behavior === "boss" ? 0 : getDepthDamageBonus(enemy.floorNumber ?? this.state.run?.floorNumber ?? 1);
     return {
       ...template,
-      accuracy: template.accuracy + (enemy.elite ? 3 : 0) + phaseAccuracyBonus - (chilled ? 6 : 0),
-      defense: Math.max(0, template.defense + (enemy.elite ? 1 : 0) + phaseDefenseBonus - sundered - hexedPenalty),
+      accuracy: template.accuracy + (enemy.elite ? 3 : 0) + phaseAccuracyBonus - (chilled ? CHILL_ACCURACY_PENALTY : 0),
+      defense: Math.max(0, template.defense + (enemy.elite ? 1 : 0) + phaseDefenseBonus - sundered),
       damage: weakened
-        ? [Math.max(1, (template.damage[0] + eliteDamageBonus + phaseDamageBonus + depthDamageBonus) - 2), Math.max(1, (template.damage[1] + eliteDamageBonus + phaseDamageBonus + depthDamageBonus) - 2)]
+        ? [weakenDamage(template.damage[0] + eliteDamageBonus + phaseDamageBonus + depthDamageBonus), weakenDamage(template.damage[1] + eliteDamageBonus + phaseDamageBonus + depthDamageBonus)]
         : enemy.elite || phaseDamageBonus || depthDamageBonus
           ? [template.damage[0] + eliteDamageBonus + phaseDamageBonus + depthDamageBonus, template.damage[1] + eliteDamageBonus + phaseDamageBonus + depthDamageBonus]
           : template.damage,
@@ -1563,14 +1595,16 @@ export class Game {
     const bonus = ranged ? derived.rangedBonus : derived.meleeBonus;
     const damagePct = (ranged ? derived.rangedDamagePct : derived.meleeDamagePct) ?? 0;
     const enchantBonus = weapon?.enchantment?.type === "onHitBonusDamage" ? weapon.enchantment.value : 0;
-    const weaponHit = (roll) => Math.max(1, Math.floor((roll + bonus) * (1 + damagePct / 100)) - stats.defense) + enchantBonus;
+    // What a hit really does: after your Weakened (if any) and the target's Hexed.
+    const landed = (amount) => this.enemyDamageTaken(enemy, this.hasStatus(player, "weakened") ? weakenDamage(amount) : amount);
+    const weaponHit = (roll) => landed(Math.max(1, Math.floor((roll + bonus) * (1 + damagePct / 100)) - stats.defense) + enchantBonus);
     const weaponRoll = weapon?.damage ?? [1, 2];
 
     const spellId = [...player.quickSlots, ...player.learnedSpells]
       .find((entryId) => SPELLS[entryId]?.type === "spell" && SPELLS[entryId].damage && !SPELLS[entryId].cantrip);
     const spell = spellId ? SPELLS[spellId] : null;
     const spellEnchant = weapon?.enchantment?.type === "spellBonusDamage" ? weapon.enchantment.value : 0;
-    const spellHit = (roll) => Math.max(1, Math.floor((roll + derived.spellBonus) * (1 + derived.spellDamagePct / 100)) - stats.defense) + spellEnchant;
+    const spellHit = (roll) => landed(Math.max(1, Math.floor((roll + derived.spellBonus) * (1 + derived.spellDamagePct / 100)) - stats.defense) + spellEnchant);
 
     let playerDefense = derived.defense;
     if (this.hasStatus(player, "arcane_shield")) playerDefense += 2;
@@ -1649,6 +1683,78 @@ export class Game {
     return entity.statuses?.find((status) => status.id === statusId)?.value ?? 0;
   }
 
+  // Executioner and Deadeye: below 35% health, or fully sundered (3 stacks).
+  isFinishable(enemy) {
+    return enemy.hp / enemy.maxHp <= 0.35 || this.getStatusValue(enemy, "sundered") >= STATUS_STACK_CAP.sundered;
+  }
+
+  isBoss(enemy) {
+    return ENEMIES[enemy.templateId]?.behavior === "boss";
+  }
+
+  // Applies a status to an enemy under the stacking rules above. Returns a short description of the
+  // result for the log ("hexed ×2", "frozen solid"), or null when nothing changed.
+  applyEnemyStatus(enemy, statusId, options = {}) {
+    const result = this.applyEnemyStatusRules(enemy, statusId, options);
+    // The word rises over the enemy ("SUNDERED ×2", "FROZEN!").
+    if (result && this.state.run.currentFloor.map[enemy.y]?.[enemy.x]?.visible) {
+      const word = result === "frozen solid" ? "FROZEN!" : result === "chilled ×1" ? "SLOWED" : result.toUpperCase();
+      const statusId2 = result === "frozen solid" ? "frozen" : statusId;
+      this.renderer?.queueStatusPopup?.({ x: enemy.x, y: enemy.y, text: word, statusId: statusId2, targetId: enemy.id });
+    }
+    return result;
+  }
+
+  applyEnemyStatusRules(enemy, statusId, { stacks = 1, turns = null } = {}) {
+    const player = this.state.run.player;
+    const boss = this.isBoss(enemy);
+    const cap = boss ? BOSS_STATUS_STACK_CAP : STATUS_STACK_CAP[statusId];
+    enemy.statuses = enemy.statuses ?? [];
+    const existing = enemy.statuses.find((entry) => entry.id === statusId);
+    if (statusId === "hexed" || statusId === "sundered") {
+      const value = Math.min(cap, (existing?.value ?? 0) + stacks);
+      if (existing) Object.assign(existing, { value, permanent: true, turns: 1 });
+      else enemy.statuses.push({ id: statusId, value, turns: 1, permanent: true, fresh: true });
+      return `${statusId === "hexed" ? "hexed" : "sundered"} ×${value}`;
+    }
+    if (statusId === "chilled") {
+      const value = Math.min(cap, (existing?.value ?? 0) + stacks);
+      const decay = CHILL_DECAY_TURNS + this.getControlDurationBonus(player);
+      if (!boss && value >= cap) {
+        // Deep enough to freeze: the chill becomes a short freeze.
+        enemy.statuses = enemy.statuses.filter((entry) => entry.id !== "chilled");
+        enemy.slowedSkip = false;
+        this.upsertStatus(enemy, { id: "frozen", turns: CHILL_FREEZE_TURNS, value: 1 });
+        return "frozen solid";
+      }
+      if (existing) Object.assign(existing, { value, turns: decay, fresh: true });
+      else enemy.statuses.push({ id: "chilled", value, turns: decay, fresh: true });
+      return `chilled ×${value}`;
+    }
+    if (statusId === "weakened") {
+      this.upsertStatus(enemy, { id: "weakened", turns: turns ?? WEAKENED_TURNS + this.getControlDurationBonus(player), value: 1 });
+      return "weakened";
+    }
+    this.upsertStatus(enemy, { id: statusId, turns: turns ?? 2, value: stacks });
+    return STATUS_DEFINITIONS[statusId]?.name.toLowerCase() ?? statusId;
+  }
+
+  // Damage an enemy actually takes, after Hexed.
+  enemyDamageTaken(enemy, damage) {
+    const hex = this.getStatusValue(enemy, "hexed");
+    return hex ? Math.max(1, Math.floor(damage * (1 + (hex * HEX_DAMAGE_TAKEN_PCT) / 100))) : damage;
+  }
+
+  // Slowed: a chilled (non-boss) enemy acts every other turn. Returns true when it skips this turn.
+  skipsTurnFromChill(enemy) {
+    if (this.isBoss(enemy) || !this.hasStatus(enemy, "chilled")) {
+      enemy.slowedSkip = false;
+      return false;
+    }
+    enemy.slowedSkip = !enemy.slowedSkip;
+    return enemy.slowedSkip;
+  }
+
   upsertStatus(entity, status) {
     if (entity === this.state.run?.player && status.id !== "arcane_shield") {
       if (this.getNegativeStatusIds().includes(status.id) && this.state.run.player.boonId === "ward_of_ash") {
@@ -1694,11 +1800,12 @@ export class Game {
     const derived = this.getDerivedStats(player);
     const hexed = this.hasStatus(player, "hexed");
     const chilled = this.hasStatus(player, "chilled");
+    const sundered = this.hasStatus(player, "sundered") ? SUNDER_DEFENSE_PER_STACK : 0;
     const manaShieldActive = derived.manaShieldDefense && player.mana / Math.max(1, derived.maxMana) >= 0.5;
     return {
       ...derived,
-      defense: Math.max(0, derived.defense + (manaShieldActive ? derived.manaShieldDefense : 0) - (hexed ? 2 : 0)),
-      accuracy: derived.accuracy - (chilled ? 6 : 0),
+      defense: Math.max(0, derived.defense + (manaShieldActive ? derived.manaShieldDefense : 0) - (hexed ? 2 : 0) - sundered),
+      accuracy: derived.accuracy - (chilled ? CHILL_ACCURACY_PENALTY : 0),
     };
   }
 
@@ -2204,17 +2311,12 @@ export class Game {
     const hands = this.getHandsItem();
     const effect = hands?.handsEffect;
     if (!effect) return;
-    if (effect.type === "meleeStatusProc" && mode.type !== "spell" && rng.chance(effect.chance)) {
-      this.upsertStatus(enemy, { id: effect.statusId, turns: effect.turns, value: effect.value });
-      this.log(`${hands.name} inflicts ${STATUS_DEFINITIONS[effect.statusId]?.name ?? effect.statusId}.`);
-    }
-    if (effect.type === "spellStatusProc" && mode.type === "spell" && rng.chance(effect.chance)) {
-      this.upsertStatus(enemy, { id: effect.statusId, turns: effect.turns, value: effect.value });
-      this.log(`${hands.name} inflicts ${STATUS_DEFINITIONS[effect.statusId]?.name ?? effect.statusId}.`);
-    }
-    if (effect.type === "rangedStatusProc" && (mode.type === "ranged" || mode.type === "ranged_ability") && rng.chance(effect.chance)) {
-      this.upsertStatus(enemy, { id: effect.statusId, turns: effect.turns, value: effect.value });
-      this.log(`${hands.name} inflicts ${STATUS_DEFINITIONS[effect.statusId]?.name ?? effect.statusId}.`);
+    if (enemy.hp <= 0) return;
+    const procs = (effect.type === "meleeStatusProc" && mode.type !== "spell")
+      || (effect.type === "spellStatusProc" && mode.type === "spell")
+      || (effect.type === "rangedStatusProc" && (mode.type === "ranged" || mode.type === "ranged_ability"));
+    if (procs && rng.chance(effect.chance)) {
+      this.log(`${hands.name}: ${enemy.name} is ${this.applyEnemyStatus(enemy, effect.statusId)}.`);
     }
   }
 
@@ -2408,10 +2510,10 @@ export class Game {
       const base = rng.int(weapon?.damage?.[0] ?? 1, weapon?.damage?.[1] ?? 2) + derived.meleeBonus + momentumBonus + boonBattleTrance;
       damage = Math.max(1, Math.floor(base * (1 + derived.meleeDamagePct / 100)) - enemyStats.defense);
       damage = Math.max(1, Math.floor(damage * (1 + movedIntoPressureBonus)));
-      if (mode.abilityId === "power_strike") damage += 3;
+      if (mode.abilityId === "power_strike") damage += 3 + this.getStatusValue(enemy, "sundered") * POWER_STRIKE_PER_SUNDER;
       if (mode.abilityId === "guard_break") damage += 1;
       if (enchantment?.type === "onHitBonusDamage") damage += enchantment.value;
-      if (enemy.hp / enemy.maxHp <= 0.35 && derived.executioner) damage += Math.floor(damage * (derived.executioner / 100));
+      if (derived.executioner && this.isFinishable(enemy)) damage += Math.floor(damage * (derived.executioner / 100));
       if (player.hp / derived.maxHp <= 0.3 && derived.lowHpDamagePct) damage += Math.floor(damage * (derived.lowHpDamagePct / 100));
       if (momentumBonus) {
         player.turnFlags.killMomentum = 0;
@@ -2431,7 +2533,7 @@ export class Game {
         if (armorPen) damage += Math.min(armorPen, enemyStats.defense);
       }
       if (enchantment?.type === "onHitBonusDamage") damage += enchantment.value;
-      if (enemy.hp / enemy.maxHp <= 0.35 && derived.executioner) damage += Math.floor(damage * (derived.executioner / 100));
+      if (derived.executioner && this.isFinishable(enemy)) damage += Math.floor(damage * (derived.executioner / 100));
       if (player.hp / derived.maxHp <= 0.3 && derived.lowHpDamagePct) damage += Math.floor(damage * (derived.lowHpDamagePct / 100));
       if (momentumBonus) player.turnFlags.killMomentum = 0;
       if (derived.rangedPoisonChance || enchantment?.type === "rangedPoisonProc") {
@@ -2462,10 +2564,12 @@ export class Game {
       if (derived.evocationBonus && (enemy.hp / enemy.maxHp >= 0.75 || enemy.hp / enemy.maxHp <= 0.25)) {
         damage += Math.floor(damage * (derived.evocationBonus / 100));
       }
-      if (derived.frailtyCurse && (this.hasStatus(enemy, "chilled") || this.hasStatus(enemy, "weakened"))) {
+      if (derived.frailtyCurse && ["chilled", "frozen", "weakened"].some((id) => this.hasStatus(enemy, id))) {
         damage += Math.floor(damage * (derived.frailtyCurse / 100));
       }
-      if (mode.spellId === "ice_shatter" && this.hasStatus(enemy, "chilled")) {
+      if (mode.spellId === "ice_shatter" && this.hasStatus(enemy, "frozen")) {
+        damage *= 2;
+      } else if (mode.spellId === "ice_shatter" && this.hasStatus(enemy, "chilled")) {
         damage += 4 + this.getControlDurationBonus(player);
       }
       if (enchantment?.type === "spellBonusDamage" && !spell.cantrip) {
@@ -2478,11 +2582,15 @@ export class Game {
     const keenEye = derived.milestones?.keenEye && (mode.type === "ranged" || mode.type === "ranged_ability") ? 10 : 0;
     const spellCrit = mode.type === "spell" ? derived.spellCritPct ?? 0 : 0;
     const critChance = clamp(5 + (derived.critBonus ?? 0) + keenEye + spellCrit, 5, 55);
-    const criticalHit = rng.chance(critChance / 100);
+    // Aimed Shot never misses its mark on a slowed (chilled) enemy: always a critical hit.
+    const sureCrit = mode.abilityId === "aimed_shot" && this.hasStatus(enemy, "chilled");
+    const criticalHit = sureCrit || rng.chance(critChance / 100);
     if (criticalHit) {
       damage = Math.max(1, Math.floor(damage * 1.5));
     }
     damage = Math.max(1, Math.floor(damage * damageMultiplier));
+    if (this.hasStatus(player, "weakened")) damage = weakenDamage(damage);
+    damage = this.enemyDamageTaken(enemy, damage);
 
     enemy.hp -= damage;
     this.recordDamage("dealt", damage);
@@ -2494,34 +2602,38 @@ export class Game {
     const popupDelay = travelKind ? projectileDelay + (this.renderer?.getProjectileDuration?.(travelKind) ?? 0) : meleeDelay;
     this.renderer?.queueDamagePopup({ x: enemy.x, y: enemy.y, damage, type: "enemy", critical: criticalHit, delay: popupDelay, targetId: enemy.id });
     this.log(`You ${criticalHit ? "critically strike" : "hit"} ${enemy.name} for ${damage} damage.`);
-    if (mode.abilityId === "guard_break") {
-      this.upsertStatus(enemy, { id: "sundered", turns: 3, value: 2 });
-      this.log(`${enemy.name} is sundered.`);
+    if (mode.abilityId === "guard_break" && enemy.hp > 0) {
+      this.log(`${enemy.name} is ${this.applyEnemyStatus(enemy, "sundered", { stacks: 2 })}.`);
     }
-    if (mode.spellId === "frost_shard") {
-      this.upsertStatus(enemy, { id: "chilled", turns: 2 + this.getControlDurationBonus(player), value: 1 });
-      this.log(`${enemy.name} is chilled.`);
+    if (mode.spellId === "frost_shard" && enemy.hp > 0) {
+      this.log(`${enemy.name} is ${this.applyEnemyStatus(enemy, "chilled")}.`);
     }
     if (mode.spellId === "fireball" && enemy.hp > 0) {
       const { burn } = SPELLS.fireball;
       this.upsertStatus(enemy, { id: "burning", turns: burn.turns, value: burn.value });
     }
-    if (mode.spellId === "arcane_burst") {
-      this.upsertStatus(enemy, { id: "weakened", turns: 2 + this.getControlDurationBonus(player), value: 1 });
+    if (mode.spellId === "arcane_burst" && enemy.hp > 0) {
+      this.applyEnemyStatus(enemy, "weakened");
       this.log(`${enemy.name} is weakened by the burst.`);
     }
-    if (mode.spellId === "ice_shatter" && this.hasStatus(enemy, "chilled")) {
+    if (mode.spellId === "ice_shatter" && this.hasStatus(enemy, "frozen")) {
+      enemy.statuses = enemy.statuses.filter((status) => status.id !== "frozen" && status.id !== "chilled");
+      enemy.slowedSkip = false;
+      this.log(`${enemy.name}'s ice shatters!`);
+      this.renderer?.queueStatusPopup?.({ x: enemy.x, y: enemy.y, text: "SHATTER!", statusId: "frozen", targetId: enemy.id });
+    } else if (mode.spellId === "ice_shatter" && this.hasStatus(enemy, "chilled")) {
       enemy.statuses = enemy.statuses.filter((status) => status.id !== "chilled");
+      enemy.slowedSkip = false;
       this.log(`${enemy.name}'s chill shatters violently.`);
     }
-    if (mode.spellId === "frailty_hex") {
-      this.upsertStatus(enemy, { id: "hexed", turns: 2 + this.getControlDurationBonus(player), value: 1 });
-      this.upsertStatus(enemy, { id: "weakened", turns: 2, value: 1 });
-      this.log(`${enemy.name} is hexed and weakened.`);
+    if (mode.spellId === "frailty_hex" && enemy.hp > 0) {
+      const hex = this.applyEnemyStatus(enemy, "hexed");
+      this.applyEnemyStatus(enemy, "weakened");
+      this.log(`${enemy.name} is ${hex} and weakened.`);
     }
     this.maybeApplyHandsEffect(enemy, mode, rng);
-    if (derived.weakenOnHit && mode.type !== "spell") {
-      this.upsertStatus(enemy, { id: "weakened", turns: 1 + derived.weakenOnHit, value: 1 });
+    if (derived.weakenOnHit && mode.type !== "spell" && enemy.hp > 0) {
+      this.applyEnemyStatus(enemy, "weakened");
       this.renderer?.queueEffect({ kind: "weakenWisp", x: enemy.x, y: enemy.y, targetId: enemy.id, delay: meleeDelay });
       this.log(`${enemy.name} is weakened.`);
     }
@@ -2529,8 +2641,8 @@ export class Game {
       player.hp = Math.min(derived.maxHp, player.hp + enchantment.value);
       this.log(`${weapon.name} restores ${enchantment.value} HP.`);
     }
-    if (mode.type !== "spell" && enchantment?.type === "sunderChance" && rng.chance(enchantment.chance)) {
-      this.upsertStatus(enemy, { id: "sundered", turns: enchantment.turns, value: enchantment.value });
+    if (mode.type !== "spell" && enchantment?.type === "sunderChance" && enemy.hp > 0 && rng.chance(enchantment.chance)) {
+      this.applyEnemyStatus(enemy, "sundered");
       this.renderer?.queueEffect({ kind: "crack", x: enemy.x, y: enemy.y, targetId: enemy.id, angle: Math.atan2(enemy.y - player.y, enemy.x - player.x), delay: meleeDelay, duration: 320 });
       this.log(`${weapon.name} sunders ${enemy.name}'s defense.`);
     }
@@ -2545,7 +2657,7 @@ export class Game {
       const splashDamage = Math.max(1, Math.floor(damage * derived.cleave));
       const adjacentEnemies = this.state.run.currentFloor.enemies.filter((candidate) => candidate.id !== enemy.id && manhattan(candidate, enemy) === 1);
       for (const adjacent of adjacentEnemies.slice(0, 2)) {
-        adjacent.hp -= splashDamage;
+        adjacent.hp -= this.enemyDamageTaken(adjacent, splashDamage);
         this.recordDamage("dealt", splashDamage);
         // Cleaving Strike: each enemy caught in the sweep gets its own slash mark.
         this.renderer?.queueEffect({ kind: "slash", x: adjacent.x, y: adjacent.y, targetId: adjacent.id, from: { x: enemy.x, y: enemy.y }, weapon: weapon?.id ?? null, mark: true, delay: meleeDelay + 60 });
@@ -2564,7 +2676,7 @@ export class Game {
         );
         if (phantomTarget) {
           const phantomDamage = Math.max(1, Math.floor(damage * 0.5));
-          phantomTarget.hp -= phantomDamage;
+          phantomTarget.hp -= this.enemyDamageTaken(phantomTarget, phantomDamage);
           this.recordDamage("dealt", phantomDamage);
           this.renderer?.queueProjectile({ kind: "phantom_arrow", from: { x: player.x, y: player.y }, to: { x: phantomTarget.x, y: phantomTarget.y }, targetId: phantomTarget.id, delay: 90 });
           this.renderer?.queueDamagePopup({ x: phantomTarget.x, y: phantomTarget.y, damage: phantomDamage, type: "enemy", targetId: phantomTarget.id, delay: 90 + (this.renderer?.getProjectileDuration?.("phantom_arrow") ?? 0) });
@@ -2797,17 +2909,21 @@ export class Game {
       this.renderer?.queueEffect({ kind: "nova", x: player.x, y: player.y });
       const { freezeTurns } = spell;
       for (const enemy of targets) {
-        // The chill outlasts the freeze by a turn, so Ice Shatter can still cash it in.
-        this.upsertStatus(enemy, { id: "chilled", turns: freezeTurns + 1 + this.getControlDurationBonus(player), value: 1 });
-        if (ENEMIES[enemy.templateId]?.behavior === "boss") {
-          this.log(`${enemy.name} shrugs off the freeze, but is chilled.`);
+        if (this.isBoss(enemy)) {
+          this.log(`${enemy.name} shrugs off the freeze, but is ${this.applyEnemyStatus(enemy, "chilled", { stacks: 2 })}.`);
           continue;
         }
+        // Two stacks of chill that outlast the freeze, so the enemy is still slowed after it thaws.
+        // (A third stack would turn it straight into a freeze, so an already-chilled enemy is only
+        // topped up to two.)
+        const chill = this.getStatusValue(enemy, "chilled");
+        if (chill < 2) this.applyEnemyStatus(enemy, "chilled", { stacks: 2 - chill });
         // "Fresh", so it survives the end of this turn: the enemy skips its reply to the nova, then
         // stays frozen through the player's next freezeTurns actions.
         this.upsertStatus(enemy, { id: "frozen", turns: freezeTurns, value: 1 });
         this.wakeGuard(enemy);
         this.log(`${enemy.name} is frozen solid for ${freezeTurns} turns.`);
+        this.renderer?.queueStatusPopup?.({ x: enemy.x, y: enemy.y, text: "FROZEN!", statusId: "frozen", targetId: enemy.id });
       }
       this.endPlayerTurn();
       return;
@@ -3035,7 +3151,7 @@ export class Game {
       // Like the Sorceress's own spells, the spire's bolts never miss.
       // Magic Missile's roll with half the Sorceress's flat spell power.
       const base = rng.int(roll[0], roll[1]) + Math.floor(derived.spellBonus / 2);
-      const damage = Math.max(1, Math.floor(base * (1 + derived.spellDamagePct / 100)) - stats.defense);
+      const damage = this.enemyDamageTaken(target, Math.max(1, Math.floor(base * (1 + derived.spellDamagePct / 100)) - stats.defense));
       target.hp -= damage;
       this.recordDamage("dealt", damage);
       this.renderer?.queueDamagePopup({ x: target.x, y: target.y, damage, type: "enemy", targetId: target.id, delay: this.renderer?.getProjectileDuration?.("spire_bolt") ?? 0 });
@@ -3129,6 +3245,15 @@ export class Game {
         const amount = this.getRendedHealing(item.effect.value);
         player.hp = Math.min(derived.maxHp, player.hp + amount);
         this.log(`You recover ${amount} HP.${amount < item.effect.value ? " Your rent wounds resist the healing." : ""}`);
+        // A healing potion also cures the worst of your ailments (the longest-lasting one). Rend is
+        // Patches' mechanic and potions don't mend it.
+        const ailment = player.statuses
+          .filter((status) => this.getNegativeStatusIds().includes(status.id) && status.id !== "rended")
+          .sort((a, b) => b.turns - a.turns)[0];
+        if (ailment) {
+          player.statuses = player.statuses.filter((status) => status !== ailment);
+          this.log(`The potion also cures ${STATUS_DEFINITIONS[ailment.id]?.name ?? ailment.id}.`);
+        }
       } else if (item.effect.type === "stat") {
         // Stat elixirs: a permanent +1. Max HP and mana follow the new stat.
         const before = this.getDerivedStats(player);
@@ -4277,16 +4402,23 @@ export class Game {
       const previousStatuses = [...enemy.statuses];
       let poisonDamage = 0;
       let burnDamage = 0;
+      const chillDecay = CHILL_DECAY_TURNS + this.getControlDurationBonus(player);
       enemy.statuses = enemy.statuses
         .map((status) => {
           if (status.fresh) return { ...status, fresh: false };
+          // Hex and Sunder last until the enemy dies.
+          if (status.permanent) return status;
           if (status.id === "poisoned") poisonDamage += status.value ?? 1;
           if (status.id === "burning") burnDamage += status.value ?? 1;
+          // Chill fades one stack at a time.
+          if (status.id === "chilled" && status.turns <= 1 && (status.value ?? 1) > 1) {
+            return { ...status, value: status.value - 1, turns: chillDecay };
+          }
           return { ...status, turns: status.turns - 1 };
         })
         .filter((status) => status.turns > 0);
       if (poisonDamage + burnDamage > 0) {
-        const total = poisonDamage + burnDamage;
+        const total = this.enemyDamageTaken(enemy, poisonDamage + burnDamage);
         enemy.hp -= total;
         this.recordDamage("dealt", total);
         if (this.state.run.currentFloor.map[enemy.y]?.[enemy.x]?.visible) {
@@ -4692,6 +4824,8 @@ export class Game {
       // Killed earlier this round (e.g. by the spire), or frozen by Frost Nova.
       if (!currentFloor.enemies.includes(enemy)) continue;
       if (this.hasStatus(enemy, "frozen")) continue;
+      // Slowed by chill: acts every other turn.
+      if (this.skipsTurnFromChill(enemy)) continue;
       // Guards (bosses and the final sentries) hold their room until the player steps inside or
       // strikes them. Their attack rhythm starts from that moment, so every fight opens the same way.
       if (enemy.holdRoom && !enemy.roomTriggered) {

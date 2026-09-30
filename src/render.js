@@ -126,6 +126,30 @@ const FLASH_VARIANTS = ["critical", "necro", "slam", "void", "seal"];
 
 const reduceMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
+// How statuses show on an enemy: the sprite tint for its strongest status (first in this list wins)
+// and the colour of the pop-up word when one lands.
+const STATUS_LOOKS = [
+  { id: "frozen", tint: "rgba(196, 236, 255, 0.62)", text: "#e2f6ff" },
+  { id: "chilled", tint: "rgba(110, 185, 255, 0.36)", text: "#8fd0ff" },
+  { id: "hexed", tint: "rgba(176, 96, 255, 0.34)", text: "#c89bff", pulse: true },
+  { id: "sundered", tint: null, text: "#ffa65a" },
+  { id: "weakened", tint: "rgba(38, 28, 52, 0.4)", text: "#b8a8c8" },
+];
+const STACKING_STATUSES = new Set(["hexed", "sundered", "chilled"]);
+
+// Per-status wording for badges and tooltips, from the enemy's side (stacks shown as "×2").
+function describeEnemyStatus(status) {
+  const stacks = status.value ?? 1;
+  switch (status.id) {
+    case "hexed": return `Takes +${stacks * 15}% damage. Lasts until it dies.`;
+    case "sundered": return `−${stacks * 2} defense. Lasts until it dies.`;
+    case "chilled": return `Slowed: acts every other turn. ${stacks >= 2 ? "One more chill freezes it." : "Two more chills freeze it."}`;
+    case "weakened": return "Deals 30% less damage.";
+    case "frozen": return "Frozen solid: takes no turns.";
+    default: return STATUS_DEFINITIONS[status.id]?.description ?? "";
+  }
+}
+
 const MINIMAP_COLORS = {
   panel: "rgba(8, 10, 13, 0.78)",
   border: "rgba(215, 165, 77, 0.55)",
@@ -647,24 +671,28 @@ function getFloorDecorSpec(manifest, currentFloor, x, y, options = {}) {
   return null;
 }
 
-function renderStatusBadges(statuses = []) {
+// onEnemy: describe the status as it acts on an enemy, with its stacks and current strength.
+function renderStatusBadges(statuses = [], { onEnemy = false } = {}) {
   if (!statuses.length) return `<span class="status-badge muted-badge">None</span>`;
   return statuses.map((status) => {
     const def = STATUS_DEFINITIONS[status.id];
-    const tooltip = [def?.name ?? status.id, def?.description ?? "", status.turns ? `Turns remaining: ${status.turns}` : ""]
+    const stacks = STACKING_STATUSES.has(status.id) && (status.value ?? 1) > 1 ? ` ×${status.value}` : "";
+    const lasting = status.permanent;
+    const tooltip = [`${def?.name ?? status.id}${stacks}`, onEnemy ? describeEnemyStatus(status) : def?.description ?? "", !lasting && status.turns ? `Turns remaining: ${status.turns}` : ""]
       .filter(Boolean)
       .join("&#10;");
     const iconUrl = getStatusIconUrl(status.id);
     const icon = iconUrl
       ? `<img class="status-icon" src="${iconUrl}" alt="">`
       : `<span class="status-icon status-icon-letter">${def?.icon ?? "?"}</span>`;
-    return `<span class="status-badge" style="--badge-color:${getStatusColor(status.id)}" data-tooltip="${tooltip}">${icon}${def?.name ?? status.id}${status.turns ? `<span class="status-turns">${status.turns}</span>` : ""}</span>`;
+    const counter = stacks ? `×${status.value}` : !lasting && status.turns ? status.turns : "";
+    return `<span class="status-badge" style="--badge-color:${getStatusColor(status.id)}" data-tooltip="${tooltip}">${icon}${def?.name ?? status.id}${counter !== "" ? `<span class="status-turns">${counter}</span>` : ""}</span>`;
   }).join("");
 }
 
-function renderOptionalStatusBadges(statuses = []) {
+function renderOptionalStatusBadges(statuses = [], options = {}) {
   if (!statuses.length) return "";
-  return `<div class="status-badge-row">${renderStatusBadges(statuses)}</div>`;
+  return `<div class="status-badge-row">${renderStatusBadges(statuses, options)}</div>`;
 }
 
 
@@ -1103,6 +1131,7 @@ export class Renderer {
         const scale = ACTOR_SCALES[enemy.templateId] ?? 1;
         this.fx.drawAuraBehind(ctx, enemy, px, py, tileSize);
         this.drawActor(sprite, px, py, tileSize, scale);
+        this.drawStatusTint(sprite, enemy, this.actorRect(sprite, px, py, tileSize, scale));
         this.fx.drawAuraFront(ctx, enemy, sprite, this.actorRect(sprite, px, py, tileSize, scale, offsetX, offsetY), tileSize);
         this.drawStatusPips(px, py, tileSize, enemy.statuses);
       } else {
@@ -1985,7 +2014,7 @@ export class Renderer {
     const { ctx } = this;
     ctx.save();
     ctx.imageSmoothingEnabled = false;
-    statuses.slice(0, 3).forEach((status, index) => {
+    statuses.slice(0, 4).forEach((status, index) => {
       const left = x + 1 + index * (size + gap);
       const top = y - size - 3;
       ctx.fillStyle = "rgba(8, 6, 5, 0.75)";
@@ -1997,7 +2026,49 @@ export class Renderer {
         ctx.fillStyle = getStatusColor(status.id);
         ctx.fillRect(left, top, size, size);
       }
+      // Stack count in the corner (×2, ×3).
+      if (STACKING_STATUSES.has(status.id) && (status.value ?? 1) > 1) {
+        const digit = Math.max(6, Math.round(size * 0.7));
+        ctx.font = `bold ${digit}px monospace`;
+        ctx.textAlign = "right";
+        ctx.textBaseline = "bottom";
+        ctx.lineWidth = Math.max(2, scale * 2);
+        ctx.strokeStyle = "rgba(0, 0, 0, 0.85)";
+        ctx.strokeText(String(status.value), left + size + scale, top + size + scale);
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(String(status.value), left + size + scale, top + size + scale);
+      }
     });
+    ctx.restore();
+  }
+
+  // Colours an enemy sprite by its strongest status (frozen, chilled, hexed, weakened). The tinted
+  // copy is cached per sprite frame and colour.
+  drawStatusTint(sprite, enemy, rect) {
+    const look = STATUS_LOOKS.find((entry) => entry.tint && enemy.statuses?.some((status) => status.id === entry.id));
+    if (!look) return;
+    this.tintCache = this.tintCache ?? new WeakMap();
+    if (!this.tintCache.has(sprite)) this.tintCache.set(sprite, new Map());
+    const perSprite = this.tintCache.get(sprite);
+    let tinted = perSprite.get(look.tint);
+    if (!tinted) {
+      tinted = document.createElement("canvas");
+      tinted.width = sprite.naturalWidth || sprite.width;
+      tinted.height = sprite.naturalHeight || sprite.height;
+      const tctx = tinted.getContext("2d");
+      tctx.drawImage(sprite, 0, 0);
+      tctx.globalCompositeOperation = "source-atop";
+      tctx.fillStyle = look.tint;
+      tctx.fillRect(0, 0, tinted.width, tinted.height);
+      perSprite.set(look.tint, tinted);
+    }
+    const { ctx } = this;
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    // Hex shimmers; the others hold steady.
+    if (look.pulse && !reduceMotion()) ctx.globalAlpha = 0.65 + Math.sin(performance.now() / 320) * 0.35;
+    // The tint colour is baked in at its own alpha; draw the full sprite then the tint layer.
+    ctx.drawImage(tinted, rect.x, rect.y, rect.width, rect.height);
     ctx.restore();
   }
 
@@ -2291,6 +2362,20 @@ export class Renderer {
     this.fx.drawWorld(this.ctx, { offsetX, offsetY, tileSize });
   }
 
+  // A status word ("SUNDERED ×2", "FROZEN!") rising over an enemy, just after that hit's number.
+  queueStatusPopup({ x, y, text, statusId = null, targetId = null }) {
+    const now = performance.now();
+    const last = this.damagePopups.filter((popup) => popup.targetId === targetId).reduce((latest, popup) => Math.max(latest, popup.createdAt), 0);
+    const color = STATUS_LOOKS.find((entry) => entry.id === statusId)?.text ?? "#ffffff";
+    this.damagePopups.push({
+      x, y, text, color, type: "status", targetId,
+      createdAt: Math.max(now, last + 180),
+      duration: 1100,
+      offsetX: 0,
+      offsetY: -0.25,
+    });
+  }
+
   queueDamagePopup({ x, y, damage, type = "enemy", critical = false, delay = 0, targetId = null }) {
     // Hits landing on the same actor together rise one after another, so "4" and "1" never read as "41".
     const at = performance.now() + delay;
@@ -2323,8 +2408,8 @@ export class Renderer {
       const rise = progress * tileSize * 1.2;
       const px = offsetX + (popup.x + 0.5 + popup.offsetX) * tileSize;
       const py = offsetY + (popup.y + 0.2 + (popup.offsetY ?? 0)) * tileSize - rise;
-      const fontSize = popup.critical ? Math.max(13, tileSize * 0.7) : Math.max(11, tileSize * 0.55);
-      const text = `${popup.damage}`;
+      const fontSize = popup.type === "status" ? Math.max(10, tileSize * 0.36) : popup.critical ? Math.max(13, tileSize * 0.7) : Math.max(11, tileSize * 0.55);
+      const text = popup.text ?? `${popup.damage}`;
       this.ctx.save();
       this.ctx.globalAlpha = alpha;
       this.ctx.font = `bold ${Math.floor(fontSize)}px monospace`;
@@ -2336,6 +2421,8 @@ export class Renderer {
         this.ctx.fillStyle = popup.critical ? "#ff4444" : "#ff8844";
       } else if (popup.type === "heal") {
         this.ctx.fillStyle = "#44ff66";
+      } else if (popup.type === "status") {
+        this.ctx.fillStyle = popup.color;
       } else {
         this.ctx.fillStyle = popup.critical ? "#ffff44" : "#ffffff";
       }
@@ -2630,7 +2717,7 @@ export class Renderer {
           <dt>Defense</dt><dd>DEF ${intel.defense} · EVA ${intel.evasion}</dd>
         </div>
       </dl>
-      ${renderOptionalStatusBadges(intel.statuses)}
+      ${renderOptionalStatusBadges(intel.statuses, { onEnemy: true })}
     `;
   }
 

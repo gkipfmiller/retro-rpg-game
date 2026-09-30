@@ -74,7 +74,7 @@ export const SKILL_TREES = {
         { id: "warrior_weapon_2", name: "Battle Rhythm", description: "After a kill, your next hit deals +2 damage.", effect: { stat: "killMomentum", value: 2 } },
         { id: "warrior_weapon_3", name: "Crushing Blows", description: "+10% critical chance.", effect: { stat: "critBonus", value: 10 } },
         { id: "warrior_weapon_4", name: "Cleaving Strike", description: "Power Strike also hits enemies next to the target for 25% of its damage.", effect: { stat: "cleave", value: 0.25 } },
-        { id: "warrior_weapon_5", name: "Executioner", description: "+25% damage to enemies below 35% health.", effect: { stat: "executioner", value: 25 } },
+        { id: "warrior_weapon_5", name: "Executioner", description: "+25% damage to enemies below 35% health or fully sundered (3 stacks).", effect: { stat: "executioner", value: 25 } },
       ],
     },
     {
@@ -95,7 +95,7 @@ export const SKILL_TREES = {
         { id: "warrior_tactic_1", name: "Combat Footing", description: "+5 accuracy.", effect: { stat: "accuracyFlat", value: 5 } },
         { id: "warrior_tactic_2", name: "Brace", description: "-25% trap damage.", effect: { stat: "trapReductionPct", value: 25 } },
         { id: "warrior_tactic_3", name: "Charge", description: "Power Strike reaches 2 tiles in a line.", effect: { stat: "chargeRange", value: 2 } },
-        { id: "warrior_tactic_4", name: "Disrupting Strike", description: "Melee hits weaken enemies for 2 turns (they deal 2 less damage).", effect: { stat: "weakenOnHit", value: 1 } },
+        { id: "warrior_tactic_4", name: "Disrupting Strike", description: "Melee hits weaken enemies for 4 turns (they deal 30% less damage).", effect: { stat: "weakenOnHit", value: 1 } },
         { id: "warrior_tactic_5", name: "Warlord's Advance", description: "+15% damage when you attack right after moving.", effect: { stat: "advanceDamagePct", value: 15 } },
       ],
     },
@@ -129,7 +129,7 @@ export const SKILL_TREES = {
       skills: [
         // Array order is the unlock order. Ids stay with their skill (saves store them), so they no
         // longer match the tier numbers after the reorder.
-        { id: "wizard_control_2", name: "Lingering Hex", description: "Your chill, weaken and hex effects last 1 turn longer.", effect: { stat: "controlDuration", value: 1 } },
+        { id: "wizard_control_2", name: "Lingering Hex", description: "Your weaken lasts 1 turn longer, and your chill fades 1 turn slower.", effect: { stat: "controlDuration", value: 1 } },
         { id: "wizard_control_1", name: "Frost Nova", description: "Learn Frost Nova: freeze every enemy around you for 2 turns and chill them.", effect: { grantSpell: "frost_nova" } },
         { id: "wizard_control_4", name: "Frailty Curse", description: "+15% spell damage to chilled or weakened enemies.", effect: { stat: "frailtyCurse", value: 15 } },
         { id: "wizard_control_3", name: "Summon Spire", description: "Learn Summon Spire: an arcane spire fires bolts at your foes for 5 turns.", effect: { grantSpell: "summon_spire" } },
@@ -146,7 +146,7 @@ export const SKILL_TREES = {
         { id: "ranger_dead_2", name: "Bullseye", description: "+10% critical chance.", effect: { stat: "critBonus", value: 10 } },
         { id: "ranger_dead_3", name: "Quick Nock", description: "After a kill, your next hit deals +2 damage.", effect: { stat: "killMomentum", value: 2 } },
         { id: "ranger_dead_4", name: "Piercing Shot", description: "Aimed Shot ignores 2 defense.", effect: { stat: "aimedShotArmorPen", value: 2 } },
-        { id: "ranger_dead_5", name: "Deadeye", description: "+25% damage to enemies below 35% health.", effect: { stat: "executioner", value: 25 } },
+        { id: "ranger_dead_5", name: "Deadeye", description: "+25% damage to enemies below 35% health or fully sundered (3 stacks).", effect: { stat: "executioner", value: 25 } },
       ],
     },
     {
@@ -181,7 +181,7 @@ export const SPELLS = {
     type: "ability",
     cost: 1,
     range: 1,
-    description: "A heavy melee strike that deals +3 damage.",
+    description: "A heavy melee strike that deals +3 damage, and +2 more for each Sunder stack on the target.",
   },
   guard_break: {
     id: "guard_break",
@@ -189,7 +189,7 @@ export const SPELLS = {
     type: "ability",
     cost: 2,
     range: 1,
-    description: "A crushing melee hit (+1 damage) that sunders the enemy: −2 defense for 3 turns.",
+    description: "A crushing melee hit (+1 damage) that sunders the enemy twice: −4 defense until it dies.",
   },
   magic_missile: {
     id: "magic_missile",
@@ -215,7 +215,7 @@ export const SPELLS = {
     cost: 4,
     range: 5,
     damage: [6, 9],
-    description: "A hard-hitting shard of ice that chills the target for 2 turns (−6 accuracy).",
+    description: "A hard-hitting shard of ice that chills the target: slowed, and three chills freeze it.",
   },
   blink: {
     id: "blink",
@@ -250,7 +250,7 @@ export const SPELLS = {
     cost: 5,
     range: 5,
     damage: [5, 8],
-    description: "Deals +4 damage to a chilled target, consuming the chill.",
+    description: "Deals +4 damage to a chilled target, consuming the chill. Against a frozen target it deals double damage and shatters the ice.",
   },
   frailty_hex: {
     id: "frailty_hex",
@@ -259,7 +259,7 @@ export const SPELLS = {
     cost: 4,
     range: 5,
     damage: [2, 4],
-    description: "A curse that hexes the target (−2 defense) and weakens it (−2 damage) for 2 turns.",
+    description: "A curse that hexes the target (+15% damage taken until it dies, stacking to 3) and weakens it for 4 turns (−30% damage).",
   },
   arcane_burst: {
     id: "arcane_burst",
@@ -268,7 +268,7 @@ export const SPELLS = {
     cost: 6,
     range: 4,
     damage: [8, 12],
-    description: "A concentrated arcane blast: heavy damage to one target, which is weakened for 2 turns (−2 damage).",
+    description: "A concentrated arcane blast: heavy damage to one target, which is weakened for 4 turns (−30% damage).",
   },
   // A free cantrip. It gains half of flat spell power (INT and magic power, rounded down) plus the
   // full spell-damage %, so it keeps pace with gear while staying well below Magic Missile.
@@ -306,7 +306,7 @@ export const SPELLS = {
     cost: 5,
     range: 0,
     freezeTurns: 2,
-    description: "Freezes every enemy around you solid for 2 turns and chills them. Bosses are only chilled.",
+    description: "Freezes every enemy around you solid for 2 turns and chills them twice, so they stay slowed after thawing. Bosses are only chilled.",
   },
   summon_spire: {
     id: "summon_spire",
@@ -323,7 +323,7 @@ export const SPELLS = {
     type: "ranged_ability",
     cost: 2,
     range: 5,
-    description: "A precise ranged shot with bonus damage.",
+    description: "A precise ranged shot that deals +3 damage, and is always a critical hit against a chilled (slowed) enemy.",
   },
   evasive_step: {
     id: "evasive_step",
@@ -402,15 +402,15 @@ export const ITEMS = {
   shadowstep_mantle: { id: "shadowstep_mantle", name: "Shadowstep Mantle", category: "armor", slot: "armor", classBias: "ranger", defense: 3, evasion: 4, bonus: { accuracyFlat: 5, trapReductionPct: 25 }, rarity: "rare", value: 76, description: "Enchantment: warded fabric grants +5 accuracy and -25% trap damage." },
   voidhide_armor: { id: "voidhide_armor", name: "Voidhide Armor", category: "armor", slot: "armor", classBias: "ranger", defense: 4, evasion: 4, bonus: { maxHpFlat: 12, evasionFlat: 3 }, rarity: "boss", value: 96 },
   nightstalker_garb: { id: "nightstalker_garb", name: "Nightstalker Garb", category: "armor", slot: "armor", classBias: "ranger", defense: 4, evasion: 3, bonus: { maxHpFlat: 8, rangedDamagePct: 6 }, rarity: "boss", value: 86 },
-  gauntlets_of_rime: { id: "gauntlets_of_rime", name: "Gauntlets of Rime", category: "hands", slot: "hands", classBias: "warrior", rarity: "uncommon", bonus: { defenseFlat: 1 }, value: 46, handsEffect: { type: "meleeStatusProc", statusId: "chilled", chance: 0.12, turns: 2, value: 1 }, description: "Hands: melee hits have a 12% chance to inflict Chilled for 2 turns." },
+  gauntlets_of_rime: { id: "gauntlets_of_rime", name: "Gauntlets of Rime", category: "hands", slot: "hands", classBias: "warrior", rarity: "uncommon", bonus: { defenseFlat: 1 }, value: 46, handsEffect: { type: "meleeStatusProc", statusId: "chilled", chance: 0.12, turns: 2, value: 1 }, description: "Hands: melee hits have a 12% chance to chill the enemy (slowed; three chills freeze it)." },
   hexward_gloves: { id: "hexward_gloves", name: "Hexward Gloves", category: "hands", slot: "hands", classBias: "wizard", rarity: "uncommon", bonus: { maxHpFlat: 6 }, value: 44, handsEffect: { type: "shortenStatus", statusId: "hexed", amount: 1 }, description: "Hands: incoming Hexed effects last 1 turn less." },
-  gravedust_mitts: { id: "gravedust_mitts", name: "Gravedust Mitts", category: "hands", slot: "hands", classBias: "warrior", rarity: "uncommon", bonus: { maxHpFlat: 4 }, value: 44, handsEffect: { type: "meleeStatusProc", statusId: "weakened", chance: 0.1, turns: 2, value: 1 }, description: "Hands: melee hits have a 10% chance to inflict Weakened for 2 turns." },
+  gravedust_mitts: { id: "gravedust_mitts", name: "Gravedust Mitts", category: "hands", slot: "hands", classBias: "warrior", rarity: "uncommon", bonus: { maxHpFlat: 4 }, value: 44, handsEffect: { type: "meleeStatusProc", statusId: "weakened", chance: 0.1, turns: 2, value: 1 }, description: "Hands: melee hits have a 10% chance to weaken the enemy for 4 turns." },
   runed_handwraps: { id: "runed_handwraps", name: "Runed Handwraps", category: "hands", slot: "hands", classBias: "wizard", rarity: "uncommon", bonus: { maxManaFlat: 6, controlDuration: 1 }, value: 46, description: "Hands: +6 max mana and control effects last 1 turn longer." },
-  sundergrip_gauntlets: { id: "sundergrip_gauntlets", name: "Sundergrip Gauntlets", category: "hands", slot: "hands", classBias: "warrior", rarity: "rare", bonus: { defenseFlat: 1 }, value: 60, handsEffect: { type: "meleeStatusProc", statusId: "sundered", chance: 0.15, turns: 3, value: 1 }, description: "Hands: melee hits have a 15% chance to inflict Sundered for 3 turns." },
+  sundergrip_gauntlets: { id: "sundergrip_gauntlets", name: "Sundergrip Gauntlets", category: "hands", slot: "hands", classBias: "warrior", rarity: "rare", bonus: { defenseFlat: 1 }, value: 60, handsEffect: { type: "meleeStatusProc", statusId: "sundered", chance: 0.15, turns: 3, value: 1 }, description: "Hands: melee hits have a 15% chance to sunder the enemy (−2 defense until it dies, stacking to 3)." },
   spellcatcher_gloves: { id: "spellcatcher_gloves", name: "Spellcatcher Gloves", category: "hands", slot: "hands", classBias: "wizard", rarity: "rare", bonus: { maxManaFlat: 8 }, value: 60, handsEffect: { type: "ignoreSpellStatusChance", chance: 0.25 }, description: "Hands: 25% chance to ignore incoming spell-applied statuses." },
-  cinderwraps: { id: "cinderwraps", name: "Cinderwraps", category: "hands", slot: "hands", classBias: "wizard", rarity: "rare", bonus: { magicPowerFlat: 1 }, value: 62, handsEffect: { type: "spellStatusProc", statusId: "weakened", chance: 0.15, turns: 2, value: 1 }, description: "Hands: damage spells have a 15% chance to inflict Weakened for 2 turns." },
+  cinderwraps: { id: "cinderwraps", name: "Cinderwraps", category: "hands", slot: "hands", classBias: "wizard", rarity: "rare", bonus: { magicPowerFlat: 1 }, value: 62, handsEffect: { type: "spellStatusProc", statusId: "weakened", chance: 0.15, turns: 2, value: 1 }, description: "Hands: damage spells have a 15% chance to weaken the enemy for 4 turns." },
   wardens_grips: { id: "wardens_grips", name: "Warden's Grips", category: "hands", slot: "hands", classBias: "warrior", rarity: "rare", bonus: { defenseFlat: 1, maxHpFlat: 6 }, value: 60, handsEffect: { type: "shortenNegativeStatuses", amount: 1 }, description: "Hands: incoming negative statuses last 1 turn less." },
-  marksmans_bracers: { id: "marksmans_bracers", name: "Marksman's Bracers", category: "hands", slot: "hands", classBias: "ranger", rarity: "uncommon", bonus: { defenseFlat: 1 }, value: 46, handsEffect: { type: "rangedStatusProc", statusId: "chilled", chance: 0.12, turns: 2, value: 1 }, description: "Hands: ranged hits have a 12% chance to inflict Chilled for 2 turns." },
+  marksmans_bracers: { id: "marksmans_bracers", name: "Marksman's Bracers", category: "hands", slot: "hands", classBias: "ranger", rarity: "uncommon", bonus: { defenseFlat: 1 }, value: 46, handsEffect: { type: "rangedStatusProc", statusId: "chilled", chance: 0.12, turns: 2, value: 1 }, description: "Hands: ranged hits have a 12% chance to chill the enemy (slowed; three chills freeze it)." },
   windgrip_gloves: { id: "windgrip_gloves", name: "Windgrip Gloves", category: "hands", slot: "hands", classBias: "ranger", rarity: "rare", bonus: { defenseFlat: 1, maxHpFlat: 6 }, value: 60, handsEffect: { type: "shortenNegativeStatuses", amount: 1 }, description: "Hands: +1 defense, +6 HP, and incoming negative statuses last 1 turn less." },
   ring_of_precision: { id: "ring_of_precision", name: "Ring of Precision", category: "accessory", slot: "accessory", rarity: "uncommon", bonus: { accuracyFlat: 5 }, value: 40 },
   ring_of_resolve: { id: "ring_of_resolve", name: "Ring of Resolve", category: "accessory", slot: "accessory", rarity: "uncommon", bonus: { maxHpFlat: 8 }, value: 40 },
@@ -641,10 +641,10 @@ export const STAT_MILESTONES = {
 };
 
 export const STATUS_DEFINITIONS = {
-  chilled: { id: "chilled", name: "Chilled", icon: "C", description: "−6 accuracy." },
-  sundered: { id: "sundered", name: "Sundered", icon: "S", description: "−2 defense." },
-  weakened: { id: "weakened", name: "Weakened", icon: "W", description: "Deals 2 less damage." },
-  hexed: { id: "hexed", name: "Hexed", icon: "H", description: "−2 defense." },
+  chilled: { id: "chilled", name: "Chilled", icon: "C", description: "Enemies are slowed, acting every other turn. Stacks to 3, then freezes solid for a turn; loses a stack every 2 turns. Bosses and you: −6 accuracy instead." },
+  sundered: { id: "sundered", name: "Sundered", icon: "S", description: "−2 defense per stack (up to 3; bosses 2). Lasts until an enemy dies; on you, a few turns." },
+  weakened: { id: "weakened", name: "Weakened", icon: "W", description: "Deals 30% less damage." },
+  hexed: { id: "hexed", name: "Hexed", icon: "H", description: "Enemies take +15% damage per stack (up to 3; bosses 2) until they die. On you: −2 defense." },
   poisoned: { id: "poisoned", name: "Poisoned", icon: "P", description: "Loses 1 HP each turn. Waiting makes your poison wear off twice as fast." },
   arcane_shield: { id: "arcane_shield", name: "Arcane Shield", icon: "A", description: "+2 defense." },
   mana_barrier: { id: "mana_barrier", name: "Mana Barrier", icon: "M", description: "Absorbs incoming damage until it breaks or fades." },

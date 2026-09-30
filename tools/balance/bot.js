@@ -432,7 +432,7 @@ export function playRun({ classId, profile = "competent", seed, skillStrategy = 
     const options = usable.map((spell) => {
       const target = game.findNearestVisibleEnemy(spell.range);
       if (!target) return null;
-      if (spell.id === "ice_shatter" && !game.hasStatus(target, "chilled")) return null;
+      if (spell.id === "ice_shatter" && !game.hasStatus(target, "chilled") && !game.hasStatus(target, "frozen")) return null;
       const { cost } = game.getSpellCost(spell.id);
       const estimate = spellEstimate(spell, target, snapshot);
       const kills = estimate.min >= target.hp;
@@ -511,7 +511,7 @@ export function playRun({ classId, profile = "competent", seed, skillStrategy = 
       if (!settings.manaAware) {
         if (settings.useAbilities && adjacent.length && !game.hasStatus(p, "arcane_shield") && p.mana >= 10 && tryCast("arcane_shield")) return true;
         const ordered = usable
-          .filter((spell) => spell.id !== "ice_shatter" || game.hasStatus(nearest, "chilled"))
+          .filter((spell) => spell.id !== "ice_shatter" || game.hasStatus(nearest, "chilled") || game.hasStatus(nearest, "frozen"))
           .sort((a, b) => spellAvg(b) - spellAvg(a));
         for (const spell of ordered) {
           if (spell.range >= distance && tryCast(spell.id)) return true;
@@ -531,7 +531,8 @@ export function playRun({ classId, profile = "competent", seed, skillStrategy = 
     } else if (adjacent.length && settings.useAbilities) {
       const target = adjacent[0];
       const stats = game.getEnemyCombatStats(target);
-      if (stats.defense >= 3 && !game.hasStatus(target, "sundered") && tryCast("guard_break")) return true;
+      // Sunder lasts until death and feeds Power Strike, so open on anything durable with Guard Break.
+      if ((stats.defense >= 3 || target.hp >= 18) && game.getStatusValue(target, "sundered") < 2 && tryCast("guard_break")) return true;
       if (tryCast("power_strike")) return true;
     }
 

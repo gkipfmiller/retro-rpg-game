@@ -585,32 +585,50 @@ Attack nudges (all classes and enemies):
 
 ## Status Effects
 
+Design: lasting wounds stack and stay, control builds up and fades, and every status has a payoff. Enemy-side rules live in `Game.applyEnemyStatus` (constants at the top of `src/game.js`); statuses on the player stay timed.
+
 Implemented statuses:
+- Hexed (curse)
+  - enemies: +15% damage taken from every source per stack (hits, splash, spire, poison and burn), up to 3 stacks (bosses 2); lasts until the enemy dies
+  - player: −2 defense for a few turns
+- Sundered (armor break)
+  - −2 defense per stack (never below 0), up to 3 (bosses 2); on enemies it lasts until they die, on the player a few turns
 - Chilled
-  - reduces accuracy
-- Sundered
-  - reduces defense
+  - enemies: slowed, acting every other turn; each chill adds a stack, and the third turns into Frozen for 1 turn (clearing the chill); loses a stack every 2 turns (Lingering Hex: 3)
+  - bosses: stack to 2, are never slowed or frozen, and lose 6 accuracy instead
+  - player: −6 accuracy
 - Weakened
-  - reduces outgoing damage
-- Hexed
-  - reduces defense by 2 on the affected side (player or enemy)
+  - deals 30% less damage (enemies and player); 4 turns on enemies (Lingering Hex: 5), 2 on the player
+- Frozen
+  - takes no turns while it lasts; from Frost Nova (2 turns) or a third chill (1 turn); bosses are immune
 - Poisoned
   - deals 1 HP loss per turn to the player or to enemies
   - an enemy killed by poison counts as a player kill (XP, gold, drops)
   - for the player, waiting burns through the status faster than taking normal actions
-- Arcane Shield
-  - temporary defensive ward
-- Mana Barrier
-  - absorbs incoming damage until it breaks or its 4 turns run out
 - Burning
   - enemies only (from Fireball): 2 damage per turn; a kill counts as a player kill
-- Frozen
-  - enemies only (from Frost Nova): takes no turns while it lasts; bosses are immune
+- Rended (Patches): healing from potions and shrines is halved
+- Arcane Shield: temporary +2 defense; Mana Barrier: absorbs incoming damage until it breaks or its 4 turns run out
+
+Sources:
+- Guard Break: 2 Sunder stacks; Sundergrip Gauntlets and sunder-chance weapons: 1 stack
+- Frost Shard, Gauntlets of Rime, Marksman's Bracers: 1 chill; Frost Nova: freezes adjacent enemies for 2 turns and tops their chill up to 2 stacks (bosses: 2 chill stacks)
+- Frailty Hex: 1 Hex stack and Weakened; Arcane Burst, Disrupting Strike, Gravedust Mitts and Cinderwraps: Weakened
+- enemies inflict timed Weakened, Sundered, Hexed and Chilled on the player; both Weakened and Sundered now take effect on the player (they used to show without doing anything)
+- a healing potion also cures the player's longest-lasting negative status (not Rended)
+
+Payoffs:
+- Power Strike deals +2 damage per Sunder stack on the target (on top of the defense Sunder already removed)
+- Executioner and Deadeye also apply to fully sundered enemies (3 stacks), not just those below 35% health
+- Ice Shatter: +4 damage against a chilled target (consuming the chill); double damage against a frozen one, shattering the ice
+- Aimed Shot is always a critical hit against a chilled (slowed) enemy
+- Frailty Curse: +15% spell damage against chilled, frozen or weakened enemies
 
 Status UX:
-- status badges in HUD and target panel
-- status pips above actors
-- hover tooltips for status badges
+- enemy sprites are tinted by their strongest status: frozen (icy white-blue), chilled (blue), hexed (pulsing violet), weakened (dark); Sunder shows through its icon and pop-up
+- when a status lands, its word rises over the enemy just after the damage number, in the status colour: "SUNDERED ×2", "HEXED ×1", "SLOWED", "CHILLED ×2", "WEAKENED", "FROZEN!", and "SHATTER!" for Ice Shatter on a frozen enemy
+- status pips above actors (up to 4) show a stack count in the corner
+- badges in the HUD and target panel show stacks ("×2") or turns left; enemy badges and the map hover describe the current strength ("Takes +30% damage. Lasts until it dies.")
 - fade messages in the combat log
 
 ## Enemies and AI
