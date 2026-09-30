@@ -1334,6 +1334,8 @@ export class Game {
     for (const bonus of skillBonuses) {
       // Spell-granting skills have no stat; syncSkillSpells teaches their spell.
       if (bonus.stat) stats[bonus.stat] = (stats[bonus.stat] ?? 0) + bonus.value;
+      // A skill with several effects lists them in `stats` ({ rimeTouch: 1, controlDuration: 1 }).
+      for (const [stat, value] of Object.entries(bonus.stats ?? {})) stats[stat] = (stats[stat] ?? 0) + value;
     }
 
     switch (player.boonId) {
@@ -2591,6 +2593,8 @@ export class Game {
     damage = Math.max(1, Math.floor(damage * damageMultiplier));
     if (this.hasStatus(player, "weakened")) damage = weakenDamage(damage);
     damage = this.enemyDamageTaken(enemy, damage);
+    // Frailty Curse hexes a target that was already chilled or frozen when the spell landed.
+    const chilledWhenHit = mode.type === "spell" && (this.hasStatus(enemy, "chilled") || this.hasStatus(enemy, "frozen"));
 
     enemy.hp -= damage;
     this.recordDamage("dealt", damage);
@@ -2607,6 +2611,13 @@ export class Game {
     }
     if (mode.spellId === "frost_shard" && enemy.hp > 0) {
       this.log(`${enemy.name} is ${this.applyEnemyStatus(enemy, "chilled")}.`);
+    }
+    // Rime Touch: Magic Missile chills.
+    if (derived.rimeTouch && mode.spellId === "magic_missile" && enemy.hp > 0) {
+      this.log(`${enemy.name} is ${this.applyEnemyStatus(enemy, "chilled")}.`);
+    }
+    if (derived.frailtyCurse && chilledWhenHit && enemy.hp > 0) {
+      this.log(`Frailty Curse: ${enemy.name} is ${this.applyEnemyStatus(enemy, "hexed")}.`);
     }
     if (mode.spellId === "fireball" && enemy.hp > 0) {
       const { burn } = SPELLS.fireball;

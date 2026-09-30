@@ -129,9 +129,9 @@ export const SKILL_TREES = {
       skills: [
         // Array order is the unlock order. Ids stay with their skill (saves store them), so they no
         // longer match the tier numbers after the reorder.
-        { id: "wizard_control_2", name: "Lingering Hex", description: "Your weaken lasts 1 turn longer, and your chill fades 1 turn slower.", effect: { stat: "controlDuration", value: 1 } },
+        { id: "wizard_control_2", name: "Rime Touch", description: "Magic Missile chills its target. Your weaken also lasts 1 turn longer, and your chill fades 1 turn slower.", effect: { stats: { rimeTouch: 1, controlDuration: 1 } } },
         { id: "wizard_control_1", name: "Frost Nova", description: "Learn Frost Nova: freeze every enemy around you for 2 turns and chill them.", effect: { grantSpell: "frost_nova" } },
-        { id: "wizard_control_4", name: "Frailty Curse", description: "+15% spell damage to chilled or weakened enemies.", effect: { stat: "frailtyCurse", value: 15 } },
+        { id: "wizard_control_4", name: "Frailty Curse", description: "+15% spell damage to chilled, frozen or weakened enemies, and your spells hex chilled or frozen enemies (+1 Hex stack per hit).", effect: { stat: "frailtyCurse", value: 15 } },
         { id: "wizard_control_3", name: "Summon Spire", description: "Learn Summon Spire: an arcane spire fires bolts at your foes for 5 turns.", effect: { grantSpell: "summon_spire" } },
         { id: "wizard_control_5", name: "Battlefield Savant", description: "Your first utility spell (Arcane Shield, Blink, Frost Nova) in each fight costs no mana. Resets once no enemy is hunting you.", effect: { stat: "freeUtility", value: 1 } },
       ],

@@ -318,6 +318,8 @@ function frame() {
   renderer.render();
   // Re-check every frame: enemies move under a still cursor, and the camera glides after each step.
   if (mapHoverPoint || mapHoverText) updateMapHover();
+  // Redraws (a keypress, a new turn) can replace the element a tooltip belongs to.
+  syncTooltipOwner();
   window.requestAnimationFrame(frame);
 }
 
@@ -470,13 +472,49 @@ document.getElementById("overlay-content").addEventListener("click", (event) => 
   refresh();
 });
 
+// ── Tooltips ──
+// The tooltip has one owner: the [data-tooltip] element it describes, or the map canvas (map hover).
+// A redraw can replace the hovered element, and browsers don't reliably send mouseout for a removed
+// element (Safari and Firefox never do). So rather than trusting mouseout alone, the owner is
+// re-checked on every mouse move and every frame (see syncTooltipOwner).
+let tooltipOwner = null;
+let lastPointer = null;
+
+function showTooltip(text, owner) {
+  if (!tooltip) return;
+  if (tooltip.textContent !== text) tooltip.textContent = text;
+  tooltip.classList.remove("hidden");
+  tooltipOwner = owner;
+}
+
+function hideTooltip() {
+  tooltip?.classList.add("hidden");
+  tooltipOwner = null;
+}
+
+// The [data-tooltip] element under a point, if any.
+function tooltipElementAt(x, y) {
+  const element = document.elementFromPoint(x, y)?.closest?.("[data-tooltip]");
+  return element?.dataset.tooltip ? element : null;
+}
+
+// Keeps an element-owned tooltip honest: if its element was replaced by a redraw, switch to whatever
+// now sits under the pointer (usually the redrawn copy, so the tooltip just updates) or hide; if its
+// text changed or was removed, follow that.
+function syncTooltipOwner() {
+  if (!tooltipOwner || tooltipOwner === gameCanvas) return;
+  const owner = tooltipOwner.isConnected && tooltipOwner.dataset.tooltip ? tooltipOwner
+    : lastPointer ? tooltipElementAt(lastPointer.x, lastPointer.y) : null;
+  if (owner) showTooltip(owner.dataset.tooltip, owner);
+  else hideTooltip();
+}
+
 document.body.addEventListener("mouseover", (event) => {
   const target = event.target.closest("[data-tooltip]");
   if (!target || !tooltip) return;
   const text = target.dataset.tooltip;
   if (!text) return;
-  tooltip.textContent = text;
-  tooltip.classList.remove("hidden");
+  showTooltip(text, target);
 });
 
 // Keeps the tooltip beside the cursor but flips it to the other side near the window edges.
@@ -490,14 +528,29 @@ function positionTooltip(clientX, clientY) {
 }
 
 document.body.addEventListener("mousemove", (event) => {
-  if (!tooltip || tooltip.classList.contains("hidden")) return;
-  positionTooltip(event.clientX, event.clientY);
+  lastPointer = { x: event.clientX, y: event.clientY };
+  if (!tooltip || !tooltipOwner) return;
+  // Moved off the owning element (or it's gone): hand over to whatever is under the pointer now.
+  if (tooltipOwner !== gameCanvas && !(tooltipOwner.isConnected && tooltipOwner.contains(event.target))) {
+    const under = event.target.closest?.("[data-tooltip]");
+    if (under?.dataset.tooltip) showTooltip(under.dataset.tooltip, under);
+    else hideTooltip();
+  }
+  if (tooltipOwner) positionTooltip(event.clientX, event.clientY);
 });
 
 document.body.addEventListener("mouseout", (event) => {
   const target = event.target.closest("[data-tooltip]");
-  if (!target || !tooltip) return;
-  tooltip.classList.add("hidden");
+  if (!target || target !== tooltipOwner) return;
+  // Moving onto one of its own children isn't leaving it.
+  if (event.relatedTarget && target.contains(event.relatedTarget)) return;
+  hideTooltip();
+});
+
+// Leaving the window entirely.
+document.addEventListener("mouseleave", () => {
+  lastPointer = null;
+  hideTooltip();
 });
 
 // ── Map hover ──
@@ -511,15 +564,15 @@ function updateMapHover() {
   const tile = inGame && mapHoverPoint ? renderer.tileAtClientPoint(mapHoverPoint.x, mapHoverPoint.y) : null;
   renderer.hoverTile = tile;
   const text = tile ? game.describeTile(tile.x, tile.y) : null;
-  if (text === mapHoverText) return;
+  if (text === mapHoverText && (text === null || tooltipOwner === gameCanvas)) return;
   mapHoverText = text;
   if (!tooltip) return;
   if (text) {
-    tooltip.textContent = text;
-    tooltip.classList.remove("hidden");
+    showTooltip(text, gameCanvas);
     positionTooltip(mapHoverPoint.x, mapHoverPoint.y);
-  } else {
-    tooltip.classList.add("hidden");
+  } else if (tooltipOwner === gameCanvas) {
+    // Only clear the map's own tooltip, never one belonging to a panel element.
+    hideTooltip();
   }
 }
 

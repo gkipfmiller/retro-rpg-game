@@ -283,7 +283,9 @@ Implemented Wizard build traits:
 Skill tree branches (each teaches or upgrades a spell; Control and Insight holds its two spells deeper, as they're its power spikes):
 - Elemental Power: Empowered Casting (+10% spell damage), **Fireball** (learn), Elemental Surge, Arcane Overflow, Master Evocation
 - Mystic Ward: Arcane Reserves (+10 max mana), **Mana Barrier** (Arcane Shield upgrade), Steady Mind, Reactive Ward, Archmage's Barrier
-- Control and Insight: Lingering Hex, **Frost Nova** (learn), Frailty Curse, **Summon Spire** (learn), Battlefield Savant
+- Control and Insight: Rime Touch, **Frost Nova** (learn), Frailty Curse, **Summon Spire** (learn), Battlefield Savant
+  - Rime Touch (was Lingering Hex; same skill id, so saves carry over): Magic Missile chills its target, so her main attack builds toward freezes (Arcane Spark briefly had a 25% chill chance too, removed as too strong); also +1 turn to her weaken and her chill fades 1 turn slower
+  - Frailty Curse: +15% spell damage to chilled, frozen or weakened enemies, and each of her spells that hits an enemy already chilled or frozen adds a Hex stack, so chill feeds Hex
 
 Skill-granted spells:
 - a skill with `effect.grantSpell` teaches that spell when unlocked and puts it on the first free hotbar slot
@@ -459,7 +461,7 @@ Player actions:
   - every enemy in the 8 tiles around the Sorceress is Frozen for 2 turns: it doesn't answer the cast, then stays frozen through her next 2 actions (3 enemy turns lost in all)
   - frozen enemies are also Chilled, and the chill outlasts the freeze by a turn so Ice Shatter can still use it
   - taking damage doesn't break the freeze
-  - bosses are only Chilled; Lingering Hex extends the chill, never the freeze
+  - bosses are only Chilled; Rime Touch slows the chill's fade, never extends the freeze
 
 - Summon Spire (Control and Insight tier 4)
   - 7 mana; raises an Arcane Spire on the open tile next to the Sorceress that can shoot the most enemies
@@ -594,11 +596,11 @@ Implemented statuses:
 - Sundered (armor break)
   - −2 defense per stack (never below 0), up to 3 (bosses 2); on enemies it lasts until they die, on the player a few turns
 - Chilled
-  - enemies: slowed, acting every other turn; each chill adds a stack, and the third turns into Frozen for 1 turn (clearing the chill); loses a stack every 2 turns (Lingering Hex: 3)
+  - enemies: slowed, acting every other turn; each chill adds a stack, and the third turns into Frozen for 1 turn (clearing the chill); loses a stack every 2 turns (Rime Touch: 3)
   - bosses: stack to 2, are never slowed or frozen, and lose 6 accuracy instead
   - player: −6 accuracy
 - Weakened
-  - deals 30% less damage (enemies and player); 4 turns on enemies (Lingering Hex: 5), 2 on the player
+  - deals 30% less damage (enemies and player); 4 turns on enemies (Rime Touch: 5), 2 on the player
 - Frozen
   - takes no turns while it lasts; from Frost Nova (2 turns) or a third chill (1 turn); bosses are immune
 - Poisoned
