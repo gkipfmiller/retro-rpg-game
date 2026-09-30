@@ -1,4 +1,4 @@
-import { ENEMIES, ITEMS, TRAPS } from "./data.js";
+import { ENEMIES, ITEMS } from "./data.js";
 
 const BASE = "./RPG Art Assets/frames";
 const EXTRACTED = "./RPG Art Assets/extracted";
@@ -130,12 +130,9 @@ const assetManifest = {
     half: `${BASE}/ui_heart_half.png`,
     empty: `${BASE}/ui_heart_empty.png`,
   },
+  // Trap art is drawn in trapArt.js; only the spike trap uses tileset frames (retracted -> fully out).
   traps: {
-    spikes: `${BASE}/floor_spikes_anim_f3.png`,
-    darts: `${BASE}/bomb_f2.png`,
-    fire: `${BASE}/bomb_f0.png`,
-    curse: `${BASE}/skull.png`,
-    alarm: `${BASE}/lever_right.png`,
+    spikeFrames: [0, 1, 2, 3].map((frame) => `${BASE}/floor_spikes_anim_f${frame}.png`),
   },
   shrine: `${BASE}/wall_fountain_basin_blue_anim_f1.png`,
   props: {
@@ -575,10 +572,6 @@ export function getItemSprite(manifest, itemId) {
   return manifest.items[itemId] ?? manifest.items[ITEMS[itemId]?.baseId] ?? null;
 }
 
-export function getTrapSprite(manifest, trapId) {
-  return manifest.traps[trapId] ?? null;
-}
-
 // Relative weights for floor_1..floor_8: mostly plain stone, light cracks occasionally, heavy breaks rarely.
 const FLOOR_TILE_WEIGHTS = [72, 6, 5, 5, 4, 3, 3, 2];
 const FLOOR_TILE_WEIGHT_TOTAL = FLOOR_TILE_WEIGHTS.reduce((sum, weight) => sum + weight, 0);
@@ -667,7 +660,3 @@ export function getPickupSpriteId(itemIds) {
   return itemId;
 }
 
-export function getTrapPickupSpriteId(trap) {
-  if (!trap || !TRAPS[trap.templateId]) return null;
-  return trap.templateId;
-}

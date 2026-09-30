@@ -6,8 +6,6 @@ import {
   getFloorSprite,
   getItemSprite,
   getPickupSpriteId,
-  getTrapPickupSpriteId,
-  getTrapSprite,
   getVendorSpriteId,
   getWallSprite,
 } from "./assets.js";
@@ -15,6 +13,7 @@ import { clamp } from "./utils.js";
 import { LOG_FILTERS, logText, mergeLogEntries } from "./log.js";
 import { getSpellIconUrl, getSpireCanvas, getStatusIconCanvas, getStatusIconUrl } from "./pixelIcons.js";
 import { SpellFx } from "./spellFx.js";
+import { drawTrap, drawTrapGlow, TRAP_FIRE_MS } from "./trapArt.js";
 import { drawFungalFloorDetail, drawFungalGlow, drawFungalWallFeature, FUNGAL_GLOWS, getFungalWallFeature, pickFungalGlow } from "./fungalArt.js";
 import { ARENA_FIRE, drawArenaProp, drawBrazier, drawGateBars, drawHook, drawRemains, drawSeam, drawThrone, drawVoidTile } from "./arenaArt.js";
 
@@ -89,13 +88,13 @@ const SEWER_SPRITES = {
 const SEWER_FRAME_MS = { torch: 120, cauldron: 420 };
 
 // Sewer floor decor from the sewer floor atlas (column, row), by kind. Drain eyes blink between two frames.
+// The sheet's spike cells (row 0, columns 1-4: holes and spikes) aren't used: they look exactly like
+// spike traps. Their share went to the other decor, so the floor stays about as busy (~9% of tiles).
 const SEWER_FLOOR_DECOR = [
-  { kind: "grate", chance: 16, coords: [[1, 4]] },
-  { kind: "manhole", chance: 10, coords: [[4, 2]] },
-  { kind: "rivets", chance: 28, coords: [[1, 0], [2, 0]] },
-  { kind: "eyes", chance: 12, coords: [[3, 0], [4, 0]] },
-  { kind: "cracks", chance: 20, coords: [[3, 4], [4, 4]] },
-  { kind: "drain", chance: 6, coords: [[5, 0]] },
+  { kind: "grate", chance: 28, coords: [[1, 4]] },
+  { kind: "manhole", chance: 16, coords: [[4, 2]] },
+  { kind: "cracks", chance: 38, coords: [[3, 4], [4, 4]] },
+  { kind: "drain", chance: 10, coords: [[5, 0]] },
 ];
 
 // Drifting motes over visible floor, per band. Speeds are in tiles per second. A band can list several
@@ -320,23 +319,6 @@ function getStatusColor(statusId) {
       return "#c8323a";
     default:
       return "#d7a54d";
-  }
-}
-
-function getTrapColor(trapId) {
-  switch (trapId) {
-    case "spikes":
-      return "#b8c6d8";
-    case "darts":
-      return "#d7a54d";
-    case "fire":
-      return "#ff7a47";
-    case "curse":
-      return "#b48cff";
-    case "alarm":
-      return "#f0d37a";
-    default:
-      return "#cf5f5f";
   }
 }
 
@@ -1091,21 +1073,18 @@ export class Renderer {
           }
         }
 
+        // Revealed traps (see trapArt.js): drawn in view, and dimmed once explored and out of sight.
         const trap = this.game.getTrapAt(x, y);
-        if (tile.visible && trap?.revealed) {
-          const trapSpritePath = getTrapSprite(this.assets?.manifest, getTrapPickupSpriteId(trap));
-          const trapSprite = trapSpritePath ? this.assets?.images[trapSpritePath] : null;
-          ctx.save();
-          ctx.globalAlpha = 0.28;
-          ctx.fillStyle = getTrapColor(trap.templateId);
-          ctx.fillRect(px + Math.floor(tileSize * 0.12), py + Math.floor(tileSize * 0.12), Math.floor(tileSize * 0.76), Math.floor(tileSize * 0.76));
-          ctx.globalAlpha = 0.9;
-          ctx.strokeStyle = getTrapColor(trap.templateId);
-          ctx.lineWidth = Math.max(1, Math.floor(tileSize * 0.06));
-          ctx.strokeRect(px + Math.floor(tileSize * 0.14), py + Math.floor(tileSize * 0.14), Math.floor(tileSize * 0.72), Math.floor(tileSize * 0.72));
-          ctx.restore();
-          if (trapSprite) this.drawSprite(trapSprite, px, py, tileSize, tileSize, 1.1);
-          else drawText(ctx, TRAPS[trap.templateId].glyph, px + Math.floor(tileSize * 0.24), py + Math.floor(tileSize * 0.72), COLORS.trap, Math.max(11, tileSize - 5));
+        if (trap?.revealed && (tile.visible || tile.explored)) {
+          const firedAt = this.trapFiredAt?.get(trap.id);
+          const look = {
+            state: this.game.getTrapState(trap),
+            firedFor: firedAt !== undefined ? performance.now() - firedAt : null,
+            spikeFrames: this.getSpikeFrames(),
+            visible: tile.visible,
+          };
+          drawTrap(ctx, trap.templateId, px, py, tileSize, look);
+          if (tile.visible) glowingDetails.push({ detail: { kind: "trap", trapId: trap.templateId, look }, px, py });
         }
       }
     }
@@ -1633,15 +1612,15 @@ export class Renderer {
     const { map } = currentFloor;
     const { ctx } = this;
     if (tile.type === "floor") {
-      const busy = tile.stairs || tile.chestId || tile.vendor || tile.shrineId || tile.remainsId || tile.itemIds?.length || tile.prop;
+      // Revealed traps keep their tile clear too, so trap art never sits on a grate or manhole.
+      const busy = tile.stairs || tile.chestId || tile.vendor || tile.shrineId || tile.remainsId || tile.itemIds?.length || tile.prop
+        || this.game.getTrapAt(x, y)?.revealed;
       const decor = busy ? null : getSewerFloorDecor(x, y, seed);
       if (decor && floorAtlas) {
-        const frame = decor.kind === "eyes" && !reduceMotion() ? Math.floor(performance.now() / 700 + (decor.hash % 7)) : decor.hash;
         ctx.save();
         if (!tile.visible) ctx.globalAlpha = 0.32;
-        this.drawAtlasTile(floorAtlas, decor.coords[frame % decor.coords.length], px, py, tileSize);
+        this.drawAtlasTile(floorAtlas, decor.coords[decor.hash % decor.coords.length], px, py, tileSize);
         ctx.restore();
-        if (decor.kind === "eyes" && tile.visible) glowing.push({ detail: { kind: "eyes", hash: decor.hash }, px, py });
       }
       const web = getSewerCobweb(map, x, y, seed);
       if (web) standing.push({ kind: "webCorner", flip: web === "left", x, y, px, py, visible: tile.visible, layer: "floor" });
@@ -1763,9 +1742,26 @@ export class Renderer {
     ctx.restore();
   }
 
+  // The spike trap's four tileset frames, retracted to fully out.
+  getSpikeFrames() {
+    return (this.assets?.manifest.traps?.spikeFrames ?? []).map((path) => this.assets.images[path]);
+  }
+
+  // Called by the game when a trap goes off, so its firing animation plays.
+  noteTrapFired(trap) {
+    this.trapFiredAt = this.trapFiredAt ?? new Map();
+    this.trapFiredAt.set(trap.id, performance.now());
+    // Forget old entries once their animation is long over.
+    for (const [id, at] of this.trapFiredAt) if (performance.now() - at > TRAP_FIRE_MS * 4) this.trapFiredAt.delete(id);
+  }
+
   // The emissive part of a detail, drawn over the lighting so it reads as light, not paint.
   drawFloorDetailGlow(detail, px, py, tileSize) {
     const { ctx } = this;
+    if (detail.kind === "trap") {
+      drawTrapGlow(ctx, detail.trapId, px, py, tileSize, detail.look);
+      return;
+    }
     const now = reduceMotion() ? 0 : performance.now();
     const phase = (detail.hash % 1000) / 1000;
     const cx = px + tileSize / 2;
@@ -1786,7 +1782,6 @@ export class Renderer {
     if (detail.kind === "torch") glow("120, 240, 110", tileSize * 0.75, 0.2 + Math.sin(now / 90 + phase * 6) * 0.04);
     if (detail.kind === "shrooms") drawFungalGlow(ctx, pickFungalGlow(detail.hash), cx, py + tileSize * 0.7, tileSize * 0.6, detail.hash, 0.9);
     if (detail.kind === "fungalShelf") drawFungalGlow(ctx, detail.glow, cx, py + tileSize * 0.8, tileSize * 1.1, detail.hash, 1.1);
-    if (detail.kind === "eyes") glow("120, 240, 110", tileSize * 0.45, 0.1 + Math.sin(now / 700 + phase * 6) * 0.05);
     if (detail.kind === "stars" && !reduceMotion()) {
       // Now and then one speck glints.
       const cycle = ((now / 2400) + phase) % 1;

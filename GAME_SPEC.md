@@ -810,29 +810,27 @@ Encounter rules:
 
 ## Trap Design and Readability
 
-Implemented trap types:
-- spikes
-- darts
-- fire
-- curse
-- alarm
+Implemented trap types (floors: spikes from 1, darts from 3, fire from 5, curse and alarm from 13):
+- Spike Trap: 4-6 damage; mechanical, re-arms after every step
+- Poison Dart Trap: 3-5 damage and Poisoned (4 turns); one use
+- Fire Trap: 5-8 damage; after firing it cools for 3 turns (safe to cross), then re-arms
+- Curse Trap: 2-4 damage and Hexed (2 turns); one use
+- Alarm Trap: no damage, alerts every enemy on the floor; one use
+- rule of thumb: mechanical traps persist, one-shot devices are used up (`oneShot`, `cooldown` in `TRAPS`); stepping on a spent or cooling trap does nothing but a log line
 
-Current trap readability rules:
-- revealed traps use distinct tinting by trap type
-- revealed traps draw a hazard marker under the trap icon
-- trap visuals were remapped away from potion-like art where possible
+Trap art (`src/trapArt.js`, pixel art on the 16px grid; no hazard boxes):
+- spikes: the tileset's floor-spike animation, retracted holes while armed, shooting up and sinking back when it fires
+- darts: a stone pressure plate with a dart slit and green residue; a dart streaks across when it fires; pressed flat once spent
+- fire: an iron grate over glowing embers (with a light glow); tongues of flame burst up when it fires; dim embers while cooling
+- curse: a pulsing violet rune circle; it flares when it fires, leaving a burnt-out scorch
+- alarm: a tripwire between two pegs with a bell; the bell shakes when it rings, then the wire hangs snapped
+- revealed traps are remembered (drawn dimmed) once explored, like chests; the death screen shows the trap that killed you in the same art
 
-Current trap behavior notes:
-- alarm traps now fully alert enemies on the floor
-- dart traps now apply Poisoned
+Readability:
+- traps stay hidden until stepped on or spotted within 2 tiles (Trap Sense widens this)
+- the hover tooltip names the trap, its damage and effect, and its state: "Re-arms after every step", "Fires once", "Re-arms 3 turns after it fires", "Cooling: safe for N more turns", or "(spent) Already sprung. Safe to cross."
 - waiting is a valid tactical response to reduce Poisoned duration faster
-
-Trap color direction:
-- spikes: pale steel
-- darts: amber
-- fire: orange-red
-- curse: violet
-- alarm: gold
+- only the player triggers traps (enemies triggering them is a possible follow-up)
 
 ## Floors 1-10
 
@@ -1153,7 +1151,7 @@ Current visual polish layers:
 - sewer wall/floor atlas support for the Floor 16-20 biome
 - sewer dressing (Floors 16-19), drawn from the sewer pack's item sheet and floor atlas:
   - animated green-flame torches on room-facing walls (spaced out, and lighting the map green)
-  - floor decor on about 9% of tiles: drain grates, manholes, rivet plates, cracked stone, and drain "eyes" that blink and glow
+  - floor decor on about 9% of tiles: drain grates, manholes, cracked stone, and drains (the sheet's spike cells are left out because they look like spike traps)
   - cobwebs in some room corners
   - obstacle props that block movement (not sight): slime-streaked or stone pillar colonnades in larger rooms, sludge cauldrons (animated), crates, and mossy rubble; placed by tile hash (so seeded enemies and loot are unchanged), at least two tiles in from room edges, never touching each other or a shrine, skipping the arrival room, and removed if they would cut off any room; hovering names them
   - ambience: falling water drips and a slow green mist, with a greener light tint

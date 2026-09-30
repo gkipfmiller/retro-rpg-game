@@ -3,6 +3,7 @@ import { attachVaultFeaturesToFloor, generateFloor, getDropForEnemy } from "./ge
 import { getActorSpriteFrame, getEnemySpriteId, getItemSprite } from "./assets.js";
 import { calculateScore, checkPlayerName, containsBlockedNameTerm, dailyDateUTC, normalizePlayerName } from "./scoreRules.js";
 import { getBranchIconUrl, getSpellIconUrl, getStatusIconUrl } from "./pixelIcons.js";
+import { getTrapIconDataUrl } from "./trapArt.js";
 import { clamp, createRng, deepClone, hashSeed, isBlockedFloor, manhattan, toKey } from "./utils.js";
 import { MAX_LOG_ENTRIES, logText, normalizeLogs } from "./log.js";
 
@@ -1509,13 +1510,19 @@ export class Game {
     const propKind = tile.prop === "extends" ? currentFloor.map[y]?.[x - 1]?.prop : tile.prop;
     if (propNames[propKind]) sections.push(`${propNames[propKind]}\nBlocks the way.`);
 
-    const trap = tile.visible ? this.getTrapAt(x, y) : null;
+    // Revealed traps are remembered once explored, like chests and stairs.
+    const trap = this.getTrapAt(x, y);
     if (trap?.revealed) {
       const template = TRAPS[trap.templateId];
       const lines = [template.name];
       if (template.damage[1] > 0) lines.push(`Deals ${range(template.damage)} damage.`);
       if (template.status) lines.push(`Inflicts ${STATUS_DEFINITIONS[template.status]?.name ?? template.status}.`);
-      if (template.alerts) lines.push("Alerts nearby enemies.");
+      if (template.alerts) lines.push("Alerts every enemy on the floor.");
+      const state = this.getTrapState(trap);
+      if (state === "spent") lines[0] = `${template.name} (spent)`;
+      lines.push(state === "spent" ? "Already sprung. Safe to cross."
+        : state === "cooling" ? `Cooling: safe for ${trap.cooldown - 1 > 0 ? `${trap.cooldown - 1} more turn${trap.cooldown - 1 === 1 ? "" : "s"}` : "this turn"}.`
+          : template.oneShot ? "Fires once." : template.cooldown ? `Re-arms ${template.cooldown} turns after it fires.` : "Re-arms after every step.");
       sections.push(lines.join("\n"));
     }
 
@@ -1893,11 +1900,31 @@ export class Game {
     tile.itemIds = [];
   }
 
+  // "armed", "spent" (a one-shot trap that has fired) or "cooling" (fire, recharging).
+  getTrapState(trap) {
+    if (trap.spent) return "spent";
+    if ((trap.cooldown ?? 0) > 0) return "cooling";
+    return "armed";
+  }
+
   checkTrap() {
     const trap = this.getTrapAt(this.state.run.player.x, this.state.run.player.y);
     if (!trap) return;
     const template = TRAPS[trap.templateId];
     trap.revealed = true;
+    // Spent and cooling traps are safe to cross.
+    if (trap.spent) {
+      this.log(`You step over the spent ${template.name.toLowerCase()}.`);
+      return;
+    }
+    if ((trap.cooldown ?? 0) > 0) {
+      this.log(`The ${template.name.toLowerCase()} is still cooling.`);
+      return;
+    }
+    if (template.oneShot) trap.spent = true;
+    // +1 because this turn's end counts down once: it then stays safe for `cooldown` full turns.
+    if (template.cooldown) trap.cooldown = template.cooldown + 1;
+    this.renderer?.noteTrapFired?.(trap);
     const derived = this.getDerivedStats(this.state.run.player);
     const reduction = derived.trapReductionPct ? 1 - derived.trapReductionPct / 100 : 1;
     const rng = createRng(hashSeed(this.state.run.runSeed, this.state.run.turn, trap.id, "trap"));
@@ -4372,6 +4399,10 @@ export class Game {
 
   processStatuses() {
     const player = this.state.run.player;
+    // Fire traps recharge one turn at a time.
+    for (const trap of this.state.run.currentFloor.traps ?? []) {
+      if ((trap.cooldown ?? 0) > 0) trap.cooldown -= 1;
+    }
     const previousPlayerStatuses = [...player.statuses];
     player.statuses = player.statuses
       .map((status) => {
@@ -5255,7 +5286,8 @@ export class Game {
       return url ? `<img class="run-end-portrait run-end-portrait--icon" src="${url}" alt="Poison">` : "";
     }
     if (source?.kind === "trap") {
-      const path = manifest.traps?.[source.trapId] ?? manifest.traps?.spikes;
+      const spikeFrames = (manifest.traps?.spikeFrames ?? []).map((framePath) => this.renderer?.assets?.images[framePath]);
+      const path = TRAPS[source.trapId] ? getTrapIconDataUrl(source.trapId, spikeFrames) : null;
       return path ? `<img class="run-end-portrait run-end-portrait--icon" src="${path}" alt="${source.name}">` : "";
     }
     const heroPath = getActorSpriteFrame(manifest, run.player.classId, 0);

@@ -597,12 +597,14 @@ export const ROOM_ENCOUNTERS = {
   },
 };
 
+// After firing, a trap either re-arms at once (spikes), is used up (oneShot), or needs `cooldown`
+// turns before it can fire again (fire). See Game.checkTrap.
 export const TRAPS = {
   spikes: { id: "spikes", name: "Spike Trap", damage: [4, 6], glyph: "^" },
-  darts: { id: "darts", name: "Poison Dart Trap", damage: [3, 5], glyph: "!", status: "poisoned" },
-  fire: { id: "fire", name: "Fire Trap", damage: [5, 8], glyph: "*" },
-  curse: { id: "curse", name: "Curse Trap", damage: [2, 4], glyph: "C", status: "hexed" },
-  alarm: { id: "alarm", name: "Alarm Trap", damage: [0, 0], glyph: "A", alerts: true },
+  darts: { id: "darts", name: "Poison Dart Trap", damage: [3, 5], glyph: "!", status: "poisoned", oneShot: true },
+  fire: { id: "fire", name: "Fire Trap", damage: [5, 8], glyph: "*", cooldown: 3 },
+  curse: { id: "curse", name: "Curse Trap", damage: [2, 4], glyph: "C", status: "hexed", oneShot: true },
+  alarm: { id: "alarm", name: "Alarm Trap", damage: [0, 0], glyph: "A", alerts: true, oneShot: true },
 };
 
 // ── Base stats ──
